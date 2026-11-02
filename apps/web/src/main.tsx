@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EditorApp } from '@rea/editor';
-import '@rea/editor/styles.css';
+import './theme.css';
 import { initGeometry } from '@rea/geometry';
 
 initGeometry().then(() => createRoot(document.getElementById('root')!).render(

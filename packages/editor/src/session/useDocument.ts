@@ -86,7 +86,13 @@ export function useDocument() {
   }
   async function rename(id: string, name: string) {
     await saver.current?.flush(); await storage.renameDocument(id, name);
-    if (record.current?.id === id) activate(await storage.openDocument(id));
+    if (record.current?.id === id && latest.current) {
+      const doc = await storage.openDocument(id);
+      // Renaming metadata must preserve selection, cameras and undo history.
+      const session = new DocumentSession({ ...latest.current.files, 'rea.json': doc.files['rea.json'] }, latest.current.rev, latest.current.past, latest.current.future);
+      record.current = doc; latest.current = session; setCurrent(session);
+      saver.current?.dispose(); saver.current = new AutoSaver(doc, next => storage.saveDocument(next), status);
+    }
   }
   async function duplicate(id: string) { await saver.current?.flush(); return storage.duplicateDocument(id); }
   async function remove(id: string) {
