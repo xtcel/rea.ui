@@ -1,20 +1,24 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  项目：REA UI —— React 单源设计编辑器（Web）。
+  技术栈：TypeScript、React 19、Vite、pnpm workspace、Rust/WASM 几何内核（不使用 wasm-bindgen）、Vitest。
+  设计文档模型：文档 → 页面 → 画框（画板）→ 图层。一个文档是「清单 rea.json + 每页一个 .page.tsx + assets」，
+  可导出 / 导入为单文件 .reaui（ZIP）。本地用 IndexedDB 保存多文档。
+  TSX 是唯一真源：静态 TSX 子集（不执行代码）→ AST 范围 → 局部字符串替换 → 候选校验 → 原子提交。
+  样式全部使用 Tailwind CSS className（刻度优先，其次任意值）。设计画布使用运行时编译的 Tailwind（Shadow DOM 隔离），
+  编辑器界面使用构建期 Tailwind。
+  产品原则：用户不需要知道「源码」的概念；界面参考 Figma / Sketch。
+  文档语言：中文（spec 中的 SHALL / MUST 关键字保留英文，供 openspec 校验）。
+  分阶段变更（依赖顺序）：restructure-document-model → redesign-editor-shell → add-editing-core → add-property-panel。
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - 必须包含「非目标」或「范围说明」，明确不做什么
+  specs:
+    - 每条 Requirement 都要有至少一个 Scenario，并且包含 SHALL 或 MUST
+    - 涉及 className 的要求要给出具体的 Tailwind 类示例
+  design:
+    - 列出风险与取舍，以及仍未决定的问题
+  tasks:
+    - 每个任务应该能在一次提交里完成，并附带对应的测试任务
