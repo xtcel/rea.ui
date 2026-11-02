@@ -1,0 +1,10 @@
+{
+  "name": "@rea/renderer-dom",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@rea/design": "workspace:*" },
+  "peerDependencies": { "react": "^19.3.1" },
+  "devDependencies": { "react": "19.3.1", "react-dom": "19.3.1" }
+}

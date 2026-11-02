@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+storeDir: .pnpm-store
+minimumReleaseAgeExclude:
+  - '@vitejs/plugin-react@6.2.1'

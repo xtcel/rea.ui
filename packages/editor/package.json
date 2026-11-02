@@ -1,0 +1,19 @@
+{
+  "name": "@rea/editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@rea/document": "workspace:*",
+    "@rea/geometry": "workspace:*",
+    "@rea/design": "workspace:*",
+    "@rea/renderer-dom": "workspace:*",
+    "lucide-react": "1.66.0"
+  },
+  "peerDependencies": { "react": "^19.3.1", "react-dom": "^19.3.1" },
+  "devDependencies": { "react": "19.3.1", "react-dom": "19.3.1" }
+}

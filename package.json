@@ -1,0 +1,25 @@
+{
+  "name": "rea-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.4.1",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "dev": "pnpm build:wasm && pnpm --filter @rea/web dev",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build": "pnpm build:wasm && pnpm typecheck && pnpm --filter @rea/web build",
+    "test:rust": "cargo test --workspace",
+    "preview": "pnpm --filter @rea/web preview",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm build:wasm && vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}
