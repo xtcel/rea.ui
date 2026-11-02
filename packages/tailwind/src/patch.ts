@@ -1,6 +1,6 @@
 import { parseClassNames, splitClassNames } from './parser';
 import { PROPERTY_GROUPS } from './groups';
-import type { PropertyGroupKey, PropertyValue } from './groups';
+import type { PropertyGroupKey, PropertyValue, PropertyInput } from './groups';
 
 /**
  * Patch a single property group in a className string.
@@ -8,7 +8,7 @@ import type { PropertyGroupKey, PropertyValue } from './groups';
 export function patchClassName(
   className: string,
   groupKey: PropertyGroupKey,
-  value: any,
+  value: PropertyInput,
 ): string {
   const group = PROPERTY_GROUPS[groupKey];
   if (!group) return className;
@@ -62,7 +62,7 @@ export function patchClassName(
  */
 export function patchClassNames(
   className: string,
-  patches: Partial<Record<PropertyGroupKey, any>>,
+  patches: Partial<Record<PropertyGroupKey, PropertyInput>>,
 ): string {
   let result = className;
   for (const [key, value] of Object.entries(patches)) {

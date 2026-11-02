@@ -2,5 +2,16 @@
   "name": "@rea/storage",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@rea/document": "workspace:*",
+    "@rea/design": "workspace:*",
+    "@rea/tailwind": "workspace:*",
+    "@babel/parser": "8.0.10",
+    "@babel/types": "8.0.10",
+    "fflate": "0.8.3"
+  }
 }

@@ -1,22 +1,25 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Frame, Page, Text, Vector } from '@rea/design';
+import { Ellipse, Frame, Group, Image, Page, Rect, Text, Vector } from '@rea/design';
 import { PageRenderer } from './render';
-
-it('renders source identity and text while excluding hidden subtrees and author-only props', () => {
-  const page = <Page id="main" designId="page-main" viewports={[{ id: 'desktop', width: 800, height: 600 }]}>
-    <Frame designId="main-frame" layout="flex" gap={16}>
-      <Text designId="main-title" as="h1">来自源码</Text>
-      <Frame designId="hidden-frame" hidden><Text designId="hidden-copy">不应显示</Text></Frame>
-      <Vector designId="main-vector" d="M0 0L10 10" width={10} height={10} viewBox="0 0 10 10" />
-    </Frame>
-  </Page>;
-  const html = renderToStaticMarkup(<PageRenderer page={page} selectedId="main-title" />);
-  expect(html).toContain('data-design-id="main-title"');
-  expect(html).toContain('is-selected');
-  expect(html).toContain('来自源码');
-  expect(html).toContain('gap:16px');
-  expect(html).toContain('<svg');
-  expect(html).not.toContain('不应显示');
-  expect(html).not.toContain('designId=');
+const page = <Page id="home" designId="page-home"><Frame designId="frame-main" className="absolute w-80 h-80 bg-white"><Group designId="group-main"><Rect designId="rect-main" className="w-20 bg-red-500 hover:bg-red-600 custom" /><Ellipse designId="ellipse-main" className="w-10 h-10" /><Text designId="text-main" className="text-xl">hello</Text><Image designId="image-main" src="assets/a.png" /><Vector designId="vector-main" d="M0 0" viewBox="0 0 10 10" className="fill-blue-500 stroke-black" /></Group></Frame></Page>;
+describe('className rendering', () => {
+  it('renders all primitives with source classes and asset blob URLs', () => {
+    const html = renderToStaticMarkup(<PageRenderer page={page} assetUrls={{ 'assets/a.png': 'blob:test-image' }} />);
+    expect(html).toContain('class="w-20 bg-red-500 hover:bg-red-600 custom"');
+    expect(html).toContain('class="rounded-full w-10 h-10"');
+    expect(html).toContain('src="blob:test-image"'); expect(html).toContain('<path d="M0 0"');
+    expect(html).not.toContain('style='); expect(html).not.toContain('designId=');
+  });
+  it('patches preview classes while retaining source and variants', () => {
+    const html = renderToStaticMarkup(<PageRenderer page={page} preview={{ id: 'rect-main', styles: { width: 317 } }} />);
+    expect(html).toContain('w-[317px] bg-red-500 hover:bg-red-600 custom');
+    expect(renderToStaticMarkup(<PageRenderer page={page} />)).toContain('w-20');
+  });
+  it('inherits hidden and locked, omits missing asset src', () => {
+    const hidden = <Page id="home" designId="page-home"><Frame designId="frame-main" className="absolute" hidden><Rect designId="rect-main" /></Frame><Group designId="group-main" locked><Text designId="text-main">locked</Text></Group></Page>;
+    const html = renderToStaticMarkup(<PageRenderer page={hidden} />);
+    expect(html).not.toContain('rect-main'); expect(html.match(/data-design-locked/g)).toHaveLength(2);
+    expect(renderToStaticMarkup(<PageRenderer page={page} />)).not.toContain('src="assets/');
+  });
 });

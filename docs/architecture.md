@@ -1,64 +1,60 @@
 # React 单源编辑与 Rust/WASM
 
-当前版本已从只读框架升级为基础可编辑版本。用户已确认 React Web + Rust/WASM 路线；FigCraft 仍只提供 UI 与项目分层参考，不参与文档格式设计。
+当前实现对应 OpenSpec `restructure-document-model`（M1）。层级为「文档 → 页面（无限画布）→ 画框 → 图层」。同一页面可以放置多个独立画框和游离图层。格式见 [文件格式](file-format.md)。
 
-## 实际的数据路径
+## 真源与派生数据
 
 ```text
-项目 .design.tsx（启动种子）/ 浏览器中保存的当前 TSX
-                  ↓
-       @rea/document：Babel 静态解析
-                  ↓
-    AST 与原文范围 → 原语元素 → 可重建索引
-                  ↓
-       @rea/renderer-dom：DOM / SVG
-                  ↑
-图层 / 属性 / 工具 → 候选源码事务 → 校验 → 提交
-                       ↓
-              原文历史：Undo / Redo
-
-指针绘制 / 移动 / 缩放
-       ↓
-@rea/geometry → crates/geometry 编译的 WASM
-       ↓
-矩形归一化 / 网格吸附 / 缩放边界 → 源码属性变更
+rea.json + pages/*.page.tsx + assets
+                ↓
+@rea/document：清单与 Babel 静态 TSX 解析（不执行代码）
+                ↓
+原文范围 / React 原语 / 页面内节点索引
+                ↓
+@rea/tailwind：属性组读取、局部修补、候选过滤、运行时编译
+                ↓
+@rea/renderer-dom：Shadow DOM 中的 DOM / SVG / blob 资源
+                ↑
+工具 / 属性 / 页面操作 → 候选文件事务 → 校验 → 原子提交
+                ↓
+文件差异历史（Undo / Redo）→ 防抖 500ms → IndexedDB
 ```
 
-当前 TSX 字符串是唯一可编辑文档。Babel AST、React 原语元素、节点索引及 DOM 均派生自它。几何 crate 不保存场景、节点或设计文件。
+清单和页面 TSX 是唯一可编辑真源。DocumentSession 的 AST、React 元素和索引由文件重建；UI 不维护平行的可编辑节点 JSON。资源是独立的二进制 blob。
 
-## 模块
+## 模块边界
 
-| 目录 | 实际职责 |
+| 模块 | 职责 |
 |---|---|
-| `crates/geometry` | 真实 Rust crate，输出浏览器 WASM；计算归一化绘制矩形、吸附和八方向缩放约束 |
-| `packages/geometry` | 加载 WASM，提供类型化调用；没有静默 JavaScript 几何降级 |
-| `packages/document` | 静态 TSX 解析、原文局部替换、插入/删除、候选校验、精确源码撤销/重做 |
-| `packages/design` | 原语与基本身份/层级校验，派生索引 |
-| `packages/renderer-dom` | 将派生原语绘制为 DOM/SVG，支持未提交的变换预览 |
-| `packages/editor` | 工具状态、选区、相机、属性与源码 UI、本地保存 |
-| `apps/web` | 初始化 WASM，加载启动源码，装配编辑器 |
+| `design` | Page / Frame / Group / Rect / Ellipse / Text / Image / Vector；身份、嵌套、继承和资源路径校验 |
+| `tailwind` | class 词法、属性组、刻度写入、诊断、默认主题与 preflight 的增量编译；不依赖 React |
+| `document` | 静态 TSX 解析、清单、跨页操作和原子事务、文件差异历史 |
+| `storage` | IndexedDB、多文档、版本冲突、自动保存、ZIP 安全校验、迁移和示例 |
+| `renderer-dom` | 原语渲染、class 预览修补、Shadow DOM、blob URL、composedPath 命中 |
+| `editor` | 选区 `(pageId, designId)`、工具、相机、文档管理、图层和属性 UI |
+| `geometry` / `crates/geometry` | 加载真实 WASM；Rust 计算矩形归一化、吸附和缩放边界，不保存文档或场景 |
+| `apps/web` | 初始化 WASM 并装配编辑器 |
 
-## 首轮能力
+## 事务与历史
 
-- F：拖动创建画板；左侧切换独立画板；名称、宽高可编辑。
-- R / O / T：在当前画板内拖动创建矩形、椭圆和文本。
-- V：选择与拖动绝对定位对象；八方向手柄缩放；Shift 拖动时吸附到 8px 网格。
-- 属性面板：位置、尺寸、名称、颜色、矩形圆角、文本和字号。
-- 删除、Undo / Redo；一次拖动只在释放时提交一步历史。
-- 导出当前 `.design.tsx`；浏览器 localStorage 保存同一份 TSX，重开恢复内容。
+`DocumentSession` 包含清单、页面映射、虚拟目录文件和递增 `rev`。提交从现有文件创建候选，按 AST 范围局部替换，所有候选通过解析校验后才生成新会话。任何异常均不修改旧会话和历史。插入时补充缺失的原语导入。
 
-为保持已有 Page/viewport 语义，首轮的独立画板对应不同 Page，每页默认一个视口，通过左侧切换。一个 Page 的多个 viewport 仍共享内容。尚未实现把所有独立画板在同一无限画布自由排列。
+历史仅保存被改动文件的 `{path,before,after}` 和标签，支持新增/删除文件。撤销、重做逐字节恢复；相同 `coalesceKey` 且相邻提交间隔不超过 500ms 时合并。新分支清空重做栈。历史仅保存在当前会话中。
 
-## 原子性与保存边界
+画布拖动期间只对渲染 class 施加预览，释放时提交一次事务；Escape、取消和失焦丢弃预览。移动、尺寸读取优先用固定 Tailwind 值，非固定值用 DOM 实测尺寸。M1 不提供旋转/倾斜后的精确坐标变换编辑。
 
-事务先在候选字符串上修改，重新解析并通过当前子集校验后，才替换当前文档。失败不改变源码或历史。Undo/Redo 保存精确源文本；重新打开恢复设计内容，撤销栈暂不持久化。
+## 渲染与样式隔离
 
-拖动与绘制中的虚线、尺寸与对象预览属于会话；释放才提交源码。Escape、指针取消或失焦取消暂态变换。
+画布使用开放 Shadow DOM；Tailwind 默认主题、preflight、全部合法工具类与变体都在其中编译和渲染。编辑器本身继续使用既有 CSS。命中读取原生事件 `composedPath()`；选区位于 Shadow DOM 外，使用 `getBoundingClientRect()` 对齐。Image 和样式中的资源路径映射为 blob URL，切换文档时释放。
 
-浏览器保存的是当前 TSX 内容，不会自动回写仓库里的启动文件。导出 TSX 可保存设计文件。源码面板显示当前提交版本，仍为只读。
+## 持久化与恢复
 
-## 支持与限制
+IndexedDB 数据库 `rea-ui` 版本 1：`documents` 存整条清单与文本文件，`assets` 以 `[docId,path]` 存 blob，`meta` 保存最近打开 id 和迁移标记。
 
-当前解析器只接受 `@rea/design` 静态导入、一个默认 JSX 导出、受支持节点与静态字面量。拒绝函数调用、属性 spread、事件处理和其他模块语句，不运行设计源代码。当前 Schema 是 RFC 的子集，不能把它视为完整 V1–V12。
+每次保存先在同一个读写事务中比较 revision，再写入完整文档并递增 revision；不同窗口的旧版本无法覆盖新版本。资源不随普通文本变更重写。保存失败保留内存，状态栏提示导出 `.reaui`；下次编辑重试。切换文档前等待保存，冲突时显式提供重新加载；页面隐藏时尝试刷新待存内容，存在未保存内容时阻止无提示关闭。
 
-当前未实现组件/实例/Token、专业钢笔与向量网络、布尔/蒙版、完整自动布局编辑、多选与复杂坐标变换、协作、后端和 AI。原提案的后续阶段仍适用。
+首次启动优先恢复最近文档；数据库为空时尝试迁移旧 localStorage，失败使用内置示例。旧数据不会删除。浏览器编辑不自动回写仓库文件。
+
+## 后续阶段
+
+M2（`redesign-editor-shell`）、M3（`add-editing-core`）、M4（`add-property-panel`）尚未实施。组件/实例、完整布局编辑、专业向量网络、多选复杂变换、协作、云端和 AI 不属于本次变更。

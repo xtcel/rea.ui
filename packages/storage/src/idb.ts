@@ -1,197 +1,120 @@
+import { DocumentSession, createManifest, newPageSource } from '@rea/document';
 import type { DocumentManifest } from '@rea/document';
+import { isAssetPath } from '@rea/design';
 
 export interface DocumentRecord {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-  revision: number;
-  manifest: DocumentManifest;
-  files: Record<string, string>;
+  id: string; name: string; createdAt: string; updatedAt: string; revision: number;
+  manifest: DocumentManifest; files: Record<string, string>;
 }
-
-export interface AssetRecord {
-  docId: string;
-  path: string;
-  type: string;
-  data: Uint8Array;
+export interface AssetRecord { docId: string; path: string; type: string; blob: Blob }
+export interface DocumentSummary { id: string; name: string; createdAt: string; updatedAt: string; revision: number }
+export class RevisionConflictError extends Error {
+  constructor() { super('文档已在另一个窗口中被修改，请重新加载；也可以先导出 .reaui 保留当前内容。'); this.name = 'RevisionConflictError'; }
 }
-
-export interface MetaRecord {
-  key: string;
-  value: any;
-}
-
-export interface DocumentSummary {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-  revision: number;
-}
-
-const DB_NAME = 'rea-ui';
-const DB_VERSION = 1;
-
-export function openDatabase(customIdbFactory?: IDBFactory): Promise<IDBDatabase> {
-  const factory = customIdbFactory || (typeof indexedDB !== 'undefined' ? indexedDB : undefined);
-  if (!factory) {
-    return Promise.reject(new Error('当前运行环境不支持 IndexedDB。'));
-  }
-
+export function openDatabase(factory: IDBFactory = indexedDB): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = factory.open(DB_NAME, DB_VERSION);
-
+    const request = factory.open('rea-ui', 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-
-      if (!db.objectStoreNames.contains('documents')) {
-        const docStore = db.createObjectStore('documents', { keyPath: 'id' });
-        docStore.createIndex('updatedAt', 'updatedAt', { unique: false });
-      }
-
-      if (!db.objectStoreNames.contains('assets')) {
-        db.createObjectStore('assets', { keyPath: ['docId', 'path'] });
-      }
-
-      if (!db.objectStoreNames.contains('meta')) {
-        db.createObjectStore('meta', { keyPath: 'key' });
-      }
+      const documents = db.createObjectStore('documents', { keyPath: 'id' });
+      documents.createIndex('updatedAt', 'updatedAt');
+      db.createObjectStore('assets', { keyPath: ['docId', 'path'] });
+      db.createObjectStore('meta', { keyPath: 'key' });
     };
-
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
     request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('数据库升级受阻，请关闭其他 REA UI 窗口后重试。'));
   });
 }
-
-function promisifyRequest<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function request<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 }
-
+function completed(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error('存储事务已取消。')); tx.onerror = () => {}; });
+}
+export function recordFromFiles(files: Record<string, string>, revision = 0): DocumentRecord {
+  const session = new DocumentSession(files), m = session.manifest;
+  return { id: m.id, name: m.name, createdAt: m.createdAt, updatedAt: new Date().toISOString(), revision, manifest: m, files: { ...files } };
+}
+export function emptyDocument(name = '未命名文档'): DocumentRecord {
+  const manifest = createManifest(`doc_${crypto.randomUUID()}`, name, [{ id: 'main', file: 'pages/main.page.tsx' }]);
+  return recordFromFiles({ 'rea.json': JSON.stringify(manifest, null, 2), 'pages/main.page.tsx': newPageSource('main', '页面 1') });
+}
 export class StorageService {
-  constructor(private customFactory?: IDBFactory) {}
-
-  private getDB(): Promise<IDBDatabase> {
-    return openDatabase(this.customFactory);
+  private db?: Promise<IDBDatabase>;
+  constructor(private factory?: IDBFactory) {}
+  private getDB() { return this.db ??= openDatabase(this.factory).catch(error => { this.db = undefined; throw error; }); }
+  async close() { (await this.db)?.close(); this.db = undefined; }
+  async listDocuments(): Promise<DocumentSummary[]> {
+    const db = await this.getDB(), tx = db.transaction('documents', 'readonly');
+    const records = await request<DocumentRecord[]>(tx.objectStore('documents').getAll());
+    return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id)).map(({ id, name, createdAt, updatedAt, revision }) => ({ id, name, createdAt, updatedAt, revision }));
   }
-
-  public async listDocuments(): Promise<DocumentSummary[]> {
+  async getDocument(id: string): Promise<DocumentRecord | undefined> {
     const db = await this.getDB();
-    const tx = db.transaction('documents', 'readonly');
-    const store = tx.objectStore('documents');
-    const index = store.index('updatedAt');
-
-    return new Promise((resolve, reject) => {
-      const results: DocumentSummary[] = [];
-      const cursorReq = index.openCursor(null, 'prev'); // sort descending by updatedAt
-
-      cursorReq.onsuccess = () => {
-        const cursor = cursorReq.result;
-        if (cursor) {
-          const val = cursor.value as DocumentRecord;
-          results.push({
-            id: val.id,
-            name: val.name,
-            createdAt: val.createdAt,
-            updatedAt: val.updatedAt,
-            revision: val.revision,
-          });
-          cursor.continue();
-        } else {
-          resolve(results);
-        }
-      };
-
-      cursorReq.onerror = () => reject(cursorReq.error);
-    });
+    return request(db.transaction('documents', 'readonly').objectStore('documents').get(id));
   }
-
-  public async getDocument(id: string): Promise<DocumentRecord | undefined> {
+  async saveDocument(doc: DocumentRecord, assets: readonly AssetRecord[] = []): Promise<DocumentRecord> {
+    const checked = recordFromFiles(doc.files, doc.revision);
+    if (checked.id !== doc.id) throw new Error('文档身份与清单不一致。');
+    for (const asset of assets) if (asset.docId !== doc.id || !isAssetPath(asset.path) || !(asset.blob instanceof Blob)) throw new Error('资源路径或数据不合法。');
+    const db = await this.getDB(), tx = db.transaction(['documents', 'assets'], 'readwrite'), done = completed(tx);
+    // Attach rejection handling before awaiting requests: abort can happen at any point.
+    void done.catch(() => {});
+    try {
+      const store = tx.objectStore('documents');
+      const stored: DocumentRecord | undefined = await request(store.get(doc.id));
+      if ((stored && stored.revision !== doc.revision) || (!stored && doc.revision !== 0)) throw new RevisionConflictError();
+      const next = { ...checked, revision: (stored?.revision ?? 0) + 1 };
+      store.put(next);
+      for (const asset of assets) tx.objectStore('assets').put(asset);
+      await done;
+      return next;
+    } catch (error) { try { tx.abort(); } catch { /* Already aborted. */ } await done.catch(() => {}); throw error; }
+  }
+  async createDocument(name?: string): Promise<DocumentRecord> { return this.saveDocument(emptyDocument(name)); }
+  async getAssets(docId: string): Promise<AssetRecord[]> {
     const db = await this.getDB();
-    const tx = db.transaction('documents', 'readonly');
-    const store = tx.objectStore('documents');
-    return promisifyRequest<DocumentRecord | undefined>(store.get(id));
+    const all = await request<AssetRecord[]>(db.transaction('assets', 'readonly').objectStore('assets').getAll());
+    return all.filter(asset => asset.docId === docId);
   }
-
-  public async saveDocument(doc: DocumentRecord): Promise<void> {
+  async deleteDocument(id: string): Promise<void> {
+    const db = await this.getDB(), tx = db.transaction(['documents', 'assets', 'meta'], 'readwrite'), done = completed(tx);
+    tx.objectStore('documents').delete(id);
+    const cursor = tx.objectStore('assets').openCursor();
+    cursor.onsuccess = () => { const item = cursor.result; if (item) { if ((item.value as AssetRecord).docId === id) item.delete(); item.continue(); } };
+    const recent = tx.objectStore('meta').get('lastOpenedId');
+    recent.onsuccess = () => { if (recent.result?.value === id) tx.objectStore('meta').delete('lastOpenedId'); };
+    await done;
+  }
+  async renameDocument(id: string, name: string): Promise<DocumentRecord> {
+    const doc = await this.getDocument(id);
+    if (!doc) throw new Error('文档不存在。');
+    const manifest = { ...doc.manifest, name };
+    return this.saveDocument({ ...doc, files: { ...doc.files, 'rea.json': JSON.stringify(manifest, null, 2) } });
+  }
+  async duplicateDocument(id: string, newName?: string): Promise<DocumentRecord> {
+    const doc = await this.getDocument(id);
+    if (!doc) throw new Error('文档不存在。');
+    const manifest = { ...doc.manifest, id: `doc_${crypto.randomUUID()}`, name: newName ?? `${doc.name} 副本`, createdAt: new Date().toISOString() };
+    const copy = recordFromFiles({ ...doc.files, 'rea.json': JSON.stringify(manifest, null, 2) });
+    const assets = (await this.getAssets(id)).map(asset => ({ ...asset, docId: copy.id }));
+    return this.saveDocument(copy, assets);
+  }
+  async getMeta<T>(key: string): Promise<T | undefined> {
     const db = await this.getDB();
-    const tx = db.transaction('documents', 'readwrite');
-    const store = tx.objectStore('documents');
-    await promisifyRequest(store.put(doc));
+    const result = await request(db.transaction('meta', 'readonly').objectStore('meta').get(key));
+    return result?.value as T | undefined;
   }
-
-  public async deleteDocument(id: string): Promise<void> {
-    const db = await this.getDB();
-    const tx = db.transaction(['documents', 'assets'], 'readwrite');
-    const docStore = tx.objectStore('documents');
-    const assetStore = tx.objectStore('assets');
-
-    await promisifyRequest(docStore.delete(id));
-
-    // Delete all assets belonging to this document
-    await new Promise<void>((resolve, reject) => {
-      const cursorReq = assetStore.openCursor();
-      cursorReq.onsuccess = () => {
-        const cursor = cursorReq.result;
-        if (cursor) {
-          const key = cursor.key as [string, string];
-          if (key[0] === id) {
-            cursor.delete();
-          }
-          cursor.continue();
-        } else {
-          resolve();
-        }
-      };
-      cursorReq.onerror = () => reject(cursorReq.error);
-    });
+  async setMeta(key: string, value: unknown): Promise<void> {
+    const db = await this.getDB(), tx = db.transaction('meta', 'readwrite'), done = completed(tx);
+    tx.objectStore('meta').put({ key, value }); await done;
   }
-
-  public async duplicateDocument(id: string, newName?: string): Promise<DocumentRecord> {
-    const original = await this.getDocument(id);
-    if (!original) throw new Error(`文档不存在：${id}`);
-
-    const newId = `doc_${Math.random().toString(36).substring(2, 10)}`;
-    const now = new Date().toISOString();
-    const name = newName || `${original.name} 副本`;
-
-    const manifestCopy = JSON.parse(JSON.stringify(original.manifest));
-    manifestCopy.id = newId;
-    manifestCopy.name = name;
-    manifestCopy.createdAt = now;
-
-    const filesCopy = { ...original.files };
-    filesCopy['rea.json'] = JSON.stringify(manifestCopy, null, 2);
-
-    const newDoc: DocumentRecord = {
-      id: newId,
-      name,
-      createdAt: now,
-      updatedAt: now,
-      revision: 1,
-      manifest: manifestCopy,
-      files: filesCopy,
-    };
-
-    await this.saveDocument(newDoc);
-    return newDoc;
-  }
-
-  public async getMeta<T>(key: string): Promise<T | undefined> {
-    const db = await this.getDB();
-    const tx = db.transaction('meta', 'readonly');
-    const store = tx.objectStore('meta');
-    const res = await promisifyRequest<MetaRecord | undefined>(store.get(key));
-    return res ? res.value : undefined;
-  }
-
-  public async setMeta(key: string, value: any): Promise<void> {
-    const db = await this.getDB();
-    const tx = db.transaction('meta', 'readwrite');
-    const store = tx.objectStore('meta');
-    await promisifyRequest(store.put({ key, value }));
+  async openDocument(id: string): Promise<DocumentRecord> {
+    const doc = await this.getDocument(id);
+    if (!doc) throw new Error('文档不存在。');
+    new DocumentSession(doc.files);
+    await this.setMeta('lastOpenedId', id);
+    return doc;
   }
 }

@@ -74,7 +74,7 @@ my-app/                      # 逻辑上的文档，不对应真实磁盘目录
 ### D4. Tailwind 运行时编译 + Shadow DOM 隔离
 
 - 使用 `tailwindcss` v4 的 `compile()` API（`@tailwindcss/browser` 也基于它）：收集页面中所有 class 候选 → `build(candidates)` → 得到 CSS → 注入设计画布。
-- 主题只用默认主题（`theme.css` + `utilities.css`，是否带 `preflight.css` 见下方开放问题）。样式表通过 `?raw` 导入，不走网络。
+- 主题只用默认主题（`theme.css` + `preflight.css` + `@tailwind utilities`）。样式表通过 `?raw` 导入，不走网络。
 - 设计画布渲染在 **Shadow DOM** 中，这样（a）设计里的 Tailwind 不会和编辑器自己的界面样式互相污染；（b）导出的 class 保持原样，不需要加前缀。
 - 编辑器自身界面（M2 起）使用构建期的 `@tailwindcss/vite`，与设计画布互不影响。
 - Shadow DOM 的影响：事件的 `target` 会被重定向，命中检测使用 `event.composedPath()`；`getBoundingClientRect` 不受影响。
@@ -166,5 +166,7 @@ editor 依赖以上全部
 
 ## Open Questions
 
-- 设计画布是否带 Tailwind `preflight`（重置样式）？建议带，使画布内表现与常见 Tailwind 工程一致；这也意味着导出的代码在没有 preflight 的工程里略有差异，需要在文档里说明。
-- 页面文件名是否固定使用 `pageId`？建议固定，页面改名只改 `<Page name>`，不改文件名。
+- 已决定启用 preflight：Tailwind 4.3.3 的 `compile()` 已在浏览器和 Vitest 中通过 `?raw` 主题/重置样式验证；Vitest 需启用 CSS 转换，避免默认空样式桩。样式仅注入 Shadow DOM。导出的页面代码头部注明默认主题和 preflight。
+- 已决定页面路径固定为 `pages/<pageId>.page.tsx`。页面改名仅修改 `<Page name>`。
+- 色板从已安装的 `tailwindcss/colors` 派生；v4 使用 OKLCH，属性面板转为 8-bit sRGB。修正了旧版色板示例（v4 blue-500 对应 `#2B7FFF`）；非色板示例采用 `#123456`，避免与 indigo-50 重合。
+- 本阶段不处理旋转/倾斜坐标下的精确变换交互，该能力属于后续编辑核心；这些类仍按 Tailwind 原样渲染。

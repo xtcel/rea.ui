@@ -1,5 +1,6 @@
 import { Check, Copy, Download, FileCode2 } from 'lucide-react';
 import { useState } from 'react';
+import { exportPageCode } from '@rea/storage';
 import { IconButton } from './IconButton';
 
 export function SourcePanel({ source, filename }: { source: string; filename: string }) {
@@ -9,7 +10,7 @@ export function SourcePanel({ source, filename }: { source: string; filename: st
     catch { setCopyState('failed'); }
   }
   function download() {
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([exportPageCode(source)], { type: 'text/plain;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url; anchor.download = filename; anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);

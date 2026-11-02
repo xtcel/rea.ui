@@ -1,10 +1,12 @@
-import { ChevronDown, ChevronRight, Frame as FrameIcon, Type, PenTool, LockKeyhole, EyeOff, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Frame as FrameIcon, Type, PenTool, LockKeyhole, EyeOff, X } from 'lucide-react';
 import { useState } from 'react';
-import type { IndexedNode, InspectedDocument } from '@rea/design';
+import type { IndexedNode, InspectedPage } from '@rea/design';
 import { IconButton } from './IconButton';
 
 interface Props {
-  document: InspectedDocument;
+  pages: readonly InspectedPage[];
+  page: InspectedPage;
+  onPageAction: (type: 'add' | 'duplicate' | 'delete' | 'up' | 'down') => void;
   pageId: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -12,9 +14,8 @@ interface Props {
   onClose: () => void;
 }
 
-export function LayersPanel({ document, pageId, selectedId, onSelect, onPageChange, onClose }: Props) {
+export function LayersPanel({ pages, page, pageId, selectedId, onSelect, onPageChange, onClose, onPageAction }: Props) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const page = document.pages.find(item => item.props.id === pageId)!;
   function toggle(id: string) {
     setCollapsed(previous => {
       const next = new Set(previous);
@@ -41,7 +42,7 @@ export function LayersPanel({ document, pageId, selectedId, onSelect, onPageChan
         </button>
       </div>
       {expanded && node.children.length > 0 && <ul className="layer-tree">
-        {node.children.map(id => row(document.nodes.get(id)!, depth + 1))}
+        {node.children.map(id => row(page.nodes.get(id)!, depth + 1))}
       </ul>}
     </li>;
   }
@@ -49,17 +50,24 @@ export function LayersPanel({ document, pageId, selectedId, onSelect, onPageChan
   return <aside className="panel layers-panel" aria-label="图层面板">
     <div className="panel-heading"><h2>页面</h2><IconButton label="关闭图层面板" onClick={onClose} className="panel-close"><X size={16} /></IconButton></div>
     <nav className="page-list" aria-label="页面">
-      {document.pages.map(item => <button type="button" key={item.props.id}
-        className={`page-row ${pageId === item.props.id ? 'is-current' : ''}`}
-        aria-current={pageId === item.props.id ? 'page' : undefined}
-        onClick={() => onPageChange(item.props.id)}>
-        <span className="page-dot" /><span>{item.props.name || item.props.id}</span>
-        <span className="page-count">{item.props.viewports.length}</span>
+      {pages.map(item => <button type="button" key={item.id}
+        className={`page-row ${pageId === item.id ? 'is-current' : ''}`}
+        aria-current={pageId === item.id ? 'page' : undefined}
+        onClick={() => onPageChange(item.id)}>
+        <span className="page-dot" /><span>{item.name || item.id}</span>
+        <span className="page-count">{[...item.nodes.values()].filter(n => n.kind === 'Frame' && n.parentId === item.source.props.designId).length}</span>
       </button>)}
     </nav>
-    <div className="panel-heading layers-heading"><h2>图层</h2><span className="subtle">{[...document.nodes.values()].filter(n => n.pageId === pageId && n.kind !== 'Page').length}</span></div>
+    <div className="page-actions" aria-label="页面操作">
+      <button type="button" onClick={() => onPageAction('add')}>新增</button>
+      <button type="button" onClick={() => onPageAction('duplicate')}>复制</button>
+      <button type="button" disabled={pages.length < 2} onClick={() => onPageAction('delete')}>删除</button>
+      <button type="button" aria-label="页面上移" disabled={pages[0]?.id === pageId} onClick={() => onPageAction('up')}><ArrowUp size={12} /></button>
+      <button type="button" aria-label="页面下移" disabled={pages.at(-1)?.id === pageId} onClick={() => onPageAction('down')}><ArrowDown size={12} /></button>
+    </div>
+    <div className="panel-heading layers-heading"><h2>图层</h2><span className="subtle">{[...page.nodes.values()].filter(n => n.pageId === pageId && n.kind !== 'Page').length}</span></div>
     <div className="layers-scroll">
-      <ul className="layer-tree">{document.nodes.get(page.props.designId)!.children.map(id => row(document.nodes.get(id)!, 0))}</ul>
+      <ul className="layer-tree">{page.nodes.get(page.source.props.designId)!.children.map(id => row(page.nodes.get(id)!, 0))}</ul>
     </div>
     <div className="panel-note"><span className="source-indicator" />来自设计文档的图层</div>
   </aside>;

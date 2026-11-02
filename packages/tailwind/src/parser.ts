@@ -51,6 +51,7 @@ export function parseClassToken(raw: string): ClassToken {
   let remaining = core;
 
   // Handle leading '!' for important
+  if (remaining.endsWith('!')) { important = true; remaining = remaining.slice(0, -1); }
   if (remaining.startsWith('!')) {
     important = true;
     remaining = remaining.slice(1);
@@ -64,6 +65,7 @@ export function parseClassToken(raw: string): ClassToken {
       important,
       negative: false,
       utility: remaining,
+      value: undefined,
       isArbitraryProperty: true,
     };
   }
@@ -102,14 +104,14 @@ export function parseClassToken(raw: string): ClassToken {
   ];
 
   for (const prefix of knownPrefixes) {
-    if (remaining.startsWith(prefix + '-')) {
+    if (remaining === prefix || remaining.startsWith(prefix + '-')) {
       return {
         raw,
         variants,
         important,
         negative,
         utility: prefix,
-        value: remaining.slice(prefix.length + 1),
+        value: remaining === prefix ? undefined : remaining.slice(prefix.length + 1),
       };
     }
   }

@@ -1,332 +1,117 @@
-import { formatColorClass, normalizeHex, parseColorToken } from './colors';
+import { parseClassToken as parseForDimension } from './parser';
+import { formatColorClass, parseColorToken } from './colors';
 import type { ClassToken } from './parser';
 
-export const SPACING_SCALE: Record<number, string> = {
-  0: '0',
-  2: '0.5',
-  4: '1',
-  6: '1.5',
-  8: '2',
-  10: '2.5',
-  12: '3',
-  14: '3.5',
-  16: '4',
-  20: '5',
-  24: '6',
-  28: '7',
-  32: '8',
-  36: '9',
-  40: '10',
-  44: '11',
-  48: '12',
-  56: '14',
-  64: '16',
-  80: '20',
-  96: '24',
-  112: '28',
-  128: '32',
-  144: '36',
-  160: '40',
-  176: '44',
-  192: '48',
-  208: '52',
-  224: '56',
-  240: '60',
-  256: '64',
-  288: '72',
-  320: '80',
-  384: '96',
-};
-
-export const SCALE_TO_PX: Record<string, number> = Object.fromEntries(
-  Object.entries(SPACING_SCALE).map(([px, scale]) => [scale, Number(px)]),
+export const SPACING_SCALE: Record<number, string> = Object.fromEntries(
+  [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 288, 320, 384].map(px => [px, String(px / 4)]),
 );
+export const TEXT_SIZE_SCALE: Record<string, number> = { xs: 12, sm: 14, base: 16, lg: 18, xl: 20, '2xl': 24, '3xl': 30, '4xl': 36, '5xl': 48, '6xl': 60, '7xl': 72, '8xl': 96, '9xl': 128 };
+// Tailwind v4 renamed the old 2px sm radius to xs.
+const RADII: Record<string, number> = { none: 0, xs: 2, sm: 4, md: 6, lg: 8, xl: 12, '2xl': 16, '3xl': 24, '4xl': 32, full: 9999 };
+const dimensions = { left: 'left', top: 'top', right: 'right', bottom: 'bottom', width: 'w', height: 'h', padding: 'p', 'padding-x': 'px', 'padding-y': 'py', 'padding-top': 'pt', 'padding-right': 'pr', 'padding-bottom': 'pb', 'padding-left': 'pl' } as const;
+const corners = { rounded: 'rounded', 'rounded-tl': 'rounded-tl', 'rounded-tr': 'rounded-tr', 'rounded-bl': 'rounded-bl', 'rounded-br': 'rounded-br' } as const;
+export type PropertyGroupKey = keyof typeof dimensions | keyof typeof corners | 'position-type' | 'bg' | 'text-color' | 'text-size' | 'opacity' | 'fill' | 'stroke';
+export type PropertyInput = number | string | { hex: string; opacity?: number } | null | undefined;
+export type PropertyValue = number | string | { type: 'fixed'; value: number } | { type: 'relative'; keyword: string } | { hex: string; opacity?: number } | undefined;
+export interface PropertyGroupDef { key: PropertyGroupKey; matches: (token: ClassToken) => boolean; read: (token: ClassToken) => PropertyValue; write: (value: PropertyInput) => string | undefined }
 
-export const ROUNDED_SCALE: Record<number, string> = {
-  0: 'rounded-none',
-  2: 'rounded-sm',
-  4: 'rounded',
-  6: 'rounded-md',
-  8: 'rounded-lg',
-  12: 'rounded-xl',
-  16: 'rounded-2xl',
-  24: 'rounded-3xl',
-  9999: 'rounded-full',
-};
-
-export const TEXT_SIZE_SCALE: Record<string, number> = {
-  xs: 12,
-  sm: 14,
-  base: 16,
-  lg: 18,
-  xl: 20,
-  '2xl': 24,
-  '3xl': 30,
-  '4xl': 36,
-  '5xl': 48,
-  '6xl': 60,
-  '7xl': 72,
-  '8xl': 96,
-  '9xl': 128,
-};
-
-export const PX_TO_TEXT_SIZE: Record<number, string> = Object.fromEntries(
-  Object.entries(TEXT_SIZE_SCALE).map(([size, px]) => [px, size]),
-);
-
-export type PropertyGroupKey =
-  | 'position-type'
-  | 'left'
-  | 'top'
-  | 'right'
-  | 'bottom'
-  | 'width'
-  | 'height'
-  | 'padding'
-  | 'bg'
-  | 'text-color'
-  | 'text-size'
-  | 'rounded'
-  | 'opacity';
-
-export type PropertyValue =
-  | number
-  | string
-  | { type: 'fixed'; value: number }
-  | { type: 'relative'; keyword: string }
-  | { hex: string; opacity?: number }
-  | undefined;
-
-export interface PropertyGroupDef {
-  key: PropertyGroupKey;
-  matches: (token: ClassToken) => boolean;
-  read: (token: ClassToken) => PropertyValue;
-  write: (value: any) => string | undefined;
+function numberValue(value: PropertyInput): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('属性必须是有限数值。');
+  return Object.is(value, -0) ? 0 : value;
 }
-
-function parseDimensionToken(token: ClassToken): PropertyValue {
-  const isNeg = token.negative;
-  const sign = isNeg ? -1 : 1;
-  const val = token.value ?? '';
-
-  if (['full', 'screen', 'auto', 'fit', 'min', 'max'].includes(val)) {
-    return { type: 'relative', keyword: val };
-  }
-
-  // Arbitrary pixel value [317px] or [-13px]
-  if (val.startsWith('[') && val.endsWith(']')) {
-    const inner = val.slice(1, -1);
-    if (inner.endsWith('px')) {
-      const num = Number(inner.slice(0, -2));
-      if (Number.isFinite(num)) {
-        return { type: 'fixed', value: num * sign };
-      }
-    }
-    const num = Number(inner);
-    if (Number.isFinite(num)) {
-      return { type: 'fixed', value: num * sign };
-    }
-  }
-
-  // Scale value
-  if (SCALE_TO_PX[val] !== undefined) {
-    return { type: 'fixed', value: SCALE_TO_PX[val] * sign };
-  }
-
-  return { type: 'relative', keyword: val };
+function arbitrary(token: ClassToken): [string, string] | undefined {
+  const match = token.utility.match(/^\[([\w-]+):(.+)\]$/);
+  return match ? [match[1], match[2]] : undefined;
 }
-
-function formatDimensionToken(utility: string, px: number): string {
-  const isNeg = px < 0;
-  const absPx = Math.abs(px);
-  const scale = SPACING_SCALE[absPx];
-
-  if (scale !== undefined) {
-    return isNeg ? `-${utility}-${scale}` : `${utility}-${scale}`;
-  }
-
-  return isNeg ? `${utility}-[-${absPx}px]` : `${utility}-[${absPx}px]`;
+function dimensionValue(token: ClassToken): PropertyValue {
+  const val = arbitrary(token)?.[1] ?? token.value ?? '';
+  const inner = val.startsWith('[') ? val.slice(1, -1) : val;
+  const sign = token.negative ? -1 : 1;
+  if (/^-?\d+(\.\d+)?px$/.test(inner)) return { type: 'fixed', value: parseFloat(inner) * sign };
+  if (val === 'px') return { type: 'fixed', value: sign };
+  if (!arbitrary(token) && /^\d+(\.\d+)?$/.test(val)) return { type: 'fixed', value: Number(val) * 4 * sign };
+  if (inner === '0') return { type: 'fixed', value: 0 };
+  return { type: 'relative', keyword: inner };
 }
-
-export const PROPERTY_GROUPS: Record<PropertyGroupKey, PropertyGroupDef> = {
-  'position-type': {
-    key: 'position-type',
-    matches: (t) => ['absolute', 'relative', 'fixed', 'sticky', 'static'].includes(t.utility),
-    read: (t) => t.utility,
-    write: (val) => typeof val === 'string' ? val : undefined,
-  },
-
-  left: {
-    key: 'left',
-    matches: (t) => t.utility === 'left',
-    read: parseDimensionToken,
-    write: (val) => typeof val === 'number' ? formatDimensionToken('left', val) : undefined,
-  },
-
-  top: {
-    key: 'top',
-    matches: (t) => t.utility === 'top',
-    read: parseDimensionToken,
-    write: (val) => typeof val === 'number' ? formatDimensionToken('top', val) : undefined,
-  },
-
-  right: {
-    key: 'right',
-    matches: (t) => t.utility === 'right',
-    read: parseDimensionToken,
-    write: (val) => typeof val === 'number' ? formatDimensionToken('right', val) : undefined,
-  },
-
-  bottom: {
-    key: 'bottom',
-    matches: (t) => t.utility === 'bottom',
-    read: parseDimensionToken,
-    write: (val) => typeof val === 'number' ? formatDimensionToken('bottom', val) : undefined,
-  },
-
-  width: {
-    key: 'width',
-    matches: (t) => t.utility === 'w',
-    read: parseDimensionToken,
-    write: (val) => {
-      if (typeof val === 'number') return formatDimensionToken('w', val);
-      if (typeof val === 'string') return `w-${val}`;
-      return undefined;
+function dimensionClass(utility: string, value: PropertyInput): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'string') {
+    if (['full', 'screen', 'auto', 'fit', 'min', 'max'].includes(value)) return `${utility}-${value}`;
+    if (/^-?\d+(\.\d+)?(px|%|rem|em|vw|vh)$/.test(value)) return `${utility}-[${value}]`;
+    throw new Error('不支持的尺寸值。');
+  }
+  const px = numberValue(value), scale = SPACING_SCALE[Math.abs(px)];
+  return scale !== undefined ? `${px < 0 ? '-' : ''}${utility}-${scale}` : `${utility}-[${px}px]`;
+}
+const groups: Partial<Record<PropertyGroupKey, PropertyGroupDef>> = {};
+for (const [key, utility] of Object.entries(dimensions)) {
+  groups[key as PropertyGroupKey] = {
+    key: key as PropertyGroupKey,
+    matches: token => token.utility === utility || arbitrary(token)?.[0] === key,
+    read: dimensionValue,
+    write: value => {
+      if ((key === 'width' || key === 'height' || key.startsWith('padding')) && typeof value === 'number' && value < 0) throw new Error('尺寸和内边距不能为负数。');
+      return dimensionClass(utility, value);
     },
-  },
-
-  height: {
-    key: 'height',
-    matches: (t) => t.utility === 'h',
-    read: parseDimensionToken,
-    write: (val) => {
-      if (typeof val === 'number') return formatDimensionToken('h', val);
-      if (typeof val === 'string') return `h-${val}`;
-      return undefined;
+  };
+}
+for (const [key, utility] of Object.entries(corners)) {
+  const cssProperty = key === 'rounded' ? 'border-radius' : `border-${key.slice(8) === 'tl' ? 'top-left' : key.slice(8) === 'tr' ? 'top-right' : key.slice(8) === 'bl' ? 'bottom-left' : 'bottom-right'}-radius`;
+  groups[key as PropertyGroupKey] = {
+    key: key as PropertyGroupKey,
+    matches: token => token.utility === utility || (key === 'rounded' && token.utility.startsWith('rounded-')) || arbitrary(token)?.[0] === cssProperty,
+    read: token => {
+      if (arbitrary(token)) return dimensionValue(token);
+      if (key === 'rounded' && token.utility !== 'rounded' && !arbitrary(token)) return undefined;
+      const val = token.value ?? 'sm';
+      if (RADII[val] !== undefined) return { type: 'fixed', value: RADII[val] };
+      return dimensionValue(token);
     },
-  },
-
-  padding: {
-    key: 'padding',
-    matches: (t) => t.utility === 'p',
-    read: parseDimensionToken,
-    write: (val) => typeof val === 'number' ? formatDimensionToken('p', val) : undefined,
-  },
-
-  bg: {
-    key: 'bg',
-    matches: (t) => t.utility === 'bg',
-    read: (t) => t.value ? parseColorToken(t.value) : undefined,
-    write: (val) => {
-      if (!val) return undefined;
-      if (typeof val === 'string') return formatColorClass('bg', val);
-      if (typeof val === 'object' && val.hex) return formatColorClass('bg', val.hex, val.opacity);
-      return undefined;
+    write: value => {
+      if (value == null) return undefined;
+      const px = numberValue(value);
+      if (px < 0) throw new Error('圆角不能为负数。');
+      const named = Object.entries(RADII).find(([, n]) => n === px)?.[0];
+      return named ? `${utility}-${named}` : `${utility}-[${px}px]`;
     },
-  },
-
-  'text-color': {
-    key: 'text-color',
-    matches: (t) => {
-      if (t.utility !== 'text' || !t.value) return false;
-      // Must not be text size
-      if (TEXT_SIZE_SCALE[t.value] !== undefined) return false;
-      if (t.value.startsWith('[') && t.value.endsWith('px]')) return false;
-      return parseColorToken(t.value) !== undefined;
-    },
-    read: (t) => t.value ? parseColorToken(t.value) : undefined,
-    write: (val) => {
-      if (!val) return undefined;
-      if (typeof val === 'string') return formatColorClass('text', val);
-      if (typeof val === 'object' && val.hex) return formatColorClass('text', val.hex, val.opacity);
-      return undefined;
-    },
-  },
-
-  'text-size': {
-    key: 'text-size',
-    matches: (t) => {
-      if (t.utility !== 'text' || !t.value) return false;
-      if (TEXT_SIZE_SCALE[t.value] !== undefined) return true;
-      if (t.value.startsWith('[') && t.value.endsWith(']')) {
-        const inner = t.value.slice(1, -1);
-        return inner.endsWith('px') || Number.isFinite(Number(inner));
-      }
-      return false;
-    },
-    read: (t) => {
-      const val = t.value ?? '';
-      if (TEXT_SIZE_SCALE[val] !== undefined) {
-        return { type: 'fixed', value: TEXT_SIZE_SCALE[val] };
-      }
-      if (val.startsWith('[') && val.endsWith(']')) {
-        const inner = val.slice(1, -1);
-        const num = inner.endsWith('px') ? Number(inner.slice(0, -2)) : Number(inner);
-        if (Number.isFinite(num)) return { type: 'fixed', value: num };
-      }
-      return undefined;
-    },
-    write: (val) => {
-      if (typeof val === 'number') {
-        const named = PX_TO_TEXT_SIZE[val];
-        return named ? `text-${named}` : `text-[${val}px]`;
-      }
-      if (typeof val === 'string') return `text-${val}`;
-      return undefined;
-    },
-  },
-
-  rounded: {
-    key: 'rounded',
-    matches: (t) => t.utility === 'rounded' || t.raw === 'rounded',
-    read: (t) => {
-      if (t.raw === 'rounded') return { type: 'fixed', value: 4 };
-      const val = t.value;
-      if (val === 'none') return { type: 'fixed', value: 0 };
-      if (val === 'sm') return { type: 'fixed', value: 2 };
-      if (val === 'md') return { type: 'fixed', value: 6 };
-      if (val === 'lg') return { type: 'fixed', value: 8 };
-      if (val === 'xl') return { type: 'fixed', value: 12 };
-      if (val === '2xl') return { type: 'fixed', value: 16 };
-      if (val === '3xl') return { type: 'fixed', value: 24 };
-      if (val === 'full') return { type: 'fixed', value: 9999 };
-      if (val && val.startsWith('[') && val.endsWith('px]')) {
-        const num = Number(val.slice(1, -3));
-        if (Number.isFinite(num)) return { type: 'fixed', value: num };
-      }
-      return undefined;
-    },
-    write: (val) => {
-      if (val === undefined || val === null) return undefined;
-      if (typeof val === 'number') {
-        const scaleClass = ROUNDED_SCALE[val];
-        if (scaleClass) return scaleClass;
-        return `rounded-[${val}px]`;
-      }
-      if (typeof val === 'string') return `rounded-${val}`;
-      return undefined;
-    },
-  },
-
-  opacity: {
-    key: 'opacity',
-    matches: (t) => t.utility === 'opacity',
-    read: (t) => {
-      const val = t.value ?? '';
-      if (val.startsWith('[') && val.endsWith(']')) {
-        const num = Number(val.slice(1, -1));
-        return Number.isFinite(num) ? num : undefined;
-      }
-      const num = Number(val);
-      return Number.isFinite(num) ? num / 100 : undefined;
-    },
-    write: (val) => {
-      if (val === undefined || val === null) return undefined;
-      if (typeof val === 'number') {
-        const pct = Math.round(val <= 1 ? val * 100 : val);
-        return `opacity-${pct}`;
-      }
-      return undefined;
-    },
-  },
-};
+  };
+}
+for (const [key, utility, cssProperty] of [['bg', 'bg', 'background-color'], ['text-color', 'text', 'color'], ['fill', 'fill', 'fill'], ['stroke', 'stroke', 'stroke']] as const) {
+  groups[key] = { key,
+    matches: token => (token.utility === utility && !!parseColorToken(token.value ?? '')) || arbitrary(token)?.[0] === cssProperty,
+    read: token => parseColorToken(arbitrary(token) ? `[${arbitrary(token)![1]}]` : token.value ?? ''),
+    write: value => value == null ? undefined : typeof value === 'string' ? formatColorClass(utility, value) : typeof value === 'object' ? formatColorClass(utility, value.hex, value.opacity) : (() => { throw new Error('颜色必须为十六进制。'); })(),
+  };
+}
+groups['position-type'] = { key: 'position-type', matches: t => ['absolute', 'relative', 'fixed', 'sticky', 'static'].includes(t.utility), read: t => t.utility, write: value => {
+  if (value == null) return undefined;
+  if (typeof value !== 'string' || !['absolute', 'relative', 'fixed', 'sticky', 'static'].includes(value)) throw new Error('不支持的定位方式。');
+  return value;
+} };
+groups['text-size'] = { key: 'text-size', matches: t => t.utility === 'text' && (TEXT_SIZE_SCALE[t.value ?? ''] !== undefined || /^\[-?\d+(\.\d+)?px\]$/.test(t.value ?? '')) || arbitrary(t)?.[0] === 'font-size', read: t => {
+  const n = TEXT_SIZE_SCALE[t.value ?? ''];
+  return n !== undefined ? { type: 'fixed', value: n } : dimensionValue(t);
+}, write: value => {
+  if (value == null) return undefined;
+  const n = numberValue(value);
+  if (n <= 0) throw new Error('字号必须大于零。');
+  const named = Object.entries(TEXT_SIZE_SCALE).find(([, px]) => px === n)?.[0];
+  return named ? `text-${named}` : `text-[${n}px]`;
+} };
+groups.opacity = { key: 'opacity', matches: t => t.utility === 'opacity' || arbitrary(t)?.[0] === 'opacity', read: t => {
+  const a = arbitrary(t)?.[1], val = t.value ?? '';
+  return a !== undefined ? Number(a) : val.startsWith('[') ? Number(val.slice(1, -1)) : Number(val) / 100;
+}, write: value => {
+  if (value == null) return undefined;
+  const n = numberValue(value);
+  if (n < 0 || n > 1) throw new Error('透明度必须在 0 到 1 之间。');
+  const percent = n * 100;
+  return Number.isInteger(percent) ? `opacity-${percent}` : `opacity-[${n}]`;
+} };
+export const PROPERTY_GROUPS = groups as Record<PropertyGroupKey, PropertyGroupDef>;
+export function fixedValue(className: string, key: PropertyGroupKey): number | undefined {
+  const matches = className.trim().split(/\s+/).map(parseForDimension).filter(t => t.variants.length === 0 && PROPERTY_GROUPS[key].matches(t));
+  if (matches.length !== 1) return undefined;
+  const value = PROPERTY_GROUPS[key].read(matches[0]);
+  return value && typeof value === 'object' && 'type' in value && value.type === 'fixed' ? value.value : undefined;
+}

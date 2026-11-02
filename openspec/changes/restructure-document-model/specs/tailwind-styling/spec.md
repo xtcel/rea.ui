@@ -38,12 +38,12 @@
 - **THEN** 写入 `w-[317px]`
 
 #### Scenario: 色板颜色
-- **WHEN** 把填充设为 `#3B82F6`
+- **WHEN** 把填充设为 `#2B7FFF`
 - **THEN** 写入 `bg-blue-500`
 
 #### Scenario: 非色板颜色
-- **WHEN** 把填充设为 `#EEF2FF`
-- **THEN** 写入 `bg-[#EEF2FF]`
+- **WHEN** 把填充设为 `#123456`
+- **THEN** 写入 `bg-[#123456]`
 
 #### Scenario: 往返一致
 - **WHEN** 把一个值写成 class 后再读回

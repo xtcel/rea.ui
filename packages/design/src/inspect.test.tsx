@@ -1,45 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import type { ReactNode } from 'react';
-import { DesignDocument, Frame, Page, Text, Vector, inspectDocument } from './index';
-
-const viewports = [{ id: 'desktop', width: 800, height: 600 }];
-function documentWith(children: ReactNode) {
-  return <DesignDocument version={1} name="测试"><Page designId="page-main" id="main" viewports={viewports}>{children}</Page></DesignDocument>;
-}
-
-describe('trusted TSX inspection', () => {
-  it('indexes original elements without creating an editable copy', () => {
-    const title = <Text designId="title-main">你好</Text>;
-    const source = documentWith(<Frame designId="frame-main">{title}</Frame>);
-    const result = inspectDocument(source);
-    expect(result.source).toBe(source);
-    expect(result.nodes.get('title-main')?.element).toBe(title);
-    expect(result.nodes.get('title-main')?.parentId).toBe('frame-main');
-    expect(result.nodes.get('title-main')?.pageId).toBe('main');
+import { createElement } from 'react';
+import type { ReactElement } from 'react';
+import { Ellipse, Frame, Group, Image, Page, Rect, Text, Vector, inspectPage } from './index';
+import type { PageProps } from './index';
+const page = (children?: unknown) => createElement(Page, { id: 'home', designId: 'page-home' }, children as never);
+const valid = () => <Page id="home" designId="page-home"><Frame designId="frame-main" className="absolute"><Group designId="group-main"><Rect designId="rect-main" /><Ellipse designId="ellipse-main" /><Text designId="text-main">hello</Text><Image designId="image-main" src="assets/photo.png" /><Vector designId="vector-main" d="M0 0" viewBox="0 0 10 10" /></Group></Frame></Page>;
+describe('v2 page index', () => {
+  it('indexes all eight primitives and permits floating layers and empty pages', () => {
+    const result = inspectPage(valid());
+    expect([...result.nodes.values()].map(n => n.kind)).toEqual(['Page', 'Frame', 'Group', 'Rect', 'Ellipse', 'Text', 'Image', 'Vector']);
+    expect(inspectPage(page(<Rect designId="floating-rect" />)).nodes.size).toBe(2);
+    expect(inspectPage(page()).nodes.size).toBe(1);
   });
-
-  it('rejects duplicate identities, including identities from different levels', () => {
-    expect(() => inspectDocument(documentWith(<Frame designId="same-id"><Text designId="same-id">重复</Text></Frame>))).toThrow('重复 designId');
+  it('permits containers and strings in Text, rejects text in other containers and nested Page', () => {
+    expect(inspectPage(page(<Group designId="group-main"><Frame designId="frame-nested"><Text designId="text-main">text</Text></Frame></Group>))).toBeTruthy();
+    expect(() => inspectPage(page('text'))).toThrow('Text');
+    expect(() => inspectPage(page(<Page id="nested" designId="page-nested" />))).toThrow('嵌套');
+    expect(() => inspectPage(page(createElement(Text, { designId: 'text-main' }, <Rect designId="rect-main" /> as never)))).toThrow('字符串');
+    expect(() => inspectPage(page(createElement(Text, { designId: 'text-main' }, 3 as never)))).toThrow();
   });
-
-  it('propagates hidden and locked state to descendants', () => {
-    const result = inspectDocument(documentWith(<Frame designId="parent-node" locked hidden><Text designId="child-node">文字</Text></Frame>));
-    expect(result.nodes.get('child-node')).toMatchObject({ hidden: true, locked: true });
+  it.each([Rect, Ellipse, Image, Vector])('rejects children in leaf %s', component => {
+    const props = { designId: 'leaf-main', src: 'assets/a.png', d: 'M0 0', viewBox: '0 0 10 10' };
+    const specific = component === Image ? { src: props.src } : component === Vector ? { d: props.d, viewBox: props.viewBox } : {};
+    const node = createElement(component as typeof Rect, { designId: props.designId, ...specific, children: 'text' } as never);
+    expect(() => inspectPage(page(node))).toThrow('不能包含子节点');
   });
-
-  it('rejects unsupported source nodes and invalid parent-child relationships', () => {
-    expect(() => inspectDocument(documentWith(<Frame designId="main-frame"><div /></Frame>))).toThrow('只支持');
-    expect(() => inspectDocument(documentWith(<Text designId="loose-text">文字</Text>))).toThrow('子节点类型');
+  it('requires absolute top-level frames; nested frames can use flow layout', () => {
+    expect(() => inspectPage(page(<Frame designId="frame-main" />))).toThrow('absolute');
+    expect(inspectPage(page(<Frame designId="frame-main" className="absolute flex"><Frame designId="frame-child" /></Frame>)).nodes.get('frame-child')?.position).toBe('flow');
   });
-
-  it('rejects invalid viewports before the renderer can measure them', () => {
-    const source = <DesignDocument version={1} name="错误"><Page designId="page-main" id="main" viewports={[{ id: 'bad', width: 0, height: 600 }]}><Frame designId="main-frame" /></Page></DesignDocument>;
-    expect(() => inspectDocument(source)).toThrow('尺寸不合法');
+  it.each(['', 'a', 'Bad-ID', '12', 'x'.repeat(65)])('rejects invalid identity %s', id => {
+    expect(() => inspectPage(page(<Rect designId={id} />))).toThrow('designId');
   });
-
-  it('retains vector geometry on the source element', () => {
-    const result = inspectDocument(documentWith(<Frame designId="main-frame"><Vector designId="line-path" d="M0 0L20 20" width={20} height={20} viewBox="0 0 20 20" /></Frame>));
-    expect(result.nodes.get('line-path')?.kind).toBe('Vector');
-    expect(result.nodes.size).toBe(3);
+  it('rejects missing or duplicate identities; identities can repeat across pages', () => {
+    expect(() => inspectPage(page(createElement(Rect, {} as never)))).toThrow('designId');
+    expect(() => inspectPage(page([<Rect key="a" designId="same-id" />, <Rect key="b" designId="same-id" />]))).toThrow('重复');
+    expect(inspectPage(valid()).nodes.get('rect-main')).toBeTruthy();
+    expect(inspectPage(valid()).nodes.get('rect-main')).toBeTruthy();
+  });
+  it('inherits hidden and locked flags', () => {
+    const result = inspectPage(page(<Group designId="group-main" hidden locked><Rect designId="rect-main" /></Group>));
+    expect(result.nodes.get('rect-main')).toMatchObject({ hidden: true, locked: true });
+  });
+  it.each(['https://a.com/a.png', '/assets/a.png', 'assets/../a.png', 'assets/a%2fb.png', 'assets/a\\b.png', 'assets//a.png'])('rejects unsafe image path %s', src => {
+    expect(() => inspectPage(page(<Image designId="image-main" src={src} />))).toThrow('assets/');
+  });
+  it('rejects removed props and invalid root', () => {
+    expect(() => inspectPage(page(createElement(Rect, { designId: 'rect-main', style: {} } as never)))).toThrow('className');
+    expect(() => inspectPage(<Rect designId="rect-main" /> as ReactElement<PageProps>)).toThrow('Page');
   });
 });

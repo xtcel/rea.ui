@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     include: ['packages/**/*.test.{ts,tsx}'],
     environment: 'node',
+    css: { include: /tailwindcss/ },
   },
 });

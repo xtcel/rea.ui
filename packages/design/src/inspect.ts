@@ -1,8 +1,14 @@
 import { Children, isValidElement } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { DesignDocument, Page, primitives } from './primitives';
-import type { DesignDocumentProps, NodeKind, NodeProps, PageProps } from './primitives';
+import { Page, primitives } from './primitives';
+import type { ContainerProps, NodeKind, PageProps } from './primitives';
 
+export const PAGE_ID = /^[a-z][a-z0-9-]{0,63}$/;
+export const DESIGN_ID = /^[a-z][a-z0-9-]{1,63}$/;
+export function isAssetPath(path: string): boolean {
+  return path.startsWith('assets/') && path.length > 7 && !/[\\\u0000-\u0020?#%:]/.test(path) &&
+    path.split('/').every(part => part !== '' && part !== '.' && part !== '..');
+}
 export interface IndexedNode {
   readonly id: string;
   readonly kind: NodeKind;
@@ -12,95 +18,63 @@ export interface IndexedNode {
   readonly children: readonly string[];
   readonly hidden: boolean;
   readonly locked: boolean;
-  readonly element: ReactElement<NodeProps>;
+  readonly position: 'absolute' | 'flow';
+  readonly element: ReactElement<ContainerProps>;
 }
-
-export interface InspectedDocument {
-  readonly source: ReactElement<DesignDocumentProps>;
+export interface InspectedPage {
+  readonly id: string;
   readonly name: string;
-  readonly pages: readonly ReactElement<PageProps>[];
+  readonly source: ReactElement<PageProps>;
   readonly nodes: ReadonlyMap<string, IndexedNode>;
 }
-
 export function getNodeKind(element: ReactElement): NodeKind | undefined {
-  return (Object.entries(primitives).find(([name, component]) =>
-    name !== 'DesignDocument' && element.type === component,
-  )?.[0]) as NodeKind | undefined;
+  return Object.entries(primitives).find(([, component]) => element.type === component)?.[0] as NodeKind | undefined;
 }
-
 export function textContent(children: ReactNode): string {
-  return Children.toArray(children).map(child => {
-    if (typeof child === 'string' || typeof child === 'number') return String(child);
-    if (isValidElement<{ children?: ReactNode }>(child)) return textContent(child.props.children);
-    return '';
-  }).join('');
+  return Children.toArray(children).filter(child => typeof child === 'string').join('');
 }
-
-/** Read-only index of the trusted TSX element tree, never a second editable document. */
-export function inspectDocument(source: ReactElement<DesignDocumentProps>): InspectedDocument {
-  if (source.type !== DesignDocument || source.props.version !== 1) {
-    throw new Error('设计文档必须使用 version={1} 的 DesignDocument。');
-  }
+export function inspectPage(source: ReactElement<PageProps>): InspectedPage {
+  if (source.type !== Page || !PAGE_ID.test(source.props.id)) throw new Error('页面必须使用合法 id 的 Page 根节点。');
   const nodes = new Map<string, IndexedNode>();
-  const pages: ReactElement<PageProps>[] = [];
-  const pageIds = new Set<string>();
-
-  function visit(element: ReactElement<NodeProps>, pageId: string, parentId: string | null,
-    ancestorHidden = false, ancestorLocked = false): string {
-    const kind = getNodeKind(element);
-    if (!kind) throw new Error('当前框架只支持 Page、Frame、Text 和 Vector。');
-    const props = element.props;
-    if (!/^[a-z][a-z0-9-]{1,63}$/.test(props.designId ?? '')) {
-      throw new Error(`非法 designId：${props.designId ?? '(缺失)'}`);
-    }
+  function visit(element: ReactElement<ContainerProps>, parentId: string | null, hidden = false, locked = false): string {
+    const kind = getNodeKind(element), props = element.props;
+    if (!kind) throw new Error('不支持的设计原语。');
+    if (!DESIGN_ID.test(props.designId ?? '')) throw new Error('designId 缺失或格式非法。');
     if (nodes.has(props.designId)) throw new Error(`重复 designId：${props.designId}`);
-    const hidden = ancestorHidden || Boolean(props.hidden);
-    const locked = ancestorLocked || Boolean(props.locked);
-    const children: string[] = [];
-    const entry: IndexedNode = Object.freeze({
-      id: props.designId, kind, name: props.name || props.designId, pageId, parentId,
-      children, hidden, locked, element,
-    });
-    nodes.set(props.designId, entry);
-    Children.forEach(props.children, child => {
-      if (child === null || child === undefined || typeof child === 'boolean') return;
-      if (typeof child === 'string' || typeof child === 'number') {
-        if (kind !== 'Text' && String(child).trim()) throw new Error(`${kind} 中的文字须放入 Text。`);
-        return;
-      }
-      if (!isValidElement<NodeProps>(child)) throw new Error(`不支持的子节点：${props.designId}`);
-      const childKind = getNodeKind(child);
-      if (kind === 'Text' || kind === 'Vector' || childKind === 'Page' ||
-          (kind === 'Page' && childKind !== 'Frame')) {
-        throw new Error(`${kind} 的子节点类型不受支持。`);
-      }
-      children.push(visit(child, pageId, props.designId, hidden, locked));
-    });
-    Object.freeze(children);
-    return props.designId;
+    if (kind === 'Page' && parentId !== null) throw new Error('Page 不允许嵌套。');
+    const allowed = new Set(['designId', 'name', 'hidden', 'locked', 'className', 'children',
+      ...(kind === 'Page' ? ['id'] : kind === 'Image' ? ['src'] : kind === 'Vector' ? ['d', 'viewBox'] : [])]);
+    for (const [key, value] of Object.entries(props)) {
+      if (!allowed.has(key)) throw new Error(key === 'style' ? '样式必须使用 className。' : `不允许的属性：${key}`);
+      if (['hidden', 'locked'].includes(key) && typeof value !== 'boolean') throw new Error(`${key} 必须是布尔值。`);
+      if (['name', 'className', 'src', 'd', 'viewBox'].includes(key) && typeof value !== 'string') throw new Error(`${key} 必须是字符串。`);
+    }
+    const extra = props as unknown as Record<string, unknown>;
+    if (kind === 'Image' && (typeof extra.src !== 'string' || !isAssetPath(extra.src))) throw new Error('Image.src 必须是 assets/ 下的安全相对路径。');
+    if (kind === 'Vector') {
+      const box = typeof extra.viewBox === 'string' ? extra.viewBox.trim().split(/[ ,]+/).map(Number) : [];
+      if (typeof extra.d !== 'string' || !extra.d || box.length !== 4 || box.some(n => !Number.isFinite(n)) || box[2] <= 0 || box[3] <= 0) throw new Error('Vector 需要 d 和合法 viewBox。');
+    }
+    const absolute = (props.className ?? '').split(/\s+/).some(token => ['absolute', 'absolute!', '!absolute'].includes(token));
+    if (kind === 'Frame' && parentId === source.props.designId && !absolute) throw new Error('顶层 Frame 必须包含 absolute。');
+    const entry: IndexedNode = { id: props.designId, kind, name: props.name || props.designId, pageId: source.props.id,
+      parentId, children: [], hidden: hidden || Boolean(props.hidden), locked: locked || Boolean(props.locked),
+      position: absolute ? 'absolute' : 'flow', element };
+    nodes.set(entry.id, entry);
+    const children = Children.toArray(props.children);
+    if (['Rect', 'Ellipse', 'Image', 'Vector'].includes(kind) && children.length) throw new Error(`${kind} 不能包含子节点。`);
+    const ids: string[] = [];
+    for (const child of children) {
+      if (typeof child === 'string') {
+        if (kind !== 'Text' && child.trim()) throw new Error('文字须放入 Text。');
+      } else if (isValidElement<ContainerProps>(child)) {
+        if (kind === 'Text') throw new Error('Text 只能包含字符串。');
+        ids.push(visit(child, entry.id, entry.hidden, entry.locked));
+      } else throw new Error('只支持静态图层与字符串文本。');
+    }
+    nodes.set(entry.id, { ...entry, children: ids });
+    return entry.id;
   }
-
-  Children.forEach(source.props.children, child => {
-    if (child === null || child === undefined || typeof child === 'boolean') return;
-    if (!isValidElement<PageProps>(child) || child.type !== Page) {
-      throw new Error('当前框架的 DesignDocument 仅接受 Page。');
-    }
-    const { id, viewports } = child.props;
-    if (!id || pageIds.has(id)) throw new Error(`缺失或重复的页面 ID：${id}`);
-    pageIds.add(id);
-    if (!Array.isArray(viewports) || viewports.length === 0) throw new Error(`页面 ${id} 需要至少一个视口。`);
-    const viewportIds = new Set<string>();
-    for (const viewport of viewports) {
-      if (!viewport.id || viewportIds.has(viewport.id) ||
-          !Number.isFinite(viewport.width) || viewport.width <= 0 ||
-          !Number.isFinite(viewport.height) || viewport.height <= 0) {
-        throw new Error(`页面 ${id} 的视口 ID 或尺寸不合法。`);
-      }
-      viewportIds.add(viewport.id);
-    }
-    visit(child, id, null);
-    pages.push(child);
-  });
-  if (pages.length === 0) throw new Error('设计文档需要至少一个 Page。');
-  return Object.freeze({ source, name: source.props.name, pages: Object.freeze(pages), nodes });
+  visit(source, null);
+  return { id: source.props.id, name: source.props.name || source.props.id, source, nodes };
 }

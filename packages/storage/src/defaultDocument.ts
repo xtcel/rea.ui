@@ -33,14 +33,14 @@ export function createDefaultV2Document(): DocumentRecord {
   const now = new Date().toISOString();
   const manifest = createManifest(docId, '欢迎使用 REA UI', [
     { id: 'main', file: 'pages/main.page.tsx' },
-  ]);
+  ], now);
 
   return {
     id: docId,
     name: '欢迎使用 REA UI',
     createdAt: now,
     updatedAt: now,
-    revision: 1,
+    revision: 0,
     manifest,
     files: {
       'rea.json': JSON.stringify(manifest, null, 2),

@@ -1,7 +1,21 @@
 {
-  "name": "@rea/document", "version": "0.1.0", "private": true, "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@rea/design": "workspace:*", "@babel/parser": "8.0.10", "@babel/types": "8.0.10" },
-  "peerDependencies": { "react": "^19.3.1" },
-  "devDependencies": { "react": "19.3.1" }
+  "name": "@rea/document",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@rea/design": "workspace:*",
+    "@rea/tailwind": "workspace:*",
+    "@babel/parser": "8.0.10",
+    "@babel/types": "8.0.10"
+  },
+  "peerDependencies": {
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "react": "19.3.1"
+  }
 }

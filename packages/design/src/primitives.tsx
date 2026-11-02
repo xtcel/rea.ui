@@ -1,70 +1,27 @@
-import type { CSSProperties, ReactNode } from 'react';
-
-export interface Viewport {
-  readonly id: string;
-  readonly name?: string;
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface DesignDocumentProps {
-  version: 1;
-  name: string;
-  children: ReactNode;
-}
+import type { ReactNode } from 'react';
 
 export interface NodeProps {
   designId: string;
   name?: string;
   hidden?: boolean;
   locked?: boolean;
-  style?: CSSProperties;
-  children?: ReactNode;
-  position?: 'flow' | 'absolute';
-  x?: number;
-  y?: number;
-  width?: CSSProperties['width'];
-  height?: CSSProperties['height'];
-  'data-shape'?: 'rectangle' | 'ellipse';
+  className?: string;
 }
+export interface ContainerProps extends NodeProps { children?: ReactNode }
+export interface PageProps extends ContainerProps { id: string }
+export type FrameProps = ContainerProps;
+export interface TextProps extends NodeProps { children?: string | readonly string[] }
+export interface ImageProps extends NodeProps { src: string }
+export interface VectorProps extends NodeProps { d: string; viewBox: string }
 
-export interface PageProps extends NodeProps {
-  id: string;
-  viewports: readonly Viewport[];
-}
-
-export interface FrameProps extends NodeProps {
-  layout?: 'free' | 'flex' | 'grid';
-  direction?: 'row' | 'column';
-  gap?: number;
-  padding?: number;
-  width?: CSSProperties['width'];
-  height?: CSSProperties['height'];
-  position?: 'flow' | 'absolute';
-  x?: number;
-  y?: number;
-}
-
-export interface TextProps extends NodeProps {
-  as?: 'p' | 'h1' | 'h2' | 'h3' | 'span';
-}
-
-export interface VectorProps extends Omit<NodeProps, 'children'> {
-  d: string;
-  viewBox: string;
-  width: number;
-  height: number;
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-}
-
-// Declarative markers: renderer-dom interprets these elements; they never own DOM.
-export function DesignDocument(_props: DesignDocumentProps) { return null; }
+// Markers are interpreted by renderer-dom; page source is never executed.
 export function Page(_props: PageProps) { return null; }
 export function Frame(_props: FrameProps) { return null; }
+export function Group(_props: ContainerProps) { return null; }
+export function Rect(_props: NodeProps) { return null; }
+export function Ellipse(_props: NodeProps) { return null; }
 export function Text(_props: TextProps) { return null; }
+export function Image(_props: ImageProps) { return null; }
 export function Vector(_props: VectorProps) { return null; }
-
-export const primitives = { DesignDocument, Page, Frame, Text, Vector } as const;
-export type NodeKind = Exclude<keyof typeof primitives, 'DesignDocument'>;
+export const primitives = { Page, Frame, Group, Rect, Ellipse, Text, Image, Vector } as const;
+export type NodeKind = keyof typeof primitives;

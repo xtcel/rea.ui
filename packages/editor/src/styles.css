@@ -193,3 +193,63 @@
     *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
   }
 }
+
+@layer editor {
+  .brand-block { max-width: 32%; }
+  .document-title { max-width: 190px; }
+  .view-tabs button { padding-inline: 12px; }
+  .page-actions { display:flex; gap:4px; padding:8px 12px; border-bottom:1px solid var(--border); }
+  .page-actions button { border:0; border-radius:4px; background:var(--chrome); padding:5px 6px; font-size:11px; }
+  .page-actions button:hover:not(:disabled) { background:var(--hover); }
+  .page-actions button:disabled { opacity:.4; }
+  .page-row > span:nth-child(2) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .document-dialog { width:min(640px, calc(100vw - 28px)); max-height:calc(100dvh - 48px); padding:0; border:1px solid var(--border); border-radius:10px; color:var(--text); background:var(--surface); box-shadow:0 16px 48px #17243826; }
+  .document-dialog::backdrop { background:#17243866; }
+  .document-dialog > header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--border); }
+  .document-dialog h2 { margin:0; font-size:16px; }
+  .document-dialog-help { margin:16px 20px; color:#616775; line-height:1.7; font-size:12px; }
+  .document-create, .document-file-actions { display:flex; gap:8px; margin:12px 20px; }
+  .document-create input, .document-rename input { min-width:0; flex:1; border:1px solid var(--border); border-radius:4px; padding:8px; font:inherit; color:inherit; background:var(--chrome); }
+  .document-create input:focus-visible, .document-rename input:focus-visible, .color-text-input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .document-file-actions { flex-wrap:wrap; margin-bottom:20px; }
+  .document-dialog-error { margin:12px 20px; color:#9a322c; line-height:1.6; }
+  .document-list { border-top:1px solid var(--border); padding:0 12px; max-height:45dvh; overflow:auto; }
+  .document-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 8px; border-bottom:1px solid var(--border); }
+  .document-row:last-child { border-bottom:0; }
+  .document-open { display:flex; align-items:center; gap:12px; flex:1; min-width:0; text-align:left; border:0; border-radius:4px; background:transparent; padding:6px 0; }
+  .document-open:hover { color:var(--accent); }
+  .document-open > svg { flex-shrink:0; }
+  .document-open > span { min-width:0; }
+  .document-open strong { display:block; overflow-wrap:anywhere; font-size:13px; font-weight:600; }
+  .document-open small { display:block; margin-top:5px; color:#666d79; font-size:11px; font-variant-numeric:tabular-nums; }
+  .document-row-actions { display:flex; }
+  .document-rename { display:flex; gap:6px; width:100%; }
+  .document-delete-confirm { display:flex; align-items:center; flex-wrap:wrap; gap:8px; width:100%; color:#9a322c; font-size:12px; }
+  .document-dialog > footer { padding:12px 20px; border-top:1px solid var(--border); color:#666d79; font-size:11px; }
+  .document-dialog button:disabled { opacity:.45; }
+  .code-export { position:absolute; right:12px; bottom:12px; z-index:2; }
+  .editor-notice { max-height:40%; overflow:auto; white-space:pre-line; overflow-wrap:anywhere; }
+  .status-bar button { font:inherit; color:var(--accent); background:none; border:0; padding:0; text-decoration:underline; }
+  @media (max-width:650px) {
+    .brand-block { max-width:none; }
+    .header-actions .export-button { padding-inline:5px; }
+    .app-header { gap:5px; }
+    .view-tabs button { padding-inline:6px; gap:4px; font-size:11px; }
+    .brand-mark { width:22px; }
+    .canvas-hint { max-width:calc(100% - 32px); font-size:10px; }
+    .status-meta { max-width:65%; overflow:auto; }
+    .status-meta > span:first-child { display:inline; }
+    .status-meta > span:nth-last-child(2) { display:none; }
+    .document-dialog > header { padding:12px 16px; }
+    .document-create, .document-file-actions { margin-inline:16px; }
+  }
+}
+@layer editor {
+  .editable-field > span { flex-shrink:0; white-space:nowrap; }
+  .page-actions button { display:inline-flex; align-items:center; }
+  .document-create input, .document-rename input, .property-input, .editable-field input, .color-text-input, .text-input { caret-color:var(--accent); }
+}
+@layer editor {
+  .status-bar { color:#666d79; }
+  .page-list { max-height:30%; overflow-y:auto; flex-shrink:0; }
+}

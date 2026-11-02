@@ -106,3 +106,36 @@ describe('packages/storage - Migration & Bootstrap', () => {
     });
   });
 });
+
+describe('migration edge cases', () => {
+  it('migrates a single viewport, retains root styles, flags and special text safely', () => {
+    const one = V1_SAMPLE.replace(",\n        { id: 'mobile', name: '移动端', width: 375, height: 667 }", '').replace('从这里开始设计', '{"special < & \\" text"}').replace('style={{ background: \'#ffffff\' }}', 'locked style={{ background: \'#dce8ff\' }}');
+    const doc = migrateV1ToV2(one);
+    const page = parsePage(doc.files['pages/main.page.tsx']).page;
+    expect([...page.nodes.values()].filter(n => n.kind === 'Frame' && n.parentId === page.source.props.designId)).toHaveLength(1);
+    expect(page.nodes.get('artboard-1')!.element.props.className).toContain('bg-[#DCE8FF]');
+    expect(page.nodes.get('shape-card')!.locked).toBe(true);
+  });
+  it('rejects dynamic legacy modules and corrupted versions', () => {
+    expect(() => migrateV1ToV2(V1_SAMPLE + '\nconsole.log("run");')).toThrow();
+    expect(() => migrateV1ToV2(V1_SAMPLE.replace('version={1}', 'version={2}'))).toThrow('version');
+    expect(() => migrateV1ToV2(V1_SAMPLE.replace('x={72}', 'x={getX()}'))).toThrow('动态表达式');
+  });
+  it('keeps legacy data and never migrates it twice', async () => {
+    const { IDBFactory } = await import('fake-indexeddb');
+    const storage = new StorageService(new IDBFactory());
+    const legacy = { getItem: () => V1_SAMPLE };
+    const doc = await bootstrapStorage(storage, legacy);
+    expect(doc.name).toBe('我的应用'); expect(await storage.getMeta('migrated:v1')).toBe(true);
+    expect(legacy.getItem()).toBe(V1_SAMPLE);
+    const again = await bootstrapStorage(storage, legacy); expect(again.id).toBe(doc.id);
+    expect(await storage.listDocuments()).toHaveLength(1); await storage.close();
+  });
+  it('falls back to the sample for damaged localStorage without deleting it', async () => {
+    const { IDBFactory } = await import('fake-indexeddb');
+    const storage = new StorageService(new IDBFactory());
+    const legacy = { getItem: () => 'broken data' };
+    expect((await bootstrapStorage(storage, legacy)).name).toBe('欢迎使用 REA UI');
+    expect(legacy.getItem()).toBe('broken data'); await storage.close();
+  });
+});
