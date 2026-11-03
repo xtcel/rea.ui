@@ -1,3 +1,4 @@
+import { installExtendedGroups } from './extended';
 import { parseClassToken as parseForDimension } from './parser';
 import { formatColorClass, parseColorToken } from './colors';
 import type { ClassToken } from './parser';
@@ -10,7 +11,7 @@ export const TEXT_SIZE_SCALE: Record<string, number> = { xs: 12, sm: 14, base: 1
 const RADII: Record<string, number> = { none: 0, xs: 2, sm: 4, md: 6, lg: 8, xl: 12, '2xl': 16, '3xl': 24, '4xl': 32, full: 9999 };
 const dimensions = { left: 'left', top: 'top', right: 'right', bottom: 'bottom', width: 'w', height: 'h', padding: 'p', 'padding-x': 'px', 'padding-y': 'py', 'padding-top': 'pt', 'padding-right': 'pr', 'padding-bottom': 'pb', 'padding-left': 'pl' } as const;
 const corners = { rounded: 'rounded', 'rounded-tl': 'rounded-tl', 'rounded-tr': 'rounded-tr', 'rounded-bl': 'rounded-bl', 'rounded-br': 'rounded-br' } as const;
-export type PropertyGroupKey = keyof typeof dimensions | keyof typeof corners | 'position-type' | 'bg' | 'text-color' | 'text-size' | 'opacity' | 'fill' | 'stroke';
+export type PropertyGroupKey = keyof typeof dimensions | keyof typeof corners | 'position-type' | 'bg' | 'text-color' | 'text-size' | 'opacity' | 'fill' | 'stroke' | 'rotate' | 'border-width' | 'border-color' | 'border-style' | 'outline-width' | 'outline-color' | 'outline-style' | 'outline-offset' | 'stroke-width' | 'shadow' | 'blur' | 'backdrop-blur' | 'font-family' | 'font-weight' | 'leading' | 'tracking' | 'text-align' | 'decoration' | 'text-case' | 'display' | 'flex-direction' | 'flex-wrap' | 'gap' | 'items' | 'justify' | 'flex-size' | 'self' | 'overflow' | 'whitespace';
 export type PropertyInput = number | string | { hex: string; opacity?: number } | null | undefined;
 export type PropertyValue = number | string | { type: 'fixed'; value: number } | { type: 'relative'; keyword: string } | { hex: string; opacity?: number } | undefined;
 export interface PropertyGroupDef { key: PropertyGroupKey; matches: (token: ClassToken) => boolean; read: (token: ClassToken) => PropertyValue; write: (value: PropertyInput) => string | undefined }
@@ -47,7 +48,7 @@ const groups: Partial<Record<PropertyGroupKey, PropertyGroupDef>> = {};
 for (const [key, utility] of Object.entries(dimensions)) {
   groups[key as PropertyGroupKey] = {
     key: key as PropertyGroupKey,
-    matches: token => token.utility === utility || arbitrary(token)?.[0] === key,
+    matches: token => token.utility === utility || (key === 'padding' && ['px','py','pt','pr','pb','pl'].includes(token.utility)) || arbitrary(token)?.[0] === key,
     read: dimensionValue,
     write: value => {
       if ((key === 'width' || key === 'height' || key.startsWith('padding')) && typeof value === 'number' && value < 0) throw new Error('尺寸和内边距不能为负数。');
@@ -109,6 +110,7 @@ groups.opacity = { key: 'opacity', matches: t => t.utility === 'opacity' || arbi
   return Number.isInteger(percent) ? `opacity-${percent}` : `opacity-[${n}]`;
 } };
 export const PROPERTY_GROUPS = groups as Record<PropertyGroupKey, PropertyGroupDef>;
+installExtendedGroups(PROPERTY_GROUPS);
 export function fixedValue(className: string, key: PropertyGroupKey): number | undefined {
   const matches = className.trim().split(/\s+/).map(parseForDimension).filter(t => t.variants.length === 0 && PROPERTY_GROUPS[key].matches(t));
   if (matches.length !== 1) return undefined;

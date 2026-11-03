@@ -1,200 +1,508 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PointerEvent } from 'react';
+import type { PointerEvent, RefObject } from 'react';
 import type { InspectedPage } from '@rea/design';
-import { ShadowCanvas, hitDesignElement } from '@rea/renderer-dom';
-import { fixedValue } from '@rea/tailwind';
+import { textContent } from '@rea/design';
+import { ShadowCanvas } from '@rea/renderer-dom';
+import type { PageRendererProps } from '@rea/renderer-dom';
+import { fixedValue, textSizingPatch } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
-import type { StylePatch } from '@rea/document';
-import type { Rect } from '@rea/geometry';
+import type { SourceOperation, StylePatch, Transaction } from '@rea/document';
+import { SnapSession } from '@rea/geometry';
+import type { DistanceMark, Guide, Rect } from '@rea/geometry';
 import { Frame as FrameIcon, Maximize, Minus, Plus } from 'lucide-react';
 import { MAX_ZOOM, MIN_ZOOM, zoomAt } from '../session/camera';
 import type { Camera } from '../session/camera';
 import type { EditorTool } from '../EditorApp';
 import { IconButton } from '../ui';
-import { contentBounds, drawingRect, fitBounds, panCamera, screenToWorld, transformRect } from '../session/gestures';
+import { relativeRect, rotatedBounds, advanceGesture, contentBounds, drawingRect, fitBounds, panCamera, resizeSelection, rotatePoint, rotationDelta, scaleMember, screenToWorld } from '../session/gestures';
+import type { GesturePhase } from '../session/gestures';
+import { descendants, intersects, isContainer, marqueeIds, resolveHit, selectionRoots, toggleSelection } from '../session/selection';
+import type { SelectionState } from '../session/selection';
+import { TextEditor } from './TextEditor';
 export type ViewCommand = 'fit' | 'selection' | 'actual' | 'in' | 'out';
-
+export interface CanvasApi {
+    box: (id: string) => Rect | undefined;
+    rotation: (id: string) => number;
+    pointInParent: (point: { x: number; y: number }, parentId: string) => { x: number; y: number };
+    localBox: (id: string, parentId?: string | null) => Rect | undefined;
+    viewportCenter: () => {
+        x: number;
+        y: number;
+    };
+}
+interface Member {
+    id: string;
+    world: Rect;
+    local: Rect;
+    rotation: number;
+}
 interface Gesture {
-  pointerId: number; mode: 'pan' | 'draw' | 'move' | 'resize'; startX: number; startY: number; camera: Camera;
-  id?: string; parentId?: string; parentOrigin?: { x: number; y: number }; base?: Rect; last?: Rect; edges?: number;
+    pointerId: number;
+    phase: GesturePhase;
+    start: {
+        x: number;
+        y: number;
+    };
+    camera: Camera;
+    members: Member[];
+    bounds?: Rect;
+    parentId?: string;
+    parentOrigin?: {
+        x: number;
+        y: number;
+    };
+    last?: Rect;
+    edges?: number;
+    rotation?: number;
+    snap?: SnapSession;
+    patches: Map<string, StylePatch>;
+    additive: boolean;
+    initialIds: string[];
+    duplicate: boolean;
+    reparent?: string;
+    deep: boolean;
+    clickId?: string;
 }
 const handles = [['nw', 3], ['n', 2], ['ne', 6], ['e', 4], ['se', 12], ['s', 8], ['sw', 9], ['w', 1]] as const;
-export function Canvas({ page, selectedId, onSelect, tool, viewCommand, onZoom, onCreate, onChange, onDiagnostics, assetUrls, onMeasure }: {
-  onMeasure: (size: { width: number; height: number } | null) => void;
-  page: InspectedPage; selectedId: string | null; onSelect: (id: string | null) => void;
-  tool: EditorTool; viewCommand: { type: ViewCommand; serial: number }; onZoom: (zoom: number) => void; onCreate: (tool: EditorTool, rect: Rect, parentId?: string) => void;
-  onChange: (id: string, styles: StylePatch) => void; onDiagnostics: (diagnostics: StyleDiagnostic[]) => void; assetUrls: Readonly<Record<string, string>>;
+const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
+const rounded = (n: number) => Math.round(n * 1000) / 1000;
+export function Canvas({ page, selection, onSelection, tool, viewCommand, onZoom, onCreate, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish }: {
+    page: InspectedPage;
+    selection: SelectionState;
+    onSelection: (selection: SelectionState) => void;
+    tool: EditorTool;
+    viewCommand: {
+        type: ViewCommand;
+        serial: number;
+    };
+    onZoom: (zoom: number) => void;
+    onCreate: (tool: EditorTool, rect: Rect, parentId?: string) => void;
+    onCommit: (transaction: Transaction, ids?: string[]) => boolean;
+    onDiagnostics: (diagnostics: StyleDiagnostic[]) => void;
+    assetUrls: Readonly<Record<string, string>>;
+    onMeasure: (size: {
+        width: number;
+        height: number;
+    } | null) => void;
+    onNotice: (message: string) => void;
+    apiRef: RefObject<CanvasApi | null>;
+    editingId: string | null;
+    draft?: PageRendererProps['draft'];
+    onEdit: (id: string) => void;
+    onTextFinish: (text: string | null) => void;
 }) {
-  const container = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [camera, setCamera] = useState<Camera>({ x: 80, y: 80, zoom: 0.6 });
-  const cameras = useRef(new Map<string, Camera>());
-  const activePage = useRef(page.id);
-  const [autoFit, setAutoFit] = useState(true);
-  const [spaceHeld, setSpaceHeld] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const [measurement, setMeasurement] = useState(0);
-  const [background, setBackground] = useState('');
-  const ready = useCallback(() => {
-    setMeasurement(value => value + 1);
-    const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]');
-    if (root) setBackground(getComputedStyle(root).backgroundColor);
-  }, []);
-  const gesture = useRef<Gesture | null>(null);
-  const [preview, setPreview] = useState<{ id: string; styles: StylePatch } | null>(null);
-  const [drawing, setDrawing] = useState<Rect | null>(null);
-  const [selection, setSelection] = useState<Rect | null>(null);
-  const panMode = tool === 'hand' || spaceHeld;
-  const creating = ['board', 'rectangle', 'ellipse', 'text'].includes(tool);
-  const selected = selectedId ? page.nodes.get(selectedId) : undefined;
-  const canTransform = selected?.position === 'absolute' && !selected.locked;
-  const topNodes = [...page.nodes.values()].filter(n => n.parentId === page.source.props.designId && !n.hidden);
-  const rects = topNodes.map(n => ({ x: fixedValue(n.element.props.className ?? '', 'left') ?? 0, y: fixedValue(n.element.props.className ?? '', 'top') ?? 0, width: fixedValue(n.element.props.className ?? '', 'width') ?? 320, height: fixedValue(n.element.props.className ?? '', 'height') ?? 200 }));
-  const content = contentBounds(rects);
-  const find = (id: string) => container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector<HTMLElement>(`[data-design-id="${id}"]`);
-  function worldPoint(clientX: number, clientY: number) {
-    const bounds = container.current!.getBoundingClientRect();
-    return screenToWorld({ x: clientX - bounds.left, y: clientY - bounds.top }, camera);
-  }
-  function cancel() { gesture.current = null; setPreview(null); setDrawing(null); setDragging(false); }
-  useEffect(() => {
-    const element = container.current; if (!element) return;
-    const observer = new ResizeObserver(([entry]) => { if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height }); });
-    observer.observe(element); return () => observer.disconnect();
-  }, []);
-  useLayoutEffect(() => {
-    if (activePage.current === page.id) return;
-    cameras.current.set(activePage.current, camera);
-    activePage.current = page.id;
-    const saved = cameras.current.get(page.id);
-    setCamera(saved ?? fitBounds(content, size)); setAutoFit(!saved); cancel();
-  }, [page.id]);
-  function fit() { setCamera(fitBounds(content, size)); setAutoFit(false); }
-  function fitSelection() { if (selection) { setCamera(fitBounds(selection, size)); setAutoFit(false); } }
-  function actual() { setAutoFit(false); setCamera(previous => zoomAt(previous, 1, { x: size.width / 2, y: size.height / 2 })); }
-  useEffect(() => { if (autoFit && size.width && size.height) { setCamera(fitBounds(content, size)); setAutoFit(false); } }, [autoFit, size.width, size.height]);
-  useEffect(() => { onZoom(Math.round(camera.zoom * 100)); }, [camera.zoom, onZoom]);
-  useEffect(() => {
-    if (!viewCommand.serial) return;
-    if (viewCommand.type === 'fit') fit();
-    if (viewCommand.type === 'selection') fitSelection();
-    if (viewCommand.type === 'actual') actual();
-    if (viewCommand.type === 'in') zoom(1.2);
-    if (viewCommand.type === 'out') zoom(1 / 1.2);
-  }, [viewCommand]);
-  useLayoutEffect(() => {
-    const element = selectedId ? find(selectedId) : undefined;
-    const origin = container.current?.getBoundingClientRect();
-    if (!element || !origin || selected?.hidden || selected?.kind === 'Page') { setSelection(null); onMeasure(null); return; }
-    const bounds = element.getBoundingClientRect();
-    onMeasure({ width: bounds.width / camera.zoom, height: bounds.height / camera.zoom });
-    setSelection({ x: (bounds.left - origin.left - camera.x) / camera.zoom, y: (bounds.top - origin.top - camera.y) / camera.zoom, width: bounds.width / camera.zoom, height: bounds.height / camera.zoom });
-  }, [page, selectedId, preview, camera, measurement]);
-  function zoom(factor: number) { setAutoFit(false); setCamera(previous => zoomAt(previous, previous.zoom * factor, { x: size.width / 2, y: size.height / 2 })); }
-  useEffect(() => {
-    const element = container.current; if (!element) return;
-    function wheel(event: WheelEvent) {
-      event.preventDefault(); if (gesture.current) return; setAutoFit(false);
-      if (event.ctrlKey || event.metaKey) {
-        const rect = element!.getBoundingClientRect();
-        setCamera(previous => zoomAt(previous, previous.zoom * Math.exp(-event.deltaY * 0.01), { x: event.clientX - rect.left, y: event.clientY - rect.top }));
-      } else setCamera(previous => ({ ...previous, x: previous.x - event.deltaX, y: previous.y - event.deltaY }));
+    const container = useRef<HTMLDivElement>(null);
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    const [camera, setCamera] = useState<Camera>({ x: 80, y: 80, zoom: 0.6 });
+    const cameras = useRef(new Map<string, Camera>()), activePage = useRef(page.id);
+    const [autoFit, setAutoFit] = useState(true), [spaceHeld, setSpaceHeld] = useState(false);
+    const [phase, setPhase] = useState<GesturePhase>({ state: 'idle' }), [measurement, setMeasurement] = useState(0), [background, setBackground] = useState('');
+    const [preview, setPreview] = useState<ReadonlyMap<string, StylePatch>>(new Map());
+    const [drawing, setDrawing] = useState<Rect | null>(null), [marquee, setMarquee] = useState<Rect | null>(null);
+    const [boxes, setBoxes] = useState<Map<string, Rect>>(new Map()), [guides, setGuides] = useState<Guide[]>([]), [marks, setMarks] = useState<DistanceMark[]>([]), [dropTarget, setDropTarget] = useState<string | null>(null);
+    const gesture = useRef<Gesture | null>(null);
+    const ready = useCallback(() => { setMeasurement(value => value + 1); const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]'); if (root)
+        setBackground(getComputedStyle(root).backgroundColor); }, []);
+    const panMode = tool === 'hand' || spaceHeld, creating = ['board', 'rectangle', 'ellipse', 'text'].includes(tool);
+    const selectedIds = selection.ids.filter(id => page.nodes.has(id)), selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+    const canTransform = !!selectedIds.length && selectedIds.every(id => { const n = page.nodes.get(id)!; return n.position === 'absolute' && !n.locked; });
+    const topNodes = [...page.nodes.values()].filter(n => n.parentId === page.source.props.designId && !n.hidden);
+    const content = contentBounds(topNodes.map(n => ({ x: fixedValue(n.element.props.className ?? '', 'left') ?? 0, y: fixedValue(n.element.props.className ?? '', 'top') ?? 0, width: fixedValue(n.element.props.className ?? '', 'width') ?? 320, height: fixedValue(n.element.props.className ?? '', 'height') ?? 200 })));
+    function shadow() { return container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot; }
+    function find(id: string) { return shadow()?.querySelector<HTMLElement>(`[data-design-id="${id}"]`); }
+    function worldPoint(x: number, y: number) { const b = container.current!.getBoundingClientRect(); return screenToWorld({ x: x - b.left, y: y - b.top }, camera); }
+    function box(id: string): Rect | undefined {
+        const element = find(id);
+        if (!element)
+            return;
+        const b = element.getBoundingClientRect(), center = worldPoint(b.left + b.width / 2, b.top + b.height / 2);
+        const computed = getComputedStyle(element);
+        const width = Math.max(4,parseFloat(computed.width)||b.width/camera.zoom), height=Math.max(4,parseFloat(computed.height)||b.height/camera.zoom);
+        return { x: center.x - width / 2, y: center.y - height / 2, width, height };
     }
-    element.addEventListener('wheel', wheel, { passive: false }); return () => element.removeEventListener('wheel', wheel);
-  }, []);
-  useEffect(() => {
-    function down(event: KeyboardEvent) {
-      if (document.querySelector('[role="menu"],dialog[open]')) return;
-      if ((event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable="true"],dialog')) || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.code === 'Space' && !(event.target instanceof HTMLElement && event.target.closest('button,a'))) { event.preventDefault(); setSpaceHeld(true); }
-      if (event.shiftKey && event.code === 'Digit1') { event.preventDefault(); fit(); }
-      if (event.shiftKey && event.code === 'Digit2') { event.preventDefault(); fitSelection(); }
-      if (event.shiftKey && event.code === 'Digit0') { event.preventDefault(); actual(); }
-      if (event.key === '+' || event.key === '=') { event.preventDefault(); zoom(1.2); }
-      if (event.key === '-') { event.preventDefault(); zoom(1 / 1.2); }
-      if (event.key === 'Escape') cancel();
+    function rotationFor(id: string): number {
+        let angle=0,node=page.nodes.get(id);
+        if(draft?.element.props.designId===id){angle=fixedValue(draft.element.props.className??'','rotate')??0;node=page.nodes.get(draft.parentId);}
+        while(node){angle+=Number(preview.get(node.id)?.rotate??fixedValue(node.element.props.className??'','rotate')??0);node=node.parentId?page.nodes.get(node.parentId):undefined;}
+        return angle;
     }
-    function release(event: KeyboardEvent) { if (event.code === 'Space') setSpaceHeld(false); }
-    function blur() { setSpaceHeld(false); cancel(); }
-    window.addEventListener('keydown', down); window.addEventListener('keyup', release); window.addEventListener('blur', blur);
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', release); window.removeEventListener('blur', blur); };
-  }, [size.width, size.height, page, selection]);
-  function pointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 && event.button !== 1) return;
-    const target = event.target as HTMLElement;
-    const g: Gesture = { pointerId: event.pointerId, mode: 'pan', startX: event.clientX, startY: event.clientY, camera };
-    if (!(panMode || event.button === 1)) {
-      if (creating) {
-        g.mode = 'draw';
-        const parent = tool !== 'board' ? event.nativeEvent.composedPath().find((item): item is HTMLElement => item instanceof HTMLElement && item.dataset.designKind === 'Frame' && !item.hasAttribute('data-design-locked')) : undefined;
-        if (parent) { g.parentId = parent.dataset.designId; g.parentOrigin = worldPoint(parent.getBoundingClientRect().left, parent.getBoundingClientRect().top); }
-      } else {
-        const handle = target.closest<HTMLElement>('[data-resize-edge]');
-        const id = handle ? selectedId : hitDesignElement(event.nativeEvent)?.dataset.designId;
-        if (!id) { onSelect(null); return; }
-        const node = page.nodes.get(id); if (!node || node.locked) return;
-        onSelect(id);
-        if (node.position !== 'absolute') return;
-        const element = find(id); if (!element) return;
-        const bounds = element.getBoundingClientRect(), cls = node.element.props.className ?? '';
-        const parentBounds = element.parentElement?.getBoundingClientRect();
-        g.id = id; g.mode = handle ? 'resize' : 'move';
-        g.base = { x: fixedValue(cls, 'left') ?? (bounds.left - (parentBounds?.left ?? bounds.left)) / camera.zoom,
-          y: fixedValue(cls, 'top') ?? (bounds.top - (parentBounds?.top ?? bounds.top)) / camera.zoom,
-          width: bounds.width / camera.zoom, height: bounds.height / camera.zoom };
-        g.edges = Number(handle?.dataset.resizeEdge ?? 12);
-      }
+    function inParent(rect: Rect,parentId?: string | null): Rect {
+        const parent=parentId&&parentId!==page.source.props.designId?box(parentId):undefined;
+        const local=relativeRect(rect,parent,parentId?rotationFor(parentId):0),element=parentId?find(parentId):undefined;
+        return {...local,x:local.x-(element?.clientLeft??0),y:local.y-(element?.clientTop??0)};
     }
-    event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = g; setDragging(true); setAutoFit(false);
-  }
-  function pointerMove(event: PointerEvent<HTMLDivElement>) {
-    const g = gesture.current; if (!g || g.pointerId !== event.pointerId) return;
-    const dx = (event.clientX - g.startX) / g.camera.zoom, dy = (event.clientY - g.startY) / g.camera.zoom;
-    if (g.mode === 'pan') { setCamera(panCamera(g.camera, { x: event.clientX - g.startX, y: event.clientY - g.startY })); return; }
-    if (g.mode === 'draw') {
-      const start = worldPoint(g.startX, g.startY);
-      g.last = drawingRect(start, { x: dx, y: dy }); setDrawing(g.last);
-    } else {
-      const grid = event.shiftKey ? 8 : 1;
-      g.last = transformRect(g.base!, { x: dx, y: dy }, grid, g.mode === 'resize' ? g.edges : undefined);
-      const { x, y, width, height } = g.last;
-      setPreview({ id: g.id!, styles: g.mode === 'move' ? { left: x, top: y } : { left: x, top: y, width, height } });
+    function localBox(id: string, parentId?: string | null) {
+        const b=box(id);if(!b)return;
+        return inParent(b,parentId===undefined?page.nodes.get(id)?.parentId:parentId);
     }
-  }
-  function pointerEnd(event: PointerEvent<HTMLDivElement>, cancelled = false) {
-    const g = gesture.current; if (!g || g.pointerId !== event.pointerId) return;
-    cancel();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (cancelled) return;
-    if (g.mode === 'draw') {
-      const start = worldPoint(g.startX, g.startY);
-      const rect = g.last && g.last.width > 3 && g.last.height > 3 ? g.last : { ...start, width: tool === 'board' ? 960 : tool === 'text' ? 280 : 160, height: tool === 'board' ? 640 : tool === 'text' ? 48 : 120 };
-      onCreate(tool, { ...rect, x: rect.x - (g.parentOrigin?.x ?? 0), y: rect.y - (g.parentOrigin?.y ?? 0) }, g.parentId);
-    } else if (g.last && g.id) {
-      const [x, y, width, height] = [g.last.x, g.last.y, g.last.width, g.last.height].map(n => Math.round(n * 1000) / 1000);
-      onChange(g.id, g.mode === 'move' ? { left: x, top: y } : { left: x, top: y, width, height });
+    apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera)};
+    const selectionBox=boxes.size?contentBounds([...boxes].map(([id,rect])=>boxes.size>1?rotatedBounds(rect,rotationFor(id)):rect)):null;
+    const angle=selectedId?rotationFor(selectedId):0;
+    function cancel(restoreSelection = false) {
+        const g = gesture.current;
+        gesture.current = null;
+        g?.snap?.dispose();
+        if (g && restoreSelection && g.phase.state === 'marquee')
+            onSelection({ ...selection, ids: g.initialIds });
+        setPhase({ state: 'idle' });
+        setPreview(new Map());
+        setDrawing(null);
+        setMarquee(null);
+        setGuides([]);
+        setMarks([]);
+        setDropTarget(null);
+        if (g && container.current?.hasPointerCapture(g.pointerId))
+            container.current.releasePointerCapture(g.pointerId);
     }
-  }
-  return <div className="rea-canvas-wrap">
-    <div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${dragging && panMode ? 'rea-is-dragging' : ''}`}
-      style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove}
-      onPointerUp={event => pointerEnd(event)} onPointerCancel={event => pointerEnd(event, true)} onLostPointerCapture={cancel}>
-      <div className="rea-canvas-scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
-        <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} />
-        {topNodes.filter(n => n.kind === 'Frame').map(node => {
-          const cls = node.element.props.className ?? '';
-          return <button key={node.id} type="button" className={`rea-artboard-label ${node.id === selectedId ? 'rea-active' : ''}`} hidden={camera.zoom < .25} style={{ width: 'max-content', right: 'auto', left: fixedValue(cls, 'left') ?? 0, top: (fixedValue(cls, 'top') ?? 0) - 28 / camera.zoom, transform: `scale(${1 / camera.zoom})`, transformOrigin: 'left top' }} onPointerDown={event => event.stopPropagation()} onClick={() => { if (!node.locked) onSelect(node.id); }}>{node.name}</button>;
-        })}
-        {drawing && <div className={`rea-drawing-preview ${tool === 'ellipse' ? 'rea-ellipse-preview' : ''}`} style={{ left: drawing.x, top: drawing.y, width: drawing.width, height: drawing.height }} />}
-        {selection && !creating && !panMode && <div className="rea-selection-box" style={{ left: selection.x, top: selection.y, width: selection.width, height: selection.height, borderWidth: 1 / camera.zoom }}>
-          {canTransform && handles.map(([name, edge]) => <button key={name} type="button" data-resize-edge={edge} aria-label={`缩放手柄 ${name}`} className={`rea-resize-handle rea-handle-${name}`} style={{ width: 8 / camera.zoom, height: 8 / camera.zoom, borderWidth: 1 / camera.zoom }} />)}
-          <span className="rea-selection-size" style={{ transform: `translateX(-50%) scale(${1 / camera.zoom})` }}>{Math.round(selection.width)} × {Math.round(selection.height)}</span>
-        </div>}
-      </div>
-    </div>
-    {topNodes.length === 0 && <div className="rea-empty-canvas"><FrameIcon size={28} strokeWidth={1.3} /><p>按 F 创建画框</p><span>也可选择工具栏的画框工具，在画布上拖动</span></div>}
-    <div className="rea-canvas-hint">{panMode ? '拖动画布以平移' : creating ? '拖动绘制，也可单击创建' : '拖动移动 · 手柄缩放 · Shift 吸附到 8px 网格'}</div>
-    <div className="rea-zoom-controls" aria-label="画布缩放"><IconButton label="缩小 (-)" onClick={() => zoom(1 / 1.2)} disabled={camera.zoom <= MIN_ZOOM}><Minus size={15} /></IconButton><output aria-label="当前缩放" className="rea-zoom-value">{Math.round(camera.zoom * 100)}%</output><IconButton label="放大 (+)" onClick={() => zoom(1.2)} disabled={camera.zoom >= MAX_ZOOM}><Plus size={15} /></IconButton><span className="rea-control-divider" /><IconButton label="适应全部 (Shift+1)" onClick={fit}><Maximize size={15} /></IconButton></div>
+    useEffect(() => { const el = container.current; if (!el)
+        return; const observer = new ResizeObserver(([e]) => { if (e)
+        setSize({ width: e.contentRect.width, height: e.contentRect.height }); }); observer.observe(el); return () => { observer.disconnect(); gesture.current?.snap?.dispose(); }; }, []);
+    useLayoutEffect(() => { if (activePage.current === page.id)
+        return; cameras.current.set(activePage.current, camera); activePage.current = page.id; const saved = cameras.current.get(page.id); setCamera(saved ?? fitBounds(content, size)); setAutoFit(!saved); cancel(); }, [page.id]);
+    useLayoutEffect(() => { const next = new Map<string, Rect>(); for (const id of selectedIds) {
+        const node = page.nodes.get(id)!;
+        if (node.hidden || node.kind === 'Page')
+            continue;
+        const b = box(id);
+        if (b)
+            next.set(id, b);
+    } setBoxes(next); const bounds = next.size ? contentBounds([...next.values()]) : null; onMeasure(bounds ? { width: bounds.width, height: bounds.height } : null); }, [page, selection, preview, camera, measurement]);
+    function fit() { setCamera(fitBounds(content, size)); setAutoFit(false); }
+    function fitSelection() { if (selectionBox) {
+        setCamera(fitBounds(selectionBox, size));
+        setAutoFit(false);
+    } }
+    function actual() { setAutoFit(false); setCamera(c => zoomAt(c, 1, { x: size.width / 2, y: size.height / 2 })); }
+    function zoom(factor: number) { setAutoFit(false); setCamera(c => zoomAt(c, c.zoom * factor, { x: size.width / 2, y: size.height / 2 })); }
+    useEffect(() => { if (autoFit && size.width && size.height)
+        fit(); }, [autoFit, size.width, size.height]);
+    useEffect(() => { onZoom(Math.round(camera.zoom * 100)); }, [camera.zoom, onZoom]);
+    useEffect(() => { if (!viewCommand.serial)
+        return; ({ fit, selection: fitSelection, actual, in: () => zoom(1.2), out: () => zoom(1 / 1.2) })[viewCommand.type](); }, [viewCommand]);
+    useEffect(() => { const el = container.current; if (!el)
+        return; function wheel(e: WheelEvent) { e.preventDefault(); if (gesture.current || editingId)
+        return; setAutoFit(false); if (e.ctrlKey || e.metaKey) {
+        const r = el!.getBoundingClientRect();
+        setCamera(c => zoomAt(c, c.zoom * Math.exp(-e.deltaY * .01), { x: e.clientX - r.left, y: e.clientY - r.top }));
+    }
+    else
+        setCamera(c => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY })); } el.addEventListener('wheel', wheel, { passive: false }); return () => el.removeEventListener('wheel', wheel); }, [editingId]);
+    useEffect(() => {
+        function down(e: KeyboardEvent) {
+            if (e.defaultPrevented || editable(e.target) || document.querySelector('[role="menu"],dialog[open]'))
+                return;
+            if (e.key === 'Escape' && gesture.current) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                cancel(true);
+                return;
+            }
+            if (e.metaKey || e.ctrlKey || e.altKey)
+                return;
+            if (e.code === 'Space' && !(e.target instanceof HTMLElement && e.target.closest('button,a'))) {
+                e.preventDefault();
+                setSpaceHeld(true);
+            }
+            if (e.shiftKey && e.code === 'Digit1') {
+                e.preventDefault();
+                fit();
+            }
+            if (e.shiftKey && e.code === 'Digit2') {
+                e.preventDefault();
+                fitSelection();
+            }
+            if (e.shiftKey && e.code === 'Digit0') {
+                e.preventDefault();
+                actual();
+            }
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                zoom(1.2);
+            }
+            if (e.key === '-') {
+                e.preventDefault();
+                zoom(1 / 1.2);
+            }
+        }
+        function up(e: KeyboardEvent) { if (e.code === 'Space')
+            setSpaceHeld(false); if (e.key === 'Alt' && !gesture.current)
+            setMarks([]); }
+        function blur() { setSpaceHeld(false); cancel(true); }
+        window.addEventListener('keydown', down, true);
+        window.addEventListener('keyup', up);
+        window.addEventListener('blur', blur);
+        return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up); window.removeEventListener('blur', blur); };
+    }, [camera, size, page, selection, selectionBox]);
+    function hitIds(x: number, y: number, event?: Event): string[] {
+        const hits = shadow()?.elementsFromPoint(x, y) ?? [];
+        return [...new Set([...hits, ...(event?.composedPath() ?? [])].filter((e): e is Element => e instanceof Element && e.hasAttribute('data-design-id')).map(e => e.getAttribute('data-design-id')!))];
+    }
+    function containerAt(x: number, y: number, exclude: readonly string[] = []): string {
+        const excluded = new Set(exclude.flatMap(id => [id, ...descendants(page, id)]));
+        return hitIds(x, y).find(id => { const n = page.nodes.get(id); return isContainer(n) && !n!.locked && !n!.hidden && !excluded.has(id); }) ?? page.source.props.designId;
+    }
+    function candidates(ids: readonly string[], parentId?: string) {
+        const excluded = new Set(ids.flatMap(id => [id, ...descendants(page, id)]));
+        const parents = new Set(ids.map(id => page.nodes.get(id)?.parentId).filter((id): id is string => !!id));
+        if (parentId)
+            parents.add(parentId);
+        let nodes = [...page.nodes.values()].filter(n => !n.hidden && !excluded.has(n.id) && (parents.has(n.parentId ?? '') || parents.has(n.id)) && n.kind !== 'Page');
+        const viewport = { ...screenToWorld({ x: 0, y: 0 }, camera), width: size.width / camera.zoom, height: size.height / camera.zoom };
+        if (nodes.length > 500)
+            nodes = nodes.filter(n => { const b = box(n.id); return b && intersects(b, viewport); });
+        return nodes.map(n => {const b=box(n.id);return b?rotatedBounds(b,rotationFor(n.id)):undefined;}).filter((r): r is Rect => !!r);
+    }
+    function pointerDown(event: PointerEvent<HTMLDivElement>) {
+        if (editingId || gesture.current || (event.button !== 0 && event.button !== 1))
+            return;
+        const target = event.target as HTMLElement, handle = target.closest<HTMLElement>('[data-resize-edge]'), rotate = target.closest('[data-rotate-handle]');
+        const deep = event.metaKey || event.ctrlKey, rawHits = hitIds(event.clientX, event.clientY, event.nativeEvent);
+        const selectedHit = rawHits.flatMap(id => { const path: string[] = []; let node = page.nodes.get(id); while (node) {
+            path.push(node.id);
+            node = node.parentId ? page.nodes.get(node.parentId) : undefined;
+        } return path; }).find(id => selectedIds.includes(id) && !page.nodes.get(id)!.locked);
+        const hit = handle || rotate ? selectedIds.at(-1) ?? null : deep ? resolveHit(page, rawHits, selection.scope, true) : selectedHit ?? resolveHit(page, rawHits, selection.scope);
+        let ids = selectedIds, intent: 'panning' | 'drawing' | 'marquee' | 'moving' | 'resizing' | 'rotating' = 'panning';
+        const g: Gesture = { pointerId: event.pointerId, phase: { state: 'idle' }, start: { x: event.clientX, y: event.clientY }, camera, members: [], patches: new Map(), additive: event.shiftKey, initialIds: [...selectedIds], duplicate: event.altKey, deep };
+        if (!(panMode || event.button === 1)) {
+            if (creating) {
+                intent = 'drawing';
+                g.parentId = tool === 'board' ? page.source.props.designId : containerAt(event.clientX, event.clientY);
+                g.parentOrigin = g.parentId !== page.source.props.designId ? box(g.parentId) : undefined;
+            }
+            else if (hit) {
+                if (!handle && !rotate) {
+                    ids = event.shiftKey ? toggleSelection(page, selectedIds, hit, true) : selectedIds.includes(hit) ? selectedIds : [hit];
+                    onSelection({ ...selection, ids });
+                }
+                g.clickId = !event.shiftKey ? hit : undefined;
+                if (!ids.includes(hit))
+                    return;
+                g.members = selectionRoots(page, ids).map(id => { const world = box(id), local = localBox(id), node = page.nodes.get(id)!; return world && local ? { id, world, local, rotation: rotationFor(node.id) } : null; }).filter((m): m is Member => !!m);
+                if (g.members.some(m => page.nodes.get(m.id)!.position !== 'absolute' || page.nodes.get(m.id)!.locked)) {
+                    onNotice('位置由容器布局决定；可在图层面板中调整顺序。');
+                    return;
+                }
+                if (!g.members.length)
+                    return;
+                if (g.members.length > 1 && g.members.some(m => m.rotation) && handle) {
+                    onNotice('请分别缩放已旋转的图层。');
+                    return;
+                }
+                intent = rotate ? 'rotating' : handle ? 'resizing' : 'moving';
+                g.bounds = contentBounds(g.members.map(m => intent==='moving'?rotatedBounds(m.world,m.rotation):m.world));
+                g.edges = Number(handle?.dataset.resizeEdge ?? 12);
+            }
+            else {
+                intent = 'marquee';
+                if (!event.shiftKey)
+                    onSelection({ ...selection, ids: [] });
+            }
+        }
+        g.phase = { state: 'pressing', intent };
+        gesture.current = g;
+        setPhase(g.phase);
+        setAutoFit(false);
+        event.preventDefault();
+        event.currentTarget.focus({ preventScroll: true });
+        event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    function resizePoint(g:Gesture,rect:Rect) {
+        const base=g.bounds!,center={x:base.x+base.width/2,y:base.y+base.height/2};
+        const point={x:g.edges!&1?rect.x:g.edges!&4?rect.x+rect.width:rect.x+rect.width/2,y:g.edges!&2?rect.y:g.edges!&8?rect.y+rect.height:rect.y+rect.height/2};
+        const offset=rotatePoint({x:point.x-center.x,y:point.y-center.y},g.members.length===1?g.members[0].rotation:0);
+        return {x:center.x+offset.x,y:center.y+offset.y,width:0,height:0};
+    }
+    function pointerMove(event: PointerEvent<HTMLDivElement>) {
+        const g = gesture.current;
+        if (!g) {
+            if (event.altKey && selectionBox) {
+                const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, true);
+                const other = hit && !selectedIds.includes(hit) ? box(hit) : undefined;
+                if (other) {
+                    const distances: DistanceMark[] = [];
+                    for (const [axis, a, b, c] of [[0, selectionBox.x, other.x, selectionBox.y + selectionBox.height / 2], [0, selectionBox.x + selectionBox.width, other.x + other.width, selectionBox.y + selectionBox.height / 2], [1, selectionBox.y, other.y, selectionBox.x + selectionBox.width / 2], [1, selectionBox.y + selectionBox.height, other.y + other.height, selectionBox.x + selectionBox.width / 2]])
+                        distances.push({ axis, start: Math.min(a, b), end: Math.max(a, b), cross: c });
+                    setMarks(distances);
+                }
+                else
+                    setMarks([]);
+            }
+            else
+                setMarks([]);
+            return;
+        }
+        if (g.pointerId !== event.pointerId)
+            return;
+        g.phase = advanceGesture(g.phase, Math.hypot(event.clientX - g.start.x, event.clientY - g.start.y));
+        setPhase(g.phase);
+        if (g.phase.state === 'pressing' || g.phase.state === 'idle')
+            return;
+        const mode = g.phase.state, delta = { x: (event.clientX - g.start.x) / g.camera.zoom, y: (event.clientY - g.start.y) / g.camera.zoom };
+        if (mode === 'panning') {
+            setCamera(panCamera(g.camera, { x: event.clientX - g.start.x, y: event.clientY - g.start.y }));
+            return;
+        }
+        if (mode === 'marquee') {
+            g.last = drawingRect(worldPoint(g.start.x, g.start.y), delta);
+            setMarquee(g.last);
+            const all = new Map<string, Rect>();
+            for (const n of page.nodes.values()) {
+                const b = box(n.id);
+                if (b)
+                    all.set(n.id,rotatedBounds(b,rotationFor(n.id)));
+            }
+            const hits = marqueeIds(page, selection.scope, g.last, all, g.deep);
+            onSelection({ ...selection, ids: selectionRoots(page, [...(g.additive ? g.initialIds : []), ...hits]) });
+            return;
+        }
+        if (mode === 'rotating') {
+            const b = g.bounds!, center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+            g.rotation = rotationDelta(center, worldPoint(g.start.x, g.start.y), worldPoint(event.clientX, event.clientY), g.members[0].rotation, event.shiftKey);
+            const parentId=page.nodes.get(g.members[0].id)!.parentId;
+            g.patches = new Map([[g.members[0].id, { rotate: g.rotation-(parentId?rotationFor(parentId):0) }]]);
+            setPreview(g.patches);
+            return;
+        }
+        try {
+            const currentParent = g.members[0] ? page.nodes.get(g.members[0].id)!.parentId! : g.parentId;
+            if (!g.snap)
+                g.snap = new SnapSession(candidates(g.members.map(m => m.id), currentParent));
+            let raw: Rect;
+            if (mode === 'drawing')
+                raw = drawingRect(worldPoint(g.start.x, g.start.y), delta);
+            else if (mode === 'moving')
+                raw = { ...g.bounds!, x: g.bounds!.x + delta.x, y: g.bounds!.y + delta.y };
+            else {
+                const localDelta = g.members.length === 1 ? rotatePoint(delta, -g.members[0].rotation) : delta;
+                const minWidth = Math.max(...g.members.map(m => 4 * g.bounds!.width / m.world.width)), minHeight = Math.max(...g.members.map(m => 4 * g.bounds!.height / m.world.height));
+                raw = resizeSelection(g.bounds!, localDelta, g.edges!, event.shiftKey, event.altKey, { width: minWidth, height: minHeight });
+            }
+            const probe = mode === 'moving' ? raw : mode === 'drawing' ? { x: event.clientX >= g.start.x ? raw.x + raw.width : raw.x, y: event.clientY >= g.start.y ? raw.y + raw.height : raw.y, width: 0, height: 0 } : resizePoint(g,raw);
+            const snapped = event.metaKey || event.ctrlKey ? { dx: 0, dy: 0, guides: [], marks: [] } : g.snap.snap([probe], 6 / camera.zoom);
+            setGuides(snapped.guides);
+            setMarks(mode === 'moving' ? snapped.marks : []);
+            const grid = event.shiftKey && mode !== 'resizing' ? 8 : 1;
+            const dx = snapped.guides.some(g => g.axis === 0) || snapped.dx ? snapped.dx : Math.round(probe.x / grid) * grid - probe.x;
+            const dy = snapped.guides.some(g => g.axis === 1) || snapped.dy ? snapped.dy : Math.round(probe.y / grid) * grid - probe.y;
+            if (mode === 'moving')
+                raw = { ...raw, x: raw.x + dx, y: raw.y + dy };
+            else if (mode === 'drawing')
+                raw = drawingRect(worldPoint(g.start.x, g.start.y), { x: delta.x + dx, y: delta.y + dy });
+            else {
+                const localDelta = g.members.length === 1 ? rotatePoint(delta, -g.members[0].rotation) : delta;
+                const degrees=g.members.length===1?g.members[0].rotation:0;
+                let correction=rotatePoint({x:dx,y:dy},-degrees);
+                if(degrees&&(!(g.edges!&5)||!(g.edges!&10))){
+                    const direction=rotatePoint(g.edges!&5?{x:1,y:0}:{x:0,y:1},degrees);
+                    const proposals=snapped.guides.map(guide=>{const component=guide.axis===0?direction.x:direction.y;return Math.abs(component)>.001?(guide.axis===0?dx:dy)/component:Infinity;}).filter(Number.isFinite).sort((a,b)=>Math.abs(a)-Math.abs(b));
+                    correction=g.edges!&5?{x:proposals[0]??0,y:0}:{x:0,y:proposals[0]??0};
+                }
+                raw = resizeSelection(g.bounds!, { x: localDelta.x + (g.edges! & 5 ? correction.x : 0), y: localDelta.y + (g.edges! & 10 ? correction.y : 0) }, g.edges!, event.shiftKey, event.altKey, { width: Math.max(...g.members.map(m => 4 * g.bounds!.width / m.world.width)), height: Math.max(...g.members.map(m => 4 * g.bounds!.height / m.world.height)) });
+                const point=resizePoint(g,raw);
+                setGuides(snapped.guides.filter(guide=>Math.abs((guide.axis===0?point.x:point.y)-guide.coordinate)<.05/camera.zoom));
+            }
+            g.last = raw;
+            if (mode === 'drawing') {
+                setDrawing(raw);
+                return;
+            }
+            g.patches = new Map(g.members.map(m => {
+                let r = mode === 'moving' ? { ...m.world, x: m.world.x + raw.x - g.bounds!.x, y: m.world.y + raw.y - g.bounds!.y } : scaleMember(m.world, g.bounds!, raw);
+                if (mode === 'resizing' && m.rotation) {
+                    const shift = rotatePoint({ x: r.x + r.width / 2 - (m.world.x + m.world.width / 2), y: r.y + r.height / 2 - (m.world.y + m.world.height / 2) }, m.rotation);
+                    r = { ...r, x: m.world.x + m.world.width / 2 + shift.x - r.width / 2, y: m.world.y + m.world.height / 2 + shift.y - r.height / 2 };
+                }
+                const local=inParent(r,page.nodes.get(m.id)!.parentId);
+                let patch: StylePatch = { left: rounded(local.x), top: rounded(local.y) };
+                if (mode === 'resizing')
+                    patch = { ...patch, width: rounded(r.width), height: rounded(r.height), ...(page.nodes.get(m.id)!.kind === 'Text' ? textSizingPatch(g.edges === 1 || g.edges === 4 ? 'auto-height' : 'fixed', rounded(r.width), rounded(r.height)) : {}) };
+                return [m.id, patch];
+            }));
+            setPreview(g.patches);
+            if (mode === 'moving') {
+                g.reparent = event.metaKey || event.ctrlKey ? undefined : containerAt(event.clientX, event.clientY, g.members.map(m => m.id));
+                setDropTarget(g.reparent && g.reparent !== currentParent && g.reparent !== page.source.props.designId ? g.reparent : null);
+            }
+        }
+        catch (error) {
+            onNotice(String(error));
+            cancel(true);
+        }
+    }
+    function pointerEnd(event: PointerEvent<HTMLDivElement>, cancelled = false) {
+        const g = gesture.current;
+        if (!g || g.pointerId !== event.pointerId)
+            return;
+        const mode = g.phase.state === 'pressing' ? g.phase.intent : g.phase.state;
+        cancel(cancelled);
+        if (cancelled)
+            return;
+        if (mode === 'drawing') {
+            const start = worldPoint(g.start.x, g.start.y), rect = g.last && g.last.width > 3 && g.last.height > 3 ? g.last : { ...start, width: tool === 'board' ? 960 : tool === 'text' ? 200 : 160, height: tool === 'board' ? 640 : tool === 'text' ? 48 : 120 };
+            onCreate(tool,inParent(rect,g.parentId),g.parentId);
+            return;
+        }
+        if (!g.patches.size) {
+            if (g.phase.state === 'pressing' && g.clickId)
+                onSelection({ ...selection, ids: [g.clickId] });
+            return;
+        }
+        const ops: SourceOperation[] = [], ids: string[] = [], mapping: Record<string, string> = {};
+        if (g.duplicate && mode === 'moving') {
+            for (const m of g.members)
+                for (const id of [m.id, ...descendants(page, m.id)])
+                    mapping[id] = `node-${crypto.randomUUID().replaceAll('-', '')}`;
+            ops.push({ type: 'duplicate', pageId: page.id, ids: g.members.map(m => m.id), offset: { x: 0, y: 0 }, designIds: mapping });
+        }
+        const added = new Map<string, number>();
+        for (const [oldId, patch] of g.patches) {
+            const id = mapping[oldId] ?? oldId;
+            ids.push(id);
+            const node = page.nodes.get(oldId)!, parent = g.reparent;
+            if (mode === 'moving' && parent && parent !== node.parentId) {
+                const member = g.members.find(m => m.id === oldId)!, world={...member.world,x:member.world.x+g.last!.x-g.bounds!.x,y:member.world.y+g.last!.y-g.bounds!.y}, local=inParent(world,parent);
+                const cls = page.nodes.get(parent)!.element.props.className ?? '', flow = /(?:^|\s)(?:flex|inline-flex|grid)(?:\s|$)/.test(cls);
+                const styles: StylePatch = flow ? { 'position-type': null, left: null, top: null } : { ...patch, 'position-type': 'absolute', left: rounded(local.x), top: rounded(local.y), rotate: member.rotation-rotationFor(parent) };
+                const index = page.nodes.get(parent)!.children.length + (added.get(parent) ?? 0);
+                added.set(parent, (added.get(parent) ?? 0) + 1);
+                ops.push({ type: 'move', pageId: page.id, id, parentId: parent, index, patch: styles });
+            }
+            else
+                ops.push({ type: 'set', pageId: page.id, id, styles: patch });
+        }
+        if (onCommit({ label: mode === 'rotating' ? '旋转图层' : mode === 'resizing' ? '缩放图层' : g.duplicate ? '拖动复制' : '移动图层', ops }, ids) && g.reparent)
+            onSelection({ ...selection, ids, scope: g.reparent === page.source.props.designId ? null : g.reparent });
+    }
+    const editedElement = editingId ? find(editingId) : undefined, editedBox = editingId ? box(editingId) : undefined;
+    const editedText = editingId === draft?.element.props.designId ? textContent(draft.element.props.children) : editingId ? textContent(page.nodes.get(editingId)?.element.props.children) : '';
+    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onLostPointerCapture={() => { if (gesture.current)
+        cancel(true); }} onDoubleClick={event => { if (tool !== 'select' || panMode || editingId)
+        return; const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, event.metaKey || event.ctrlKey); if (!hit)
+        return; const node = page.nodes.get(hit)!; if (node.kind === 'Text') {
+        onSelection({ ...selection, ids: [hit] });
+        onEdit(hit);
+    }
+    else if (isContainer(node))
+        onSelection({ ...selection, scope: hit, ids: [] }); }}>
+    <div className="rea-canvas-scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+      <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics}/>
+      {topNodes.filter(n => n.kind === 'Frame').map(node => { const cls = node.element.props.className ?? ''; return <button key={node.id} type="button" className={`rea-artboard-label ${selectedIds.includes(node.id) ? 'rea-active' : ''}`} hidden={camera.zoom < .25} style={{ width: 'max-content', right: 'auto', left: fixedValue(cls, 'left') ?? 0, top: (fixedValue(cls, 'top') ?? 0) - 28 / camera.zoom, transform: `scale(${1 / camera.zoom})`, transformOrigin: 'left top' }} onPointerDown={e => e.stopPropagation()} onClick={e => { if (!node.locked)
+        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, e.shiftKey) }); }}>{node.name}</button>; })}
+      {drawing && <div className={`rea-drawing-preview ${tool === 'ellipse' ? 'rea-ellipse-preview' : ''}`} style={{ left: drawing.x, top: drawing.y, width: drawing.width, height: drawing.height }}/>}
+      {marquee && <div className="rea-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, borderWidth: 1 / camera.zoom }}/>}
+      {dropTarget && box(dropTarget) && <div className="rea-drop-container" style={{ left: box(dropTarget)!.x, top: box(dropTarget)!.y, width: box(dropTarget)!.width, height: box(dropTarget)!.height, borderWidth: 2 / camera.zoom }}/>}
+      {boxes.size > 1 && [...boxes].map(([id, b]) => <div key={id} className="rea-member-box" style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderWidth: 1 / camera.zoom, transform: `rotate(${rotationFor(id)}deg)` }}/>)}
+      {selectionBox && !creating && !panMode && !editingId && <div className="rea-selection-box" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height, borderWidth: 1 / camera.zoom, transform: `rotate(${angle}deg)` }}>
+        {canTransform && handles.map(([name, edge]) => <button key={name} type="button" data-resize-edge={edge} aria-label={`缩放手柄 ${name}`} className={`rea-resize-handle rea-handle-${name}`} style={{ width: 8 / camera.zoom, height: 8 / camera.zoom, borderWidth: 1 / camera.zoom }}/>)}
+        {canTransform && selectedId && ['nw', 'ne', 'sw', 'se'].map(name => <button key={name} type="button" className={`rea-rotate-handle rea-handle-${name}`} data-rotate-handle="" aria-label={`旋转手柄 ${name}`} style={{ width: 16 / camera.zoom, height: 16 / camera.zoom, marginLeft: (name.endsWith('w') ? -12 : 12) / camera.zoom, marginTop: (name.startsWith('n') ? -12 : 12) / camera.zoom }}/>)}
+        <span className="rea-selection-size" style={{ transform: `translateX(-50%) scale(${1 / camera.zoom})` }}>{Math.round(selectionBox.width)} × {Math.round(selectionBox.height)}</span>
+      </div>}
+      <svg className="rea-guides" aria-hidden="true">{guides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
+      {editingId && editedElement && editedBox && <TextEditor key={editingId} id={editingId} text={editedText} target={editedElement} box={editedBox} rotation={rotationFor(editingId)} onFinish={onTextFinish}/>}
+    </div></div>
+    {topNodes.length === 0 && !draft && <div className="rea-empty-canvas"><FrameIcon size={28} strokeWidth={1.3}/><p>按 F 创建画框</p><span>也可选择工具栏的画框工具，在画布上拖动</span></div>}
+    <div className="rea-canvas-hint">{panMode ? '拖动画布以平移' : creating ? '拖动绘制，也可单击创建' : selection.scope ? '已进入容器 · Esc 逐级退出' : 'Shift 多选 · 拖动框选 · ⌘/Ctrl 穿透选择'}</div>
+    <div className="rea-zoom-controls" aria-label="画布缩放"><IconButton label="缩小 (-)" onClick={() => zoom(1 / 1.2)} disabled={camera.zoom <= MIN_ZOOM}><Minus size={15}/></IconButton><output aria-label="当前缩放" className="rea-zoom-value">{Math.round(camera.zoom * 100)}%</output><IconButton label="放大 (+)" onClick={() => zoom(1.2)} disabled={camera.zoom >= MAX_ZOOM}><Plus size={15}/></IconButton><span className="rea-control-divider"/><IconButton label="适应全部 (Shift+1)" onClick={fit}><Maximize size={15}/></IconButton></div>
   </div>;
 }

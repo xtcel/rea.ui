@@ -2,7 +2,7 @@
 - [x] 1.1 为 `apps/web` 接入 `@tailwindcss/vite`，建立编辑器主题 CSS 变量
 - [x] 1.2 建立 `packages/editor/src/ui/` 控件库：`Button`、`IconButton`、`Tooltip`、`Menu`、`Tabs`、`Panel`、`Section`、`Field`、`Dialog`、`SplitPane`
 - [x] 1.3 旧样式类名前缀改为 `rea-`，迁移期内新旧样式共存；迁移完成后删除 `styles.css`
-- [ ] 1.4 验证设计画布（Shadow DOM）与编辑器界面双向隔离
+- [x] 1.4 验证设计画布（Shadow DOM）与编辑器界面双向隔离
 
 ## 2. 布局外壳
 - [x] 2.1 新的 `EditorShell`：顶栏、左栏、右栏、中央画布；移除状态栏
@@ -43,5 +43,5 @@
 - [x] 6.8 拖动、缩放、`Esc` 取消继续可用，并写入 className
 
 ## 7. 验证与文档
-- [ ] 7.1 浏览器手动验证：布局、无源码切换、检查标签、页面与图层、多画框画布、窄屏 390px
-- [ ] 7.2 更新 README 的操作表与截图，更新 `docs/architecture.md`、`docs/verification.md`
+- [x] 7.1 浏览器手动验证：布局、无源码切换、检查标签、页面与图层、多画框画布、窄屏 390px
+- [x] 7.2 更新 README 的操作表与截图，更新 `docs/architecture.md`、`docs/verification.md`

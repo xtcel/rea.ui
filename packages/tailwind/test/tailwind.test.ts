@@ -20,7 +20,7 @@ describe('Tailwind tokens and property patches', () => {
     expect(patchClassName(classes, 'left', value)).toBe(classes);
   });
   it('uses explicit spacing, text, radius and color scales', () => {
-    expect(patchClassNames('', { padding: 16, width: 317, rounded: 16, 'text-size': 24, bg: '#2b7fff' })).toBe('p-4 w-[317px] rounded-2xl text-2xl bg-blue-500');
+    expect(patchClassNames('', { padding: 16, width: 317, rounded: 16, 'text-size': 24, bg: '#2b7fff' })).toBe('p-4 w-[317px] rounded-2xl leading-[24px] text-2xl bg-blue-500');
     expect(patchClassName('', 'bg', { hex: '#123456', opacity: 50 })).toBe('bg-[#123456]/50');
     expect(readProperty('bg-[#123456]/50', 'bg')).toEqual({ hex: '#123456', opacity: 50 });
     expect(patchClassName('', 'opacity', 0.123)).toBe('opacity-[0.123]');
@@ -47,5 +47,11 @@ describe('Tailwind tokens and property patches', () => {
     expect(second.css).toContain('317px'); expect(second.css).toContain('.w-80');
     expect(second.css).not.toContain('example.com'); expect(second.diagnostics).toHaveLength(1);
     expect((await compiler.build(['w-[317px]'])).css).toBe(second.css);
+  });
+});
+
+describe('editing core styles',()=>{
+  it('round-trips rotation values and preserves variants',()=>{
+    for(const angle of [-90,0,45,73]) {const cls=patchClassName('hover:rotate-12 rotate-2','rotate',angle);expect(fixedValue(cls,'rotate')).toBe(angle);expect(cls).toContain('hover:rotate-12');}
   });
 });

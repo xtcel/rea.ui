@@ -1,5 +1,5 @@
 import { parseClassNames, splitClassNames } from './parser';
-import { PROPERTY_GROUPS } from './groups';
+import { fixedValue, PROPERTY_GROUPS } from './groups';
 import type { PropertyGroupKey, PropertyValue, PropertyInput } from './groups';
 
 /**
@@ -12,6 +12,20 @@ export function patchClassName(
 ): string {
   const group = PROPERTY_GROUPS[groupKey];
   if (!group) return className;
+  if (groupKey === 'text-size' && value != null && readProperty(className, 'leading') === undefined) {
+    const current = fixedValue(className, 'text-size') ?? 16;
+    const defaults: Record<number, number> = {12:16,14:20,16:24,18:28,20:28,24:32,30:36,36:40,48:48,60:60,72:72,96:96,128:128};
+    className = patchClassName(className, 'leading', `${defaults[current] ?? current * 1.5}px`);
+  }
+  if (groupKey.startsWith('rounded-') && value != null) {
+    const radius = fixedValue(className, 'rounded');
+    if (radius !== undefined) {
+      className = patchClassName(className, 'rounded', null);
+      for (const key of ['rounded-tl', 'rounded-tr', 'rounded-br', 'rounded-bl'] as const) {
+        if (key !== groupKey) className = patchClassName(className, key, radius);
+      }
+    }
+  }
 
   const rawTokens = splitClassNames(className);
   const parsedTokens = parseClassNames(className);
@@ -89,6 +103,7 @@ export function readProperty(
   const matches = parsed.filter((t) => t.variants.length === 0 && group.matches(t));
 
   if (matches.length === 0) return undefined;
+  if (groupKey === 'decoration' && matches.length > 1 && !matches.some(t => t.raw === 'no-underline')) return matches.map(t => t.raw).sort().join(' ');
   if (matches.length > 1) return 'conflict';
 
   return group.read(matches[0]);

@@ -70,3 +70,6 @@ export function useStoredWidth(key: string, fallback: number): [number, (value: 
   return [width, value => { setWidth(value); try { localStorage.setItem(key, String(value)); } catch { /* Layout remains usable without storage. */ } }];
 }
 export const shellWidths = (left: number, right: number) => ({ '--rea-left': `${left}px`, '--rea-right': `${right}px` }) as CSSProperties;
+export * from './NumberField';
+export * from './Select';
+export * from './ColorField';

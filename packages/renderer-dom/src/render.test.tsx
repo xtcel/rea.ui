@@ -23,3 +23,14 @@ describe('className rendering', () => {
     expect(renderToStaticMarkup(<PageRenderer page={page} />)).not.toContain('src="assets/');
   });
 });
+
+it('previews multiple nodes, shows Alt-drag originals and hides only the text being edited',()=>{
+  const preview=new Map([['rect-main',{left:40}],['ellipse-main',{width:80}]]);
+  const html=renderToStaticMarkup(<PageRenderer page={page} preview={preview} duplicatePreview editingId="text-main"/>);
+  expect(html).toContain('original-rect-main');expect(html).toContain('original-ellipse-main');expect(html).toContain('left-10');expect(html).toContain('style="visibility:hidden"');
+  expect(renderToStaticMarkup(<PageRenderer page={page}/>)).not.toContain('original-');
+});
+it('renders an uncommitted new text draft inside its container',()=>{
+  const html=renderToStaticMarkup(<PageRenderer page={page} draft={{parentId:'group-main',element:<Text designId="draft-text" className="w-fit whitespace-nowrap">draft</Text>}} editingId="draft-text"/>);
+  expect(html).toContain('draft-text');expect(html).toContain('draft</p>');expect(renderToStaticMarkup(<PageRenderer page={page}/>)).not.toContain('draft-text');
+});

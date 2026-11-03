@@ -5,13 +5,21 @@ import { parsePage } from './parsePage';
 import type { ParsedPage } from './parsePage';
 import { parseManifest, newPageSource } from './manifest';
 import type { DocumentManifest } from './manifest';
+import { applyStructure } from './structure';
+import type { NodeRect } from './structure';
+import { textContent } from '@rea/design';
 
 export type StylePatch = Partial<Record<PropertyGroupKey, PropertyInput>>;
 export type SourceOperation =
   | { type: 'set'; pageId: string; id: string; props?: Record<string, unknown>; styles?: StylePatch }
+  | { type: 'reorderChildren'; pageId: string; id: string; ids: string[] }
   | { type: 'text'; pageId: string; id: string; text: string }
   | { type: 'insert'; pageId: string; parentId: string | null; fragment: string }
   | { type: 'delete'; pageId: string; id: string }
+  | { type: 'move'; pageId: string; id: string; parentId: string | null; index: number; patch?: StylePatch }
+  | { type: 'wrap'; pageId: string; ids: string[]; kind: 'Group' | 'Frame'; designId: string; bounds?: Record<string, NodeRect> }
+  | { type: 'unwrap'; pageId: string; id: string; origin?: { x: number; y: number }; bounds?: Record<string, NodeRect> }
+  | { type: 'duplicate'; pageId: string; ids: string[]; offset?: { x: number; y: number }; designIds?: Record<string, string> }
   | { type: 'addPage'; id: string; name?: string }
   | { type: 'renamePage'; pageId: string; name: string }
   | { type: 'duplicatePage'; pageId: string; id: string; name?: string }
@@ -53,8 +61,17 @@ function attributes(source: string, path: string, id: string, props: Record<stri
   }
   return code;
 }
-function applyPageOperation(parsed: ParsedPage, op: Extract<SourceOperation, { type: 'set' | 'text' | 'insert' | 'delete' }>): string {
+function applyPageOperation(parsed: ParsedPage, op: Extract<SourceOperation, { type: 'set' | 'text' | 'insert' | 'delete' | 'move' | 'wrap' | 'unwrap' | 'duplicate' | 'reorderChildren' }>): string {
   let code = parsed.code;
+  if (op.type === 'move' || op.type === 'wrap' || op.type === 'unwrap' || op.type === 'duplicate') return applyStructure(parsed, op);
+  if (op.type === 'reorderChildren') {
+    writable(parsed, op.id);
+    const children = parsed.page.nodes.get(op.id)!.children;
+    if (op.ids.length !== children.length || new Set(op.ids).size !== children.length || op.ids.some(id => !children.includes(id))) throw new Error('子节点排序必须完整且不重复。');
+    const fragments = new Map(children.map(id => { const node = writable(parsed, id); return [id, code.slice(...range(node))]; }));
+    for (let i = children.length - 1; i >= 0; i--) code = replace(code, parsed.syntax.get(children[i])!, fragments.get(op.ids[i])!);
+    return code;
+  }
   if (op.type === 'set') {
     const entry = parsed.page.nodes.get(op.id);
     if (!entry) throw new Error(`节点不存在：${op.id}`);
@@ -95,6 +112,7 @@ function applyPageOperation(parsed: ParsedPage, op: Extract<SourceOperation, { t
     return replace(code, node, '');
   }
   if (parsed.page.nodes.get(op.id)?.kind !== 'Text') throw new Error('目标不是可编辑文本。');
+  if (textContent(parsed.page.nodes.get(op.id)!.element.props.children) === op.text) return code;
   if (!node.closingElement) return replace(code, node, code.slice(...range(node.openingElement)).replace(/\/>$/, `>{${JSON.stringify(op.text)}}</${(node.openingElement.name as T.JSXIdentifier).name}>`));
   return code.slice(0, range(node.openingElement)[1]) + `{${JSON.stringify(op.text)}}` + code.slice(range(node.closingElement)[0]);
 }

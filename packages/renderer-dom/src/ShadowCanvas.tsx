@@ -18,20 +18,21 @@ export function ShadowCanvas(props: PageRendererProps & { onReady?: () => void; 
     const nodes = inspectPage(props.page).nodes;
     const classes = [...nodes.values()].map(node => node.element.props.className ?? '');
     classes.push('rounded-full');
+    if (props.draft) classes.push(props.draft.element.props.className ?? '');
     if (props.preview) {
-      const node = nodes.get(props.preview.id);
-      if (node) classes.push(patchClassNames(node.element.props.className ?? '', props.preview.styles));
+      const patches = 'get' in props.preview ? props.preview : new Map([[props.preview.id, props.preview.styles]]);
+      for (const [id, patch] of patches) { const node = nodes.get(id); if (node) classes.push(patchClassNames(node.element.props.className ?? '', patch)); }
     }
     void compiler.current.build(classes).then(result => {
       if (active) { setCss(result.css); props.onDiagnostics?.(result.diagnostics); }
     }).catch(error => { if (active) props.onDiagnostics?.([{ candidate: '', message: `样式编译失败：${String(error)}` }]); });
     return () => { active = false; };
-  }, [props.page, props.preview, props.onDiagnostics]);
+  }, [props.page, props.preview, props.draft, props.onDiagnostics]);
   useLayoutEffect(() => { if (css) props.onReady?.(); }, [css, props.page, props.preview, props.onReady]);
   const resolvedCss = css.replace(/url\((['"]?)(assets\/[^)'"\s]+)\1\)/g, (_, _quote: string, path: string) => `url("${props.assetUrls?.[path] ?? 'data:,'}")`);
   return <div ref={host} data-shadow-canvas="">{root && createPortal(<>
     <style>{resolvedCss}</style>
-    <style>{`:host { display:block; font:16px/1.5 system-ui,sans-serif; color:#111; } [data-page-origin] { position:relative; width:0; height:0; } @layer base { [data-design-kind="Group"] { position:relative; } [data-design-kind="Text"] { white-space:pre-wrap; } } [data-design-locked] { pointer-events:none; }`}</style>
+    <style>{`:host { display:block; font:16px/1.5 system-ui,sans-serif; color:#111; } [data-page-origin] { position:relative; width:0; height:0; } @layer base { [data-design-kind="Group"], [data-design-kind="Frame"] { position:relative; } [data-design-kind="Text"] { white-space:pre-wrap; } } [data-design-locked] { pointer-events:none; }`}</style>
     <PageRenderer {...props} />
   </>, root)}</div>;
 }

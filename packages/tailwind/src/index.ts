@@ -4,3 +4,6 @@ export * from './patch';
 export * from './colors';
 export * from './filter';
 export * from './compiler';
+export * from './extended';
+export * from './composites';
+export * from './textSizing';

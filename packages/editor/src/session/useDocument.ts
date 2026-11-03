@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DocumentSession } from '@rea/document';
 import type { SourceOperation, Transaction } from '@rea/document';
 import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2 } from '@rea/storage';
+import { withDocumentMetadata } from './metadata';
 import type { AssetRecord, DocumentRecord, SaveStatus } from '@rea/storage';
 
 export function useDocument() {
@@ -89,7 +90,7 @@ export function useDocument() {
     if (record.current?.id === id && latest.current) {
       const doc = await storage.openDocument(id);
       // Renaming metadata must preserve selection, cameras and undo history.
-      const session = new DocumentSession({ ...latest.current.files, 'rea.json': doc.files['rea.json'] }, latest.current.rev, latest.current.past, latest.current.future);
+      const session = withDocumentMetadata(latest.current, doc.files['rea.json']);
       record.current = doc; latest.current = session; setCurrent(session);
       saver.current?.dispose(); saver.current = new AutoSaver(doc, next => storage.saveDocument(next), status);
     }
