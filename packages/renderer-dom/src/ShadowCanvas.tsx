@@ -15,7 +15,7 @@ export function ShadowCanvas(props: PageRendererProps & { onReady?: () => void; 
   useEffect(() => {
     let active = true;
     compiler.current ??= new TailwindCompiler();
-    const nodes = inspectPage(props.page).nodes;
+    const nodes = inspectPage(props.page, true).nodes;
     const classes = [...nodes.values()].map(node => node.element.props.className ?? '');
     classes.push('rounded-full');
     if (props.draft) classes.push(props.draft.element.props.className ?? '');

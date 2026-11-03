@@ -110,6 +110,14 @@ export class StorageService {
     const db = await this.getDB(), tx = db.transaction('meta', 'readwrite'), done = completed(tx);
     tx.objectStore('meta').put({ key, value }); await done;
   }
+  async updateMeta<T>(key:string,update:(previous:T|undefined)=>T):Promise<T>{
+    const db=await this.getDB(),tx=db.transaction('meta','readwrite'),done=completed(tx);void done.catch(()=>{});
+    try{const stored=await request<{value:T}|undefined>(tx.objectStore('meta').get(key)),value=update(stored?.value);tx.objectStore('meta').put({key,value});await done;return value;}catch(error){try{tx.abort();}catch{}await done.catch(()=>{});throw error;}
+  }
+  async putAssets(docId:string,assets:readonly AssetRecord[]):Promise<void>{
+    for(const asset of assets)if(asset.docId!==docId||!isAssetPath(asset.path)||!(asset.blob instanceof Blob))throw new Error('资源路径或数据不合法。');
+    const db=await this.getDB(),tx=db.transaction('assets','readwrite'),done=completed(tx);for(const asset of assets)tx.objectStore('assets').put(asset);await done;
+  }
   async openDocument(id: string): Promise<DocumentRecord> {
     const doc = await this.getDocument(id);
     if (!doc) throw new Error('文档不存在。');

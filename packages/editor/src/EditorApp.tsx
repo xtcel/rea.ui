@@ -1,9 +1,11 @@
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X } from 'lucide-react';
+import { cloneElement, createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X, Minus, MoveUpRight, Triangle, Star, Hexagon, PenTool, Pencil } from 'lucide-react';
 import type { Rect } from '@rea/geometry';
 import { Text } from '@rea/design';
+import { sourceElement, extractComponent, detachInstance, placementStyles } from '@rea/document';
 import type { SourceOperation, Transaction, StylePatch, DocumentSession } from '@rea/document';
-import { exportPageCode } from '@rea/storage';
+import type { PathData, LineProps } from '@rea/design';
+import { exportPageCode, libraryVersions } from '@rea/storage';
 import { fixedValue, patchClassNames, writeTextSizing } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
 import { Canvas } from './components/Canvas';
@@ -18,10 +20,14 @@ import { Button, Dialog, IconButton, InlineName, Menu, Panel, Tabs } from './ui'
 import { useDocument } from './session/useDocument';
 import type { DocumentModel } from './session/useDocument';
 import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots, toggleSelection } from './session/selection';
-import type { SelectionState } from './session/selection';
-import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard } from './session/clipboard';
+import type { SelectionMode, SelectionState } from './session/selection';
+import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard, rewriteClipboardAssets, clipboardAssetPaths } from './session/clipboard';
 import { saveFile } from './platform';
-export type EditorTool = 'select' | 'hand' | 'board' | 'rectangle' | 'ellipse' | 'text';
+import { ComponentAssets } from './components/ComponentAssets';
+import { ComponentInspector } from './components/ComponentInspector';
+export type EditorTool = 'select' | 'hand' | 'board' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'arrow' | 'triangle' | 'polygon' | 'star' | 'pen' | 'pencil';
+export interface CreationGeometry { path?: PathData; endpoints?: Pick<LineProps,'x1'|'y1'|'x2'|'y2'> }
+const shapeTools = ['rectangle','ellipse','line','arrow','triangle','polygon','star'] as const;
 const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().replaceAll('-', '')}`;
 export function EditorApp() {
   const model = useDocument();
@@ -34,31 +40,45 @@ export function EditorWorkspace({ model, onHome }: { model: DocumentModel; onHom
 function DocumentEditor({ model, current, onHome }: { model: DocumentModel; current: DocumentSession; onHome?: () => void }) {
   const pages = [...current.pages.values()].map(parsed => parsed.page);
   const [pageId, setPageId] = useState(pages[0].id), [selection, setSelection] = useState<SelectionState>(() => emptySelection(pages[0].id));
+  const [editingComponent,setEditingComponent]=useState<string|null>(null),[leftTab,setLeftTab]=useState('layers'),[createComponentDialog,setCreateComponentDialog]=useState(false),[componentName,setComponentName]=useState('新组件');
   const canvas = useRef<CanvasApi | null>(null);
+  const sessionRef=useRef(current);sessionRef.current=current;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [textDraft, setTextDraft] = useState<{ id: string; parentId: string; className: string } | null>(null);
-  const [tool, setTool] = useState<EditorTool>('select'), [shape, setShape] = useState<'rectangle' | 'ellipse'>('rectangle');
+  const [tool, setTool] = useState<EditorTool>('select'), [shape, setShape] = useState<EditorTool>('rectangle');
   const [viewCommand, setViewCommand] = useState<{ type: ViewCommand; serial: number }>({ type: 'fit', serial: 0 });
   const [zoom, setZoom] = useState(100), [panel, setPanel] = useState<'layers' | 'inspector' | null>(null);
   const [showDocuments, setShowDocuments] = useState(false), [shortcuts, setShortcuts] = useState(false), [renaming, setRenaming] = useState(false);
   const [tab, setTab] = useState('design');
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('direct');
   const input = useRef<HTMLInputElement>(null);
   const measure = useCallback(() => {}, []);
   const [warnings, setWarnings] = useState('');
   const diagnostics = useCallback((items: StyleDiagnostic[]) => setWarnings(items.map(item => item.message).join('\n')), []);
-  const page = pages.find(item => item.id === pageId) ?? pages[0], parsed = current.pages.get(page.id)!;
+  const componentParsed=editingComponent?current.componentPages.get(editingComponent):undefined;
+  const page = componentParsed?.page??pages.find(item => item.id === pageId) ?? pages[0], parsed = componentParsed??current.pages.get(page.id)!;
   const selectedIds = selection.pageId === page.id ? selection.ids.filter(id => page.nodes.has(id)) : [];
   const selected = selectedIds.length === 1 ? page.nodes.get(selectedIds[0]) : undefined;
   function setSelectedId(id: string | null) { setSelection({ ...selection, pageId: page.id, ids: id ? [id] : [] }); }
   const propertyPanel = usePropertyPanel(page, selectedIds, model.transact);
   const canvasPage = useMemo(() => {
     if (!propertyPanel.preview) return page;
-    try { return current.commit(propertyPanel.preview).pages.get(page.id)!.page; }
+    try { const next=current.commit(propertyPanel.preview);return (editingComponent?next.componentPages.get(editingComponent):next.pages.get(page.id))!.page; }
     catch { return page; }
-  }, [current, page, propertyPanel.preview]);
+  }, [current, page, propertyPanel.preview,editingComponent]);
   useEffect(() => { if (!pages.some(p => p.id === pageId)) { setPageId(pages[0].id); setSelection(emptySelection(pages[0].id)); } }, [current, pageId]);
-  function changePage(id: string) { if (id !== page.id) { setPageId(id); setSelection(emptySelection(id)); setEditingId(null); setTextDraft(null); } }
-  function chooseTool(next: EditorTool) { setTool(next); if (next === 'rectangle' || next === 'ellipse') setShape(next); }
+  function changePage(id: string) { if (id !== page.id) { setEditingComponent(null);setPageId(id); setSelection(emptySelection(id)); setEditingId(null); setTextDraft(null); } }
+  function editComponent(key:string){const parsed=current.componentPages.get(key);if(!parsed)return;setEditingComponent(key);setSelection({...emptySelection(parsed.page.id),scope:'component-editor-surface'});setEditingId(null);setTextDraft(null);setTool('select');setLeftTab('layers');}
+  useEffect(()=>{if(editingComponent&&!current.components.has(editingComponent)){setEditingComponent(null);setSelection(emptySelection(pageId));}},[current,editingComponent,pageId]);
+  useEffect(()=>{void model.storage.getMeta<{documentId:string;key:string}>('component-editor-request').then(request=>{if(request?.documentId===current.manifest.id&&current.components.has(request.key)){editComponent(request.key);void model.storage.setMeta('component-editor-request',null);}}).catch(()=>{});},[current.manifest.id]);
+  useEffect(()=>{void model.storage.getMeta<{documentId:string}>('editor-open-assets').then(request=>{if(request?.documentId===current.manifest.id){setLeftTab('assets');void model.storage.setMeta('editor-open-assets',null);}}).catch(()=>{});},[current.manifest.id]);
+  function createComponent(){if(!selectedIds.length){model.setNotice('请先选择需要复用的图层。');return;}setComponentName(selected?.name??'新组件');setCreateComponentDialog(true);}
+  function confirmComponent(){try{const ids=selectionRoots(page,selectedIds),bounds=Object.fromEntries(ids.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1])),result=extractComponent(current,page.id,ids,componentName,bounds);if(commit(result.transaction,[result.instanceId])){setCreateComponentDialog(false);setLeftTab('assets');}}catch(error){model.setNotice(String(error));}}
+  function insertComponent(key:string,ops:SourceOperation[]=[]){const center=canvas.current?.viewportCenter()??{x:80,y:80};const parentId=selected&&isContainer(selected)&&selected.kind!=='Instance'&&!selected.locked?selected.id:page.source.props.designId;const p=parentId===page.source.props.designId?center:canvas.current?.pointInParent(center,parentId)??center,id=newId('instance');commit({label:'插入组件实例',ops:[...ops,{type:'insert',pageId:page.id,parentId,fragment:sourceElement('Instance',{designId:id,component:key,className:patchClassNames('',{'position-type':'absolute',left:p.x-80,top:p.y-24})})}]},[id]);}
+  function separateInstance(id:string){try{const result=detachInstance(current,page.id,id);commit(result.transaction,[result.id]);}catch(error){model.setNotice(String(error));}}
+  async function openComponentSource(key:string){const def=current.components.get(key),origin=def?.props.library;if(!origin){editComponent(key);return;}const versions=await libraryVersions(model.storage),source=versions.find(v=>v.id===origin.id);if(!source)throw new Error('库源文件不可用；当前固定版本仍可继续使用。');await model.storage.setMeta('component-editor-request',{documentId:source.sourceDocumentId,key:origin.component});await model.open(source.sourceDocumentId);}
+  const propertyNodes=selectedIds.map(id=>{const n=page.nodes.get(id)!;if(n.kind!=='Instance')return n;const child=page.nodes.get(n.children[0]);return child?{...n,element:cloneElement(n.element,{className:patchClassNames(child.element.props.className??'',placementStyles(n.element.props.className??''))})}:n;});
+  function chooseTool(next: EditorTool) { setTool(next); if ((shapeTools as readonly string[]).includes(next)) setShape(next); }
   function view(type: ViewCommand) { setViewCommand(previous => ({ type, serial: previous.serial + 1 })); }
   function properties(id: string, props?: Record<string, unknown>, styles?: StylePatch) { model.execute({ type: 'set', pageId: page.id, id, props, styles }); }
   function commit(transaction: Transaction, ids?: string[]) { const ok=model.transact(transaction);if(ok&&ids)setSelection({...selection,ids});return ok; }
@@ -73,7 +93,7 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
     commit({label:kind==='Group'?'编组':'用画框包裹',ops:[{type:'wrap',pageId:page.id,ids,kind,designId,bounds}]},[designId]);
   }
   function ungroup() {
-    const ids=selectionRoots(page,selectedIds).filter(id=>isContainer(page.nodes.get(id))),ops:SourceOperation[]=[],children:string[]=[];
+    const ids=selectionRoots(page,selectedIds).filter(id=>['Frame','Group'].includes(page.nodes.get(id)!.kind)),ops:SourceOperation[]=[],children:string[]=[];
     for(const id of ids){const node=page.nodes.get(id)!,origin={x:0,y:0};const bounds=Object.fromEntries(node.children.map(child=>[child,canvas.current?.localBox(child,node.parentId)]).filter((entry):entry is [string,Rect]=>!!entry[1]));const measured=Object.keys(bounds).length===node.children.length;ops.push({type:'unwrap',pageId:page.id,id,origin:measured?origin:undefined,bounds:measured?bounds:undefined});children.push(...node.children);}
     if(ops.length)commit({label:'取消编组',ops},children);
   }
@@ -104,15 +124,18 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
     if(textDraft){if(text.trim())commit({label:'新增文字',ops:[{type:'insert',pageId:page.id,parentId:textDraft.parentId,fragment:`<Text designId="${id}" name="文字" className={${JSON.stringify(textDraft.className)}}>{${JSON.stringify(text)}}</Text>`}]},[id]);}
     else model.execute({type:'text',pageId:page.id,id,text},'编辑文字');
   }
-  function create(kind: EditorTool, rect: Rect, parentId?: string) {
+  function create(kind: EditorTool, rect: Rect, parentId?: string, geometry?: CreationGeometry) {
     const id = newId(kind === 'board' ? 'frame' : kind);
-    let className = patchClassNames('', { 'position-type': 'absolute', left: Math.round(rect.x), top: Math.round(rect.y), width: Math.max(4, Math.round(rect.width)), height: Math.max(4, Math.round(rect.height)) });
+    let className = patchClassNames('', { 'position-type': 'absolute', left: Math.round(rect.x), top: Math.round(rect.y), width: Math.max(geometry?.path||kind==='line'||kind==='arrow'?1:4, rect.width), height: Math.max(geometry?.path||kind==='line'||kind==='arrow'?1:4, rect.height) });
     if(kind === 'text') { className=writeTextSizing(`${className} text-2xl text-slate-800`, 'auto-width');setTextDraft({id,parentId:parentId??page.source.props.designId,className});setEditingId(id);setSelection({...selection,ids:[]});setTool('select');return; }
     const number = [...page.nodes.values()].filter(n => n.kind === 'Frame' && n.parentId === page.source.props.designId).length + 1;
-    const fragment = kind === 'board' ? `<Frame designId="${id}" name="画框 ${number}" className="${className} overflow-hidden bg-white" />` :
+    const special = kind==='line'||kind==='arrow' ? sourceElement('Line',{designId:id,name:kind==='arrow'?'箭头':'线条',className:`${className} fill-none stroke-slate-800 stroke-2`,...geometry?.endpoints,endArrow:kind==='arrow'}) :
+      kind==='polygon'||kind==='triangle'||kind==='star' ? sourceElement(kind==='star'?'Star':'Polygon',{designId:id,name:kind==='star'?'星形':kind==='triangle'?'三角形':'多边形',className:`${className} fill-[#A9C5FF]`,count:kind==='star'?5:kind==='triangle'?3:6,...(kind==='star'?{innerRatio:.38}:{})}) :
+      geometry?.path ? sourceElement('Vector',{designId:id,name:kind==='pencil'?'铅笔路径':'钢笔路径',className:`${className} ${geometry.path.closed?'fill-[#A9C5FF]':'fill-none'} stroke-slate-800 stroke-2`,path:geometry.path,viewBox:`0 0 ${rect.width} ${rect.height}`}) : null;
+    const fragment = special ?? (kind === 'board' ? `<Frame designId="${id}" name="画框 ${number}" className="${className} overflow-hidden bg-white" />` :
       kind === 'rectangle' ? `<Rect designId="${id}" name="矩形" className="${className} bg-[#A9C5FF]" />` :
       kind === 'ellipse' ? `<Ellipse designId="${id}" name="椭圆" className="${className} bg-[#AEDBC1]" />` :
-      `<Text designId="${id}" name="文字" className="${className} text-2xl text-slate-800">{"文字"}</Text>`;
+      `<Text designId="${id}" name="文字" className="${className} text-2xl text-slate-800">{"文字"}</Text>`);
     if (model.execute({ type: 'insert', pageId: page.id, parentId: kind === 'board' ? null : parentId ?? null, fragment }, '新增图层')) setSelectedId(id);
     setTool('select');
   }
@@ -144,7 +167,7 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
         if(event.key==='Tab'&&event.target instanceof HTMLElement&&event.target.closest('button,a')&&!event.target.closest('.rea-canvas'))return;
         event.preventDefault();setSelection(navigateSelection(page,selection,event.key,event.shiftKey));if(event.key==='Escape'){setTool('select');setPanel(null);}return;
       }
-      const tools:Record<string,EditorTool>={v:'select',h:'hand',f:'board',r:'rectangle',o:'ellipse',t:'text'};if(tools[key]){event.preventDefault();chooseTool(tools[key]);}
+      const tools:Record<string,EditorTool>={v:'select',h:'hand',f:'board',r:'rectangle',o:'ellipse',t:'text',l:event.shiftKey?'arrow':'line',p:event.shiftKey?'pencil':'pen',y:'polygon',s:'star'};if(tools[key]){event.preventDefault();chooseTool(tools[key]);}
       if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();remove();}
       if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)&&selectedIds.length){
         event.preventDefault();const amount=event.shiftKey?10:1,ops:SourceOperation[]=[];
@@ -152,12 +175,34 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
         if(ops.length)commit({label:'微移图层',coalesceKey:`move:${page.id}:${[...selectedIds].sort().join(',')}`,ops});
       }
     }
-    function copy(event:ClipboardEvent){if(blocked(event.target)||!selectedIds.length||!event.clipboardData)return;event.preventDefault();try{const data=copyFragment(parsed,selectedIds,current.manifest.id);event.clipboardData.setData(FRAGMENT_MIME,JSON.stringify(data));event.clipboardData.setData('text/plain',data.source);if(event.type==='cut')remove();}catch(error){model.setNotice(String(error));}}
-    function paste(event:ClipboardEvent){if(blocked(event.target)||!event.clipboardData)return;event.preventDefault();try{const data=readClipboard(event.clipboardData.getData(FRAGMENT_MIME),event.clipboardData.getData('text/plain'));const parentId=isContainer(selected)&&!selected!.locked?selected!.id:page.source.props.designId;const cross=data.documentId!==current.manifest.id||data.pageId!==page.id;let center=cross?canvas.current?.viewportCenter():undefined;if(center&&parentId!==page.source.props.designId){center=canvas.current?.pointInParent(center,parentId)??center;}const prepared=preparePaste(data,center);commit({label:'粘贴图层',ops:[{type:'insert',pageId:page.id,parentId,fragment:prepared.fragment}]},prepared.ids);}catch(error){model.setNotice(`无法粘贴：${String(error)}`);}}
+    function copy(event:ClipboardEvent){if(blocked(event.target)||!selectedIds.length||!event.clipboardData)return;event.preventDefault();try{const data=copyFragment(parsed,selectedIds,current.manifest.id,current.components,Object.fromEntries(selectedIds.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1])));event.clipboardData.setData(FRAGMENT_MIME,JSON.stringify(data));event.clipboardData.setData('text/plain',data.source);if(event.type==='cut')remove();}catch(error){model.setNotice(String(error));}}
+    function paste(event:ClipboardEvent){
+      if(blocked(event.target)||!event.clipboardData)return;event.preventDefault();
+      try{
+        const captured=readClipboard(event.clipboardData.getData(FRAGMENT_MIME),event.clipboardData.getData('text/plain'));
+        const parentId=isContainer(selected)&&selected!.kind!=='Instance'&&!selected!.locked?selected!.id:page.source.props.designId;
+        const cross=captured.documentId!==current.manifest.id||captured.pageId!==page.id;
+        let center=cross?canvas.current?.viewportCenter():undefined;if(center&&parentId!==page.source.props.designId)center=canvas.current?.pointInParent(center,parentId)??center;
+        run(async()=>{
+          let data=captured;
+          if(data.documentId!==current.manifest.id){
+            const paths=clipboardAssetPaths(data);
+            if(paths.length){
+              const assets=await model.storage.getAssets(data.documentId),mapping=new Map(paths.map(path=>[path,path.startsWith('assets/lib-')?path:`assets/paste-${data.documentId.replace(/[^a-z0-9_-]/gi,'')}/${path.slice(7)}`]));
+              const selected=paths.map(path=>{const asset=assets.find(a=>a.path===path);if(!asset)throw new Error('剪贴板引用的资源不在本机，请使用 .reaui 文件导入。');return{...asset,docId:current.manifest.id,path:mapping.get(path)!};});
+              await model.addAssets(selected);data=rewriteClipboardAssets(data,mapping);
+            }
+          }else data={...data,components:undefined};
+          if(sessionRef.current.manifest.id!==current.manifest.id)throw new Error('文档已切换，请重新粘贴。');
+          const prepared=preparePaste(data,center,sessionRef.current.components);
+          commit({label:'粘贴图层',ops:[...(prepared.componentSource?[{type:'catalog' as const,source:prepared.componentSource}]:[]),{type:'insert',pageId:page.id,parentId,fragment:prepared.fragment}]},prepared.ids);
+        });
+      }catch(error){model.setNotice(`无法粘贴：${String(error)}`);}
+    }
     window.addEventListener('keydown',keydown);window.addEventListener('copy',copy);window.addEventListener('cut',copy);window.addEventListener('paste',paste);
     return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('copy',copy);window.removeEventListener('cut',copy);window.removeEventListener('paste',paste);};
   });
-  const Shape = shape === 'ellipse' ? Circle : Square;
+  const Shape = ({rectangle:Square,ellipse:Circle,line:Minus,arrow:MoveUpRight,triangle:Triangle,polygon:Hexagon,star:Star} as Partial<Record<EditorTool,typeof Square>>)[shape]??Square;
   const saveLabels = { saving: '保存中…', saved: '已保存', error: '保存失败 · 导出备份', conflict: '版本冲突 · 重新加载' };
   const toolbar = <>
     {onHome && <IconButton label="返回首页" onClick={onHome}><Home size={17} /></IconButton>}
@@ -167,6 +212,8 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
       { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
       { label: '撤销', shortcut: '⌘/Ctrl+Z', disabled: !current.past.length, action: model.undo },
       { label: '重做', shortcut: '⌘/Ctrl+Shift+Z', disabled: !current.future.length, action: model.redo },
+      { label: '创建组件', action: createComponent, disabled: !selectedIds.length },
+      { label: '组件资源', action: () => setLeftTab('assets') },
       { label: '编组', shortcut: '⌘/Ctrl+G', disabled: !selectedIds.length, action: () => group() },
       { label: '取消编组', shortcut: '⌘/Ctrl+Shift+G', disabled: !selectedIds.length, action: ungroup },
       { label: '用画框包裹', shortcut: '⌘/Ctrl+Alt+G', disabled: !selectedIds.length, action: () => group('Frame') },
@@ -175,9 +222,14 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
       { label: '快捷键一览', action: () => setShortcuts(true) },
     ]}><MenuIcon size={18} /></Menu><span className="rea-divider" />
     <div className="flex shrink-0 items-center gap-0.5" role="toolbar" aria-label="画布工具">
-      <IconButton label="移动工具 (V)" active={tool === 'select'} onClick={() => chooseTool('select')}><MousePointer2 size={17} /></IconButton>
+      <div className="flex items-center"><IconButton label="移动工具 (V)" active={tool === 'select'} onClick={() => chooseTool('select')}><MousePointer2 size={17} /></IconButton><Menu label={`选择方式：${selectionMode === 'direct' ? '直接选择图层' : '按层级选择'}`} className="w-4 px-0!" items={[
+        { label: '直接选择图层', shortcut: selectionMode === 'direct' ? '当前' : undefined, action: () => { setSelectionMode('direct'); chooseTool('select'); } },
+        { label: '按层级选择', shortcut: selectionMode === 'hierarchy' ? '当前' : undefined, action: () => { setSelectionMode('hierarchy'); chooseTool('select'); } },
+      ]}><ChevronDown size={11} /></Menu></div>
       <IconButton label="画框工具 (F)" active={tool === 'board'} onClick={() => chooseTool('board')}><FrameIcon size={17} /></IconButton>
-      <div className="flex items-center"><IconButton label={`${shape === 'ellipse' ? '椭圆' : '矩形'}工具 (${shape === 'ellipse' ? 'O' : 'R'})`} active={tool === 'rectangle' || tool === 'ellipse'} onClick={() => chooseTool(shape)}><Shape size={17} /></IconButton><Menu label="选择形状" className="w-4 px-0!" items={[{ label: '矩形', shortcut: 'R', action: () => chooseTool('rectangle') }, { label: '椭圆', shortcut: 'O', action: () => chooseTool('ellipse') }]}><ChevronDown size={11} /></Menu></div>
+      <div className="flex items-center"><IconButton label={`${({rectangle:'矩形',ellipse:'椭圆',line:'线条',arrow:'箭头',triangle:'三角形',polygon:'多边形',star:'星形'} as Partial<Record<EditorTool,string>>)[shape]}工具`} active={(shapeTools as readonly string[]).includes(tool)} onClick={() => chooseTool(shape)}><Shape size={17} /></IconButton><Menu label="选择形状" className="w-4 px-0!" items={shapeTools.map((value,i)=>({label:['矩形','椭圆','线条','箭头','三角形','多边形','星形'][i],shortcut:['R','O','L','Shift+L','','Y','S'][i],action:()=>chooseTool(value)}))}><ChevronDown size={11} /></Menu></div>
+      <IconButton label="钢笔工具 (P)" active={tool==='pen'} onClick={()=>chooseTool('pen')}><PenTool size={17}/></IconButton>
+      <IconButton label="铅笔工具 (Shift+P)" active={tool==='pencil'} onClick={()=>chooseTool('pencil')}><Pencil size={17}/></IconButton>
       <IconButton label="文字工具 (T)" active={tool === 'text'} onClick={() => chooseTool('text')}><Type size={17} /></IconButton>
       <IconButton label="抓手工具 (H)" active={tool === 'hand'} onClick={() => chooseTool('hand')}><Hand size={17} /></IconButton>
     </div><span className="rea-divider rea-history" /><div className="rea-history flex"><IconButton label="撤销 (⌘/Ctrl+Z)" disabled={!current.past.length} onClick={model.undo}><Undo2 size={16} /></IconButton><IconButton label="重做 (⌘/Ctrl+Shift+Z)" disabled={!current.future.length} onClick={model.redo}><Redo2 size={16} /></IconButton></div>
@@ -185,10 +237,12 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
     <div className="ml-auto flex shrink-0 items-center"><IconButton label="显示图层" className="rea-mobile-only" active={panel === 'layers'} onClick={() => setPanel(panel === 'layers' ? null : 'layers')}><Layers size={16} /></IconButton><IconButton label="显示属性" className="rea-mobile-only" active={panel === 'inspector'} onClick={() => setPanel(panel === 'inspector' ? null : 'inspector')}><PanelRight size={16} /></IconButton>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
-  return <><EditorShell toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onClose={() => setPanel(null)} />} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <Inspector nodes={selectedIds.map(id => page.nodes.get(id)!)} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} /> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
-    <Canvas page={canvasPage} selection={selection} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} />
+  return <><EditorShell toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><Tabs value={leftTab} onChange={setLeftTab} tabs={[{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><div className="rea-left-panel-body">{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
+    {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
+    <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}
   </EditorShell><input ref={input} type="file" accept=".reaui,.design.tsx" hidden aria-label="导入文档" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) run(() => model.importFile(file)); }} />
+  {createComponentDialog&&<Dialog title="创建组件" onClose={()=>setCreateComponentDialog(false)}><label className="rea-component-label">组件名称<input className="rea-input" autoFocus value={componentName} onChange={e=>setComponentName(e.target.value)} maxLength={120} onKeyDown={e=>{if(e.key==='Enter')confirmComponent();}}/></label><p className="rea-field-help">选中内容将成为主组件，画布当前位置保留一个关联实例。</p><div className="rea-dialog-actions"><Button onClick={()=>setCreateComponentDialog(false)}>取消</Button><Button disabled={!componentName.trim()} onClick={confirmComponent}>创建组件</Button></div></Dialog>}
   {showDocuments && <DocumentListDialog model={model} onClose={() => setShowDocuments(false)} onExport={exportDocument} />}
   {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
 }

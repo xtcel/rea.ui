@@ -25,6 +25,10 @@ export function installExtendedGroups(groups: Record<PropertyGroupKey, PropertyG
   length('outline-width', 'outline', widths, 'px', 0);
   length('outline-offset', 'outline-offset', {0:0,1:1,2:2,4:4,8:8});
   length('stroke-width', 'stroke', {0:0,1:1,2:2}, '', 0);
+  const strokeWidth = groups['stroke-width'];
+  const arbitraryStrokeWidth = (token: ClassToken) => token.utility.match(/^\[stroke-width:((?:\d+(?:\.\d+)?|\.\d+))(?:px)?\]$/)?.[1];
+  add('stroke-width', token => strokeWidth.matches(token) || arbitraryStrokeWidth(token) !== undefined,
+    token => arbitraryStrokeWidth(token) === undefined ? strokeWidth.read(token) : { type: 'fixed', value: Number(arbitraryStrokeWidth(token)) }, strokeWidth.write);
   // Bare border/outline mean 1px; color and style utilities are separate groups.
   for (const [key, utility] of [['border-color','border'],['outline-color','outline']] as const) {
     add(key, t => t.utility === utility && !!parseColorToken(t.value ?? ''), t => parseColorToken(t.value ?? ''), v => {

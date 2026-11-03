@@ -32,6 +32,14 @@
     "active": true,
     "targets": ["app", "dmg"],
     "category": "GraphicsAndDesign",
+    "fileAssociations": [{
+      "ext": ["reaui"],
+      "name": "REA UI 文档",
+      "role": "Editor",
+      "rank": "Owner",
+      "mimeType": "application/vnd.reaui+zip",
+      "exportedType": { "identifier": "com.reaui.document", "conformsTo": ["public.data", "public.archive"] }
+    }],
     "shortDescription": "React 单源设计编辑器",
     "longDescription": "REA UI 是以 React 页面为设计源的本地设计工作空间，支持画布编辑、图层管理和 .reaui 文档导入导出。",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],

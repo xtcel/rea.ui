@@ -30,6 +30,18 @@ describe('property panel Tailwind contract',()=>{
     for(const position of ['inside','center','outside'] as const){const stroke={width:3,color:{hex:'#123456',opacity:70},position,style:'dashed' as const};c=writeStroke(c,stroke);expect(readStroke(c)).toEqual(stroke);}
     expect(writeStroke(c,null)).toBe('bg-white md:border-red-500 custom');
   });
+  it('edits the bundled icons’ arbitrary stroke widths and none fills without leaving competing classes',()=>{
+    const icon='fill-none stroke-[#656d79] [stroke-width:1.65] [stroke-linecap:round] hover:[stroke-width:3]';
+    expect(readStroke(icon,true)).toMatchObject({width:1.65,color:{hex:'#656D79'}});
+    expect(readProperty(icon,'fill')).toEqual({hex:'transparent'});
+    const changed=writeStroke(icon,{width:2.5,color:{hex:'#123456'},position:'inside',style:'solid'},true);
+    expect(readStroke(changed,true)).toMatchObject({width:2.5,color:{hex:'#123456'}});
+    expect(changed).not.toContain('[stroke-width:1.65]');expect(changed).toContain('hover:[stroke-width:3]');expect(changed).toContain('[stroke-linecap:round]');
+    expect(patchClassName(icon,'fill','#ABCDEF')).not.toContain('fill-none');
+    expect(readProperty('stroke-none','stroke')).toEqual({hex:'transparent'});
+    expect(readProperty('[fill:none]','fill')).toEqual({hex:'transparent'});
+    expect(readProperty('[stroke-width:.5px]','stroke-width')).toEqual({type:'fixed',value:.5});
+  });
   it('safely combines outer and inset shadows with nested rgba commas',()=>{
     const list=[{inset:false,x:0,y:4,blur:12,spread:0,color:'rgba(0,0,0,0.25)'},{inset:true,x:-1,y:2,blur:4,spread:0,color:'#123456'}];
     const c=patchClassName('hover:shadow-lg','shadow',formatShadows(list));expect(parseShadows(readProperty(c,'shadow') as string)).toEqual(list);

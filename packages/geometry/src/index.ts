@@ -9,6 +9,7 @@ interface GeometryExports extends WebAssembly.Exports {
   snap_coordinate: (value: number, grid: number) => number;
   rect_component: (index: number, ax: number, ay: number, bx: number, by: number) => number;
   resize_component: (index: number, x: number, y: number, w: number, h: number, dx: number, dy: number, edges: number) => number;
+  fit_pencil: (input: number, count: number, tolerance: number, output: number, capacity: number) => number;
 }
 let wasm: GeometryExports | undefined;
 export async function initGeometry(bytes?: BufferSource) {
@@ -72,3 +73,16 @@ export class SnapSession {
   dispose() { if (this.disposed) return; this.disposed = true; for (const [ptr, len] of this.allocations.reverse()) this.kernel.dealloc(ptr, len); this.allocations = []; }
 }
 export function geometryMemoryBytes() { return core().memory.buffer.byteLength; }
+export function fitPencil(points: readonly { x: number; y: number }[], tolerance = .75): number[][] {
+  if (points.length < 2 || points.length > 20000 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('笔迹需要 2–20000 个有效采样点。');
+  const kernel = core(), inputLength = points.length * 2, outputLength = points.length * 12;
+  const input = kernel.alloc(inputLength), output = kernel.alloc(outputLength);
+  try {
+    if (!input || !output) throw new Error('笔迹内存分配失败。');
+    new Float64Array(kernel.memory.buffer, input, inputLength).set(points.flatMap(p => [p.x,p.y]));
+    const n = kernel.fit_pencil(input, points.length, tolerance, output, outputLength);
+    if (n < 2 || n * 6 > outputLength) throw new Error('笔迹拟合失败，请重新绘制。');
+    const values = new Float64Array(kernel.memory.buffer, output, n * 6).slice();
+    return Array.from({ length: n }, (_, i) => Array.from(values.slice(i*6,i*6+6)));
+  } finally { if (input) kernel.dealloc(input,inputLength); if (output) kernel.dealloc(output,outputLength); }
+}

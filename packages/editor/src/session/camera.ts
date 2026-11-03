@@ -3,7 +3,7 @@ export interface Point { x: number; y: number }
 export interface Size { width: number; height: number }
 
 export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 3;
+export const MAX_ZOOM = 16;
 
 export function zoomAt(camera: Camera, nextZoom: number, anchor: Point): Camera {
   const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));

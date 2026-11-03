@@ -26,12 +26,27 @@ function jsxText(value: string): string {
   }).join('');
 }
 
-function literal(node: T.Node): unknown {
+export function staticLiteral(node: T.Node, depth = 0): unknown {
+  if (depth > 32) throw new Error('静态值嵌套过深。');
   if (node.type === 'StringLiteral' || node.type === 'BooleanLiteral') return node.value;
+  if (node.type === 'NumericLiteral' && Number.isFinite(node.value)) return node.value;
+  if (node.type === 'NullLiteral') return null;
+  if (node.type === 'UnaryExpression' && node.operator === '-' && node.argument.type === 'NumericLiteral' && Number.isFinite(node.argument.value)) return -node.argument.value;
+  if (node.type === 'ArrayExpression') return node.elements.map(item => { if (!item || item.type === 'SpreadElement') throw new Error('不允许数组空项或展开。'); return staticLiteral(item, depth + 1); });
+  if (node.type === 'ObjectExpression') {
+    const result: Record<string, unknown> = {};
+    for (const property of node.properties) {
+      if (property.type !== 'ObjectProperty' || property.computed || property.shorthand) throw new Error('对象仅允许静态键值。');
+      const key = property.key.type === 'Identifier' ? property.key.name : property.key.type === 'StringLiteral' ? property.key.value : '';
+      if (!key || ['__proto__','constructor','prototype'].includes(key) || Object.hasOwn(result, key)) throw new Error('对象键非法或重复。');
+      result[key] = staticLiteral(property.value, depth + 1);
+    }
+    return result;
+  }
   throw new Error(`禁止非声明式表达式：${node.type}`);
 }
 
-export function parsePage(code: string, path = 'page.tsx'): ParsedPage {
+export function parseStaticTree(code: string, path = 'source.tsx') {
   try {
   const ast = parse(code, { sourceType: 'module', plugins: ['typescript', 'jsx'], createParenthesizedExpressions: false });
   const imports = new Map<string, keyof typeof primitives>();
@@ -64,7 +79,7 @@ export function parsePage(code: string, path = 'page.tsx'): ParsedPage {
       if (['children', 'key', 'ref', '__proto__', 'constructor', 'prototype'].includes(key) || key.startsWith('on') || Object.hasOwn(props, key)) throw new Error(`不允许的属性：${key}`);
       const value = attr.value;
       props[key] = value == null ? true : value.type === 'StringLiteral' ? value.value :
-        value.type === 'JSXExpressionContainer' ? literal(value.expression) : (() => { throw new Error('属性须为静态值。'); })();
+        value.type === 'JSXExpressionContainer' ? staticLiteral(value.expression) : (() => { throw new Error('属性须为静态值。'); })();
     }
     const id = props.designId;
     if (typeof id === 'string') {
@@ -76,15 +91,18 @@ export function parsePage(code: string, path = 'page.tsx'): ParsedPage {
       if (child.type === 'JSXElement') children.push(element(child));
       else if (child.type === 'JSXText' && jsxText(child.value)) children.push(jsxText(child.value));
       else if (child.type === 'JSXExpressionContainer' && child.expression.type !== 'JSXEmptyExpression') {
-        const value = literal(child.expression);
+        const value = staticLiteral(child.expression);
         if (typeof value !== 'string') throw new Error('文本内容仅支持字符串。');
         children.push(value);
       } else if (child.type !== 'JSXText' && child.type !== 'JSXExpressionContainer') throw new Error('不支持的 JSX 子节点。');
     }
     return createElement(primitives[kind] as unknown as ComponentType<Record<string, unknown>>, props, ...children);
   }
-  const source = element(root) as ReactElement<PageProps>;
-  const page = inspectPage(source);
-  return { code, path, root, syntax, source, page, bindings: imports };
+  const source = element(root);
+  return { code, path, root, syntax, source, bindings: imports };
   } catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`); }
+}
+export function parsePage(code: string, path = 'page.tsx'): ParsedPage {
+  const tree=parseStaticTree(code,path),source=tree.source as ReactElement<PageProps>;
+  try {return {...tree,source,page:inspectPage(source)};}catch(error){throw new Error(`${path}: ${error instanceof Error?error.message:String(error)}`);}
 }

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { parsePage } from '@rea/document';
-import { emptySelection, intersects, marqueeIds, navigateSelection, resolveHit, scopedChildren, toggleSelection } from './selection';
+import { emptySelection, intersects, marqueeIds, navigateSelection, pointerSelectionHit, resolveHit, scopedChildren, toggleSelection } from './selection';
 const page = parsePage(`import { Page, Frame, Rect } from '@rea/design'; export default <Page id="main" designId="page-main"><Frame designId="frame-one" className="absolute"><Rect designId="rect-one"/><Rect designId="rect-two"/><Rect designId="rect-locked" locked/><Rect designId="rect-hidden" hidden/></Frame><Rect designId="rect-other"/></Page>`).page;
 describe('selection scope and hits', () => {
+  it('directly selects a descendant even when its outer artboard is already selected', () => {
+    const selection={...emptySelection('main'),ids:['frame-one']};
+    expect(pointerSelectionHit(page,['rect-one','frame-one'],selection,true)).toBe('rect-one');
+    expect(pointerSelectionHit(page,['rect-one','frame-one'],selection,false)).toBe('frame-one');
+    expect(pointerSelectionHit(page,['rect-locked','rect-hidden','rect-other'],selection,true)).toBe('rect-other');
+    expect(pointerSelectionHit(page,['frame-one'],selection,true)).toBe('frame-one');
+  });
   it('selects scope children, supports deep hits and skips hidden/locked hits', () => {
     expect(resolveHit(page, ['rect-one'], null)).toBe('frame-one');
     expect(resolveHit(page, ['rect-one'], 'frame-one')).toBe('rect-one');

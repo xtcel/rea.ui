@@ -8,9 +8,8 @@ export function usePropertyPanel(page:InspectedPage,ids:readonly string[],transa
   const [preview,setPreview]=useState<Transaction|null>(null),[measurements,setMeasurements]=useState<Measurements>(new Map());
   const latest=useRef({page,ids,transact});latest.current={page,ids,transact};
   const capture=useCallback(()=>{
-    const scene=document.querySelector<HTMLElement>('.rea-canvas-scene'),root=scene?.querySelector('[data-shadow-canvas]')?.shadowRoot,origin=root?.querySelector('[data-page-origin]')?.getBoundingClientRect();if(!root||!scene||!origin)return;
-    const inlineScale=scene.style.transform.match(/scale\(([^)]+)\)/);
-    const zoom=inlineScale?Number(inlineScale[1]):new DOMMatrix(getComputedStyle(scene).transform).a||1,next=new Map<string,MeasuredRect>();
+    const content=document.querySelector<HTMLElement>('.rea-canvas-content'),root=content?.querySelector('[data-shadow-canvas]')?.shadowRoot,origin=root?.querySelector('[data-page-origin]')?.getBoundingClientRect();if(!root||!content||!origin)return;
+    const zoom=Number(content.dataset.cameraZoom)||1,next=new Map<string,MeasuredRect>();
     root.querySelectorAll<HTMLElement|SVGElement>('[data-design-id]').forEach(element=>{const b=element.getBoundingClientRect();next.set(element.getAttribute('data-design-id')!,{x:(b.left-origin.left)/zoom,y:(b.top-origin.top)/zoom,width:element instanceof HTMLElement?element.offsetWidth:b.width/zoom,height:element instanceof HTMLElement?element.offsetHeight:b.height/zoom,...(element instanceof HTMLElement&&element.offsetParent===element.parentElement?{localX:element.offsetLeft,localY:element.offsetTop}:{})});});
     setMeasurements(old=>JSON.stringify([...old])===JSON.stringify([...next])?old:next);
   },[]);

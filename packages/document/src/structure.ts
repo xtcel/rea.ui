@@ -13,7 +13,8 @@ export interface NodeRect {
 export type StructureOperation = Extract<SourceOperation, {
     type: 'move' | 'wrap' | 'unwrap' | 'duplicate';
 }>;
-const primitives = 'Page, Frame, Group, Rect, Ellipse, Text, Image, Vector';
+export const primitiveImports = 'Page, Frame, Group, Rect, Ellipse, Text, Image, Vector, Line, Polygon, Star, Instance, Slot, SlotContent';
+const primitives = primitiveImports;
 const uid = () => `node-${crypto.randomUUID().replaceAll('-', '')}`;
 type Edit = {
     start: number;
@@ -58,7 +59,7 @@ function patchFragment(parsed: ParsedPage, id: string, styles: StylePatch): stri
 }
 function insert(parsed: ParsedPage, parentId: string, index: number, fragment: string): string {
     const parent = writable(parsed, parentId);
-    if (!['Page', 'Frame', 'Group'].includes(parent.kind))
+    if (!['Page', 'Frame', 'Group','Slot','SlotContent'].includes(parent.kind))
         throw new Error('目标不是容器。');
     if (!Number.isInteger(index) || index < 0 || index > parent.children.length)
         throw new Error('插入位置无效。');

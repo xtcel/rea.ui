@@ -16,6 +16,13 @@ describe('className rendering', () => {
     expect(html).toContain('w-[317px] bg-red-500 hover:bg-red-600 custom');
     expect(renderToStaticMarkup(<PageRenderer page={page} />)).toContain('w-20');
   });
+  it('uses path geometry instead of a transparent viewBox rectangle and respects inherited locks', () => {
+    const vector=<Vector designId="vector-icon" d="M0 0 L4 4" viewBox="-2 -3 24 20" />;
+    const html=renderToStaticMarkup(<PageRenderer page={<Page id="home" designId="page-home">{vector}</Page>}/>);
+    expect(html).not.toContain('<rect');expect(html).toContain('pointer-events="stroke"');expect(html).toContain('stroke-width="8"');
+    const locked=renderToStaticMarkup(<PageRenderer page={<Page id="home" designId="page-home"><Group designId="group-lock" locked>{vector}</Group></Page>}/>);
+    expect(locked).not.toContain('pointer-events="stroke"');expect(locked).toContain('pointer-events="none"');
+  });
   it('inherits hidden and locked, omits missing asset src', () => {
     const hidden = <Page id="home" designId="page-home"><Frame designId="frame-main" className="absolute" hidden><Rect designId="rect-main" /></Frame><Group designId="group-main" locked><Text designId="text-main">locked</Text></Group></Page>;
     const html = renderToStaticMarkup(<PageRenderer page={hidden} />);

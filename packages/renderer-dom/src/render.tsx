@@ -1,8 +1,8 @@
 import { Children, Fragment, isValidElement } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
-import { getNodeKind } from '@rea/design';
-import type { ContainerProps, ImageProps, PageProps, VectorProps } from '@rea/design';
-import { patchClassNames } from '@rea/tailwind';
+import { getNodeKind, isVectorKind, shapePath } from '@rea/design';
+import type { ContainerProps, ImageProps, PageProps, VectorProps, LineProps, PathData } from '@rea/design';
+import { patchClassNames, fixedValue, readProperty } from '@rea/tailwind';
 import type { StylePatch } from '@rea/document';
 
 export interface PageRendererProps {
@@ -15,13 +15,15 @@ export interface PageRendererProps {
   duplicatePreview?: boolean;
   draft?: { parentId: string; element: ReactElement<ContainerProps> } | null;
   assetUrls?: Readonly<Record<string, string>>;
+  zoom?: number;
+  pathPreview?: {id:string;path:PathData}|null;
 }
 export function hitDesignElement(event: Event): HTMLElement | SVGElement | undefined {
   return event.composedPath().find((target): target is HTMLElement | SVGElement =>
     target instanceof Element && target.hasAttribute('data-design-id') && !target.hasAttribute('data-design-locked'));
 }
 /** Render only the parsed element tree; previews patch className without touching source. */
-export function PageRenderer({ page, selectedId, onSelect, interactive = true, preview, editingId, duplicatePreview, draft, assetUrls = {} }: PageRendererProps) {
+export function PageRenderer({ page, selectedId, onSelect, interactive = true, preview, editingId, duplicatePreview, draft, assetUrls = {}, zoom = 1, pathPreview }: PageRendererProps) {
   function render(child: ReactNode, inheritedLocked = false, original = false, allowDuplicate = true): ReactNode {
     if (!isValidElement<ContainerProps>(child)) return child;
     const props = child.props, kind = getNodeKind(child);
@@ -45,13 +47,20 @@ export function PageRenderer({ page, selectedId, onSelect, interactive = true, p
     };
     const children = () => <>{Children.map(props.children, c => render(c, locked, original))}{draft?.parentId === props.designId && render(draft.element, locked)}</>;
     if (kind === 'Page') return <div key={renderId} {...common} data-page-origin="">{children()}</div>;
-    if (kind === 'Frame' || kind === 'Group') return <div key={renderId} {...common}>{children()}</div>;
+    if (kind === 'Frame' || kind === 'Group' || kind==='Instance' || kind==='Slot' || kind==='SlotContent') return <div key={renderId} {...common}>{children()}</div>;
     if (kind === 'Rect' || kind === 'Ellipse') return <div key={renderId} {...common} />;
     if (kind === 'Text') return <p key={renderId} {...common}>{props.children}</p>;
     if (kind === 'Image') return <img key={renderId} {...common} src={assetUrls[(props as ImageProps).src]} alt={props.name ?? ''} draggable={false} />;
-    if (kind === 'Vector') {
-      const vector = props as unknown as VectorProps;
-      return <svg key={renderId} {...common} role="img" aria-label={props.name ?? props.designId} viewBox={vector.viewBox} preserveAspectRatio="none"><path d={vector.d} /></svg>;
+    if (kind && isVectorKind(kind)) {
+      const vector = {...props,...(pathPreview?.id===props.designId?{path:pathPreview.path,d:undefined}:{})} as unknown as VectorProps & LineProps;
+      const width=Math.max(1,fixedValue(className,'width')??100),height=Math.max(1,fixedValue(className,'height')??100);
+      const line=kind==='Line'?{...vector,x1:(vector.x1??0)*width/100,y1:(vector.y1??50)*height/100,x2:(vector.x2??100)*width/100,y2:(vector.y2??50)*height/100}:vector;
+      const d = shapePath(kind, line), marker = `arrow-${renderId.replace(/[^a-z0-9-]/gi, '-')}`,stroke=readProperty(className,'stroke');
+      return <svg key={renderId} {...common} role="img" aria-label={props.name ?? props.designId} viewBox={kind === 'Vector' ? vector.viewBox :kind==='Line'?`0 0 ${width} ${height}`: '0 0 100 100'} preserveAspectRatio="none" overflow="visible" pointerEvents="none">
+        {(vector.startArrow || vector.endArrow) && <defs><marker id={marker} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke={stroke&&typeof stroke==='object'&&'hex'in stroke?stroke.hex:'currentColor'} strokeWidth="1.5" /></marker></defs>}
+        <path d={d} vectorEffect="non-scaling-stroke" pointerEvents={locked ? 'none' : 'visiblePainted'} markerStart={vector.startArrow ? `url(#${marker})` : undefined} markerEnd={vector.endArrow ? `url(#${marker})` : undefined}/>
+        {!locked && <path d={d} fill="none" stroke="transparent" strokeWidth={8 / zoom} vectorEffect="non-scaling-stroke" pointerEvents="stroke"/>}
+      </svg>;
     }
     throw new Error(`不支持渲染的节点：${kind}`);
   }

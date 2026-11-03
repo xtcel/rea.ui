@@ -1,0 +1,25 @@
+import { invoke } from '@tauri-apps/api/core';
+import { isDesktop } from '../platform';
+
+export interface AgentConfig { executable: string; model: string }
+export interface AgentInfo { path: string; version: string; loggedIn: boolean }
+export interface ProjectContext { path: string; name: string; files: string[]; context: string; truncated: boolean }
+export interface AgentStatus { id: string; state: 'running' | 'completed' | 'cancelled' | 'failed'; events: string[]; result: unknown; error: string | null }
+export const defaultAgentConfig: AgentConfig = { executable: '', model: '' };
+export function isAgentConfig(v: unknown): v is AgentConfig { return !!v && typeof v === 'object' && 'executable' in v && typeof v.executable === 'string' && 'model' in v && typeof v.model === 'string'; }
+export async function agentRequest<T>(method: string, payload: unknown = {}): Promise<T> {
+  if (isDesktop()) return invoke<T>('local_agent_request', { method, payload });
+  let response: Response;
+  try { response = await fetch('/__rea/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method, payload }) }); }
+  catch { throw new Error('无法连接本地 Agent。请使用桌面版，或在本机运行 pnpm dev。'); }
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('当前环境没有本地 Agent 桥接。请使用桌面版，或在本机运行 pnpm dev。');
+  const value = await response.json() as { result: T; error?: string };
+  if (!response.ok || value.error) throw new Error(value.error || '本地 Agent 请求失败。');
+  return value.result;
+}
+export async function selectProject(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ directory: true, multiple: false, title: '关联本地项目代码' });
+  return typeof path === 'string' ? path : null;
+}

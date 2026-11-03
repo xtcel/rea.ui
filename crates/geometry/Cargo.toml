@@ -6,3 +6,6 @@ publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+kurbo = "0.13"

@@ -85,6 +85,12 @@ export function useDocument() {
   function execute(operation: SourceOperation, label = '编辑图层', coalesceKey?: string) { return transact({ label, coalesceKey, ops: [operation] }); }
   async function open(id: string) { await saver.current?.flush(); activate(await storage.openDocument(id)); }
   async function create(name?: string) { await saver.current?.flush(); const doc = await storage.createDocument(name); await storage.setMeta('lastOpenedId', doc.id); activate(doc); }
+  async function openGenerated(document: DocumentRecord) {
+    new DocumentSession(document.files);
+    await saver.current?.flush();
+    const doc = await storage.saveDocument(document);
+    await storage.setMeta('lastOpenedId', doc.id); activate(doc);
+  }
   async function reload() {
     if (!record.current) return;
     const doc = await storage.openDocument(record.current.id); activate(doc);
@@ -104,6 +110,14 @@ export function useDocument() {
     const bytes = await exportReaui({ files: { ...latest.current.files } }, await assetLoad.current);
     return { name: `${latest.current.manifest.name}.reaui`, blob: new Blob([new Uint8Array(bytes)], { type: 'application/vnd.reaui+zip' }) };
   }
+  async function addAssets(assets:readonly AssetRecord[]){
+    const id=latest.current?.manifest.id;if(!id)throw new Error('文档尚未加载。');
+    if(assets.some(asset=>asset.docId!==id))throw new Error('资源所属文档已变化，请重新插入。');
+    await storage.putAssets(id,assets);
+    if(latest.current?.manifest.id!==id)return;
+    const existing=await assetLoad.current,nextAssets=new Map(existing.map(a=>[a.path,a]));for(const a of assets)nextAssets.set(a.path,a);assetLoad.current=Promise.resolve([...nextAssets.values()]);
+    const next={...urls.current};for(const a of assets){if(next[a.path])URL.revokeObjectURL(next[a.path]);next[a.path]=URL.createObjectURL(a.blob);}urls.current=next;setAssetUrls(next);
+  }
   async function rename(id: string, name: string) {
     await saver.current?.flush(); await storage.renameDocument(id, name);
     if (record.current?.id === id && latest.current) {
@@ -122,7 +136,7 @@ export function useDocument() {
       if (docs[0]) activate(await storage.openDocument(docs[0].id)); else await create();
     }
   }
-  return { current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, open, create, reload, importFile, exportFile, rename, duplicate, remove,
+  return { current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
     undo: () => { if (latest.current) publish(latest.current.undo()); }, redo: () => { if (latest.current) publish(latest.current.redo()); } };
 }
 export type DocumentModel = ReturnType<typeof useDocument>;

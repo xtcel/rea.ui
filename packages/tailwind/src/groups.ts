@@ -78,9 +78,10 @@ for (const [key, utility] of Object.entries(corners)) {
   };
 }
 for (const [key, utility, cssProperty] of [['bg', 'bg', 'background-color'], ['text-color', 'text', 'color'], ['fill', 'fill', 'fill'], ['stroke', 'stroke', 'stroke']] as const) {
+  const isNone = (token: ClassToken) => (key === 'fill' || key === 'stroke') && (token.utility === utility && token.value === 'none' || arbitrary(token)?.[0] === cssProperty && arbitrary(token)?.[1] === 'none');
   groups[key] = { key,
-    matches: token => (token.utility === utility && !!parseColorToken(token.value ?? '')) || arbitrary(token)?.[0] === cssProperty,
-    read: token => parseColorToken(arbitrary(token) ? `[${arbitrary(token)![1]}]` : token.value ?? ''),
+    matches: token => isNone(token) || (token.utility === utility && !!parseColorToken(token.value ?? '')) || arbitrary(token)?.[0] === cssProperty,
+    read: token => isNone(token) ? { hex: 'transparent' } : parseColorToken(arbitrary(token) ? `[${arbitrary(token)![1]}]` : token.value ?? ''),
     write: value => value == null ? undefined : typeof value === 'string' ? formatColorClass(utility, value) : typeof value === 'object' ? formatColorClass(utility, value.hex, value.opacity) : (() => { throw new Error('颜色必须为十六进制。'); })(),
   };
 }

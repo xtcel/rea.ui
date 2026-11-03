@@ -1,0 +1,62 @@
+{
+  "id": "b4253d47-e011-4c2b-a944-5fc5af723fa9",
+  "name": "REA UI 本地生成",
+  "description": "以画布为中心的紧凑设计编辑工作台，采用中性白灰底色、系统字体、细分隔线和蓝色操作状态，服务于持续编辑与精确操作。",
+  "components": [
+    {
+      "description": "编辑器按钮最小高度32px，字号12px，水平内边距12px，圆角4px；背景#ffffff、文字#30343b、边框#e5e7eb，悬停背景#f1f3f6。首页主要按钮使用#356af0背景与#ffffff文字，最小高度34px、圆角5px；悬停背景#2857ce。禁用时降低透明度。",
+      "name": "按钮"
+    },
+    {
+      "description": "尺寸32×32px，圆角4px，图标采用Lucide轮廓，常用尺寸14–18px。默认图标#656d79，活动状态使用#eaf0ff背景与#356af0图标；提供可访问名称、快捷键提示和可见键盘焦点。",
+      "name": "图标按钮"
+    },
+    {
+      "description": "编辑器输入框最小高度32px，字号12px，圆角4px，垂直内边距6px、水平8px；背景#fafbfc、文字#30343b、边框#e5e7eb。焦点使用#356af0边框与细环，禁用透明度为50%。首页设置字段使用#ffffff背景、5px圆角及9px和10px内边距。",
+      "name": "输入框"
+    },
+    {
+      "description": "项目卡片由预览区和下方信息组成，圆角8px。预览区默认高174px，背景#f0f2f6，使用1px的#e5e7eb边框；标题12px、字重550，描述10px、颜色#656d79。悬停时标题变为#356af0，悬停或键盘聚焦时显示操作箭头；支持网格与列表布局。",
+      "name": "卡片"
+    },
+    {
+      "description": "首页侧栏默认宽228px，背景#fafbfc，右侧使用#e5e7eb分隔线。导航项高42px、圆角6px、水平内边距13px；默认文字#656d79，悬停背景#f1f3f6，活动项使用#eaf0ff背景、#356af0文字及600字重。编辑器页面与图层导航采用32px紧凑行和连续层级，选中图层增加内边线。",
+      "name": "导航"
+    },
+    {
+      "description": "设计与检查标签栏高44px，字号12px，默认文字#656d79；活动标签同时使用#356af0文字、底部蓝线和加粗状态，支持方向键切换。",
+      "name": "标签页"
+    },
+    {
+      "description": "背景#ffffff，圆角6px，内边距4px，使用轻量阴影。动作行保持紧凑，快捷键右对齐；支持方向键导航，浮层限制在视口内并独立滚动。",
+      "name": "菜单"
+    },
+    {
+      "description": "背景#ffffff，文字#30343b，圆角8px，标题16px、字重600；宽度为min(640px, calc(100vw - 28px))。使用遮罩与浮层阴影，内容超高时内部滚动；删除操作提供明确的确认文字。",
+      "name": "对话框"
+    }
+  ],
+  "guidelines": "依据DESIGN.md、apps/web/src/theme.css与apps/web/src/home.css提取。background对应默认画布底色，surface对应面板底色，primary对应操作强调色；spacing为4px基础步长，radius为4px控件基准，尺寸单位为px。\n正文13px、字重400、行高1.5；工具标签12px，分区标题12px且字重600，辅助信息11px，对话框标题16px。代码使用等宽字体，字号11px、行高24px。\n间距常用4、8、12、16、20px；紧凑元素圆角3px，控件4px，菜单6px，对话框8px。选中背景使用#eaf0ff，悬停背景使用#f1f3f6，字段背景使用#fafbfc。\n蓝色表达当前工具、选择、焦点和操作反馈；状态同时通过底色、边线、字重或图标表达。常驻工具栏和侧栏通过1px分隔线组织，阴影用于临时浮层。\n编辑器桌面顶栏高44px，左栏默认240px、右栏280px，两栏可在200–400px内调整。宽度小于900px时使用互斥抽屉，优先保留中央画布及工具入口；首页在宽度不超过760px时收起侧栏。\n交互控件保留可见键盘焦点，图标按钮提供可访问名称，动态效果尊重prefers-reduced-motion。画布文档的颜色和字体由其TSX决定，外壳令牌以主题样式为准。",
+  "published": true,
+  "sourceProject": "/Users/user/workspace/rea.ui/",
+  "color": "#356af0",
+  "colors": [
+    "#356af0",
+    "#eef0f4",
+    "#30343b",
+    "#656d79",
+    "#e5e7eb"
+  ],
+  "tokens": {
+    "background": "#eef0f4",
+    "border": "#e5e7eb",
+    "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+    "fontSize": 13,
+    "muted": "#656d79",
+    "primary": "#356af0",
+    "radius": 4,
+    "spacing": 4,
+    "surface": "#ffffff",
+    "text": "#30343b"
+  }
+}

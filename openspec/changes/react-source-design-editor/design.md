@@ -1,5 +1,7 @@
 ## Context
 
+2026-11-03 用户确认的矢量工具和完整本地组件体系由 `add-vector-tools-and-component-libraries` 实施。用户同时批准 FigCraft 参考范围扩展至几何、交互、组件和库机制，旧文“仅 UI”限制在这些方面被本次批准取代；TSX 真源与无第二套可编辑文档的约束仍生效。多轴变体、插槽和本地跨文档库以该变更新规范为本次验收依据。
+
 本设计将 [RFC-001](../../../docs/proposals/0001-react-source-design-editor.md) 转为 `spec-driven` OpenSpec 变更。原文保留为来源，规范性行为见本变更的 `specs/*/spec.md`，实施依赖与阶段门见 `tasks.md`。本文中的拟议接口与未来阶段不表示已经实现或获得本次评审批准。
 
 提案转换时，仓库采用 React/TypeScript + Rust/WASM：`packages/document` 使用 Babel 静态解析和局部源码事务，`packages/design` 提供基础原语与索引，`packages/renderer-dom` 提供 DOM/SVG，`packages/editor` 提供基础 UI，`packages/geometry` 对接 `crates/geometry`。当时文档记录基础绘制、移动、缩放、撤销重做和浏览器 TSX 保存；源码面板只读、历史未持久化、专业组件和完整 Schema 尚未实现。转换时仅阅读现有文档，未重跑产品测试。

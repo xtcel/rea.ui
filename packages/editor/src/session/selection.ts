@@ -5,8 +5,23 @@ export interface SelectionState {
     ids: string[];
     scope: string | null;
 }
+export type SelectionMode = 'direct' | 'hierarchy';
+
+/** Direct selection must not let a selected ancestor swallow a child hit. */
+export function pointerSelectionHit(page: InspectedPage, hits: readonly string[], selection: SelectionState, deep: boolean): string | null {
+    if (deep) return resolveHit(page, hits, selection.scope, true);
+    for (const id of hits) {
+        let node = page.nodes.get(id);
+        if (!node || node.hidden || node.locked) continue;
+        while (node) {
+            if (selection.ids.includes(node.id) && !node.locked) return node.id;
+            node = node.parentId ? page.nodes.get(node.parentId) : undefined;
+        }
+    }
+    return resolveHit(page, hits, selection.scope);
+}
 export const emptySelection = (pageId: string): SelectionState => ({ pageId, ids: [], scope: null });
-export const isContainer = (node?: IndexedNode) => !!node && ['Page', 'Frame', 'Group'].includes(node.kind);
+export const isContainer = (node?: IndexedNode) => !!node && ['Page', 'Frame', 'Group','Instance','Slot','SlotContent'].includes(node.kind);
 export function descendants(page: InspectedPage, id: string): string[] { return (page.nodes.get(id)?.children ?? []).flatMap(child => [child, ...descendants(page, child)]); }
 export function selectionRoots(page: InspectedPage, ids: readonly string[]) {
     const chosen = new Set(ids);

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/geometry", "src-tauri"]
+members = ["crates/geometry", "crates/local-agent", "src-tauri"]
 default-members = ["crates/geometry"]
 
 [profile.release]

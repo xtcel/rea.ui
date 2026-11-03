@@ -1,10 +1,12 @@
 export type Section = 'home' | 'projects' | 'systems' | 'templates' | 'settings';
 export type View = 'grid' | 'list';
 export type PreviewKind = 'starter' | 'website' | 'dashboard' | 'mobile';
-export interface DesignSystem { id: string; name: string; description: string; color: string; colors: string[]; example?: boolean }
+import { isTokens } from '../agent/designSystem';
+import type { DesignSystem } from '../agent/designSystem';
+export type { DesignSystem } from '../agent/designSystem';
 export interface Preferences { model: string; sendKey: 'enter' | 'command'; directory: string }
 
-export const models = ['默认模型', '推理模型', '快速模型'];
+export const models = ['Codex 默认模型'];
 export const defaultPreferences: Preferences = { model: models[0], sendKey: 'enter', directory: '' };
 export const builtInSystems: DesignSystem[] = [
   { id: 'rea', name: 'REA UI', description: '项目内置 · 清晰、紧凑的设计语言', color: '#356af0', colors: ['#356af0', '#eaf0ff', '#30343b', '#656d79', '#e5e7eb'] },
@@ -28,10 +30,12 @@ export function writeStored(key: string, value: unknown): boolean {
 export function isPreferences(value: unknown): value is Preferences {
   if (!value || typeof value !== 'object') return false;
   const p = value as Partial<Preferences>;
-  return typeof p.model === 'string' && models.includes(p.model) && (p.sendKey === 'enter' || p.sendKey === 'command') && typeof p.directory === 'string';
+  return typeof p.model === 'string' && (p.sendKey === 'enter' || p.sendKey === 'command') && typeof p.directory === 'string';
 }
 export function isSystems(value: unknown): value is DesignSystem[] {
-  return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) && Array.isArray(item.colors) && item.colors.length > 0 && item.colors.every((color: unknown) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)));
+  return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) && Array.isArray(item.colors) && item.colors.length > 0 && item.colors.every((color: unknown) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) &&
+    (item.tokens === undefined || isTokens(item.tokens)) && (item.published === undefined || typeof item.published === 'boolean') &&
+    (item.guidelines === undefined || typeof item.guidelines === 'string') && (item.components === undefined || Array.isArray(item.components) && item.components.every((c: { name?: unknown; description?: unknown }) => c && typeof c.name === 'string' && typeof c.description === 'string')));
 }
 export function relativeDate(value: string): string {
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());

@@ -1,7 +1,7 @@
 import { PAGE_ID } from '@rea/design';
 
 export interface DocumentManifest {
-  format: 'reaui'; version: 2; id: string; name: string;
+  format: 'reaui'; version: 2 | 3; id: string; name: string;
   pages: { id: string; file: string }[];
   createdAt: string;
 }
@@ -10,7 +10,7 @@ export function parseManifest(code: string): DocumentManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('rea.json 必须是对象。');
   const m = value as DocumentManifest;
   const fields = ['format', 'version', 'id', 'name', 'pages', 'createdAt'];
-  if (Object.keys(m).some(k => !fields.includes(k)) || m.format !== 'reaui' || m.version !== 2 ||
+  if (Object.keys(m).some(k => !fields.includes(k)) || m.format !== 'reaui' || ![2,3].includes(m.version) ||
     typeof m.id !== 'string' || !/^[a-zA-Z0-9_-]{2,128}$/.test(m.id) || typeof m.name !== 'string' || !m.name.trim() ||
     typeof m.createdAt !== 'string' || !Number.isFinite(Date.parse(m.createdAt)) || !Array.isArray(m.pages) || !m.pages.length) throw new Error('rea.json 清单格式不合法。');
   const ids = new Set<string>(), files = new Set<string>();
