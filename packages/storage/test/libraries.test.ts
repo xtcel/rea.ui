@@ -46,3 +46,8 @@ it('keeps pinned image bytes isolated from an unaccepted library upgrade',async(
   const consumer=new DocumentSession(emptyDocument('图片使用方').files),first=libraryImport(consumer,v1),next=libraryImport(consumer.commit(first.transaction),v2,true);
   expect(next.assets[0].path).not.toBe(first.assets[0].path);expect(await first.assets[0].blob.text()).toBe('old');expect(await next.assets[0].blob.text()).toBe('new');
 });
+it('opens and round trips the shipped vector and component showcase',async()=>{
+  const {readFile}=await import('node:fs/promises');const bytes=await readFile(new URL('../../../examples/vector-components.reaui',import.meta.url)),decoded=decodeReaui(new Uint8Array(bytes));
+  const s=new DocumentSession(decoded.document.files);expect(s.components.size).toBe(3);expect(s.pages.get('main')!.page.nodes.get('owned-description')!.element.props.children).toContain('实例独有');
+  const reopened=new DocumentSession(decodeReaui(await exportReaui({files:{...s.files}})).document.files);expect(reopened.files[COMPONENT_FILE]).toBe(s.files[COMPONENT_FILE]);expect(reopened.files['pages/main.page.tsx']).toBe(s.files['pages/main.page.tsx']);expect(reopened.manifest.version).toBe(3);expect(reopened.manifest.name).toBe(s.manifest.name);
+});

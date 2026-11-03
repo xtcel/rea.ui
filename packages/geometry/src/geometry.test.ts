@@ -62,3 +62,9 @@ it('snaps equal spacing and frees buffers after invalid input and 1000 gestures'
   for(let i=0;i<10;i++)run();const before=geometryMemoryBytes();for(let i=0;i<1000;i++)run();expect(geometryMemoryBytes()).toBe(before);
   const invalid=new SnapSession([]);expect(()=>invalid.snap([{x:NaN,y:0,width:20,height:20}],6)).toThrow();expect(()=>invalid.snap([],6)).toThrow('释放');
 });
+it('fits sampled pencil strokes in WASM and releases buffers across repeated edits',async()=>{
+  const {fitPencil}=await import('./index');const points=Array.from({length:100},(_,i)=>({x:i,y:Math.sin(i/15)*20}));
+  const fitted=fitPencil(points);expect(fitted.length).toBeGreaterThan(1);expect(fitted.length).toBeLessThan(points.length);expect(fitted[0].slice(0,2)).toEqual([0,0]);expect(fitted.at(-1)![0]).toBeCloseTo(99);
+  for(let i=0;i<10;i++)fitPencil(points);const bytes=geometryMemoryBytes();for(let i=0;i<100;i++)fitPencil(points);expect(geometryMemoryBytes()).toBe(bytes);
+  expect(()=>fitPencil([{x:0,y:0},{x:1,y:1}],NaN)).toThrow();expect(geometryMemoryBytes()).toBe(bytes);
+});

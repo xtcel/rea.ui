@@ -1,0 +1,13 @@
+{
+  "format": "reaui",
+  "version": 3,
+  "id": "doc_vector_components",
+  "name": "矢量与组件功能示例",
+  "pages": [
+    {
+      "id": "main",
+      "file": "pages/main.page.tsx"
+    }
+  ],
+  "createdAt": "2026-11-03T00:00:00.000Z"
+}
