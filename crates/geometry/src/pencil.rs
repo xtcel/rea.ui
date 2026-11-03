@@ -11,7 +11,9 @@ pub unsafe extern "C" fn fit_pencil(input: *const f64, count: usize, tolerance: 
     for (i, p) in points.chunks_exact(2).enumerate() {
         if i == 0 { poly.move_to((p[0],p[1])); } else { poly.line_to((p[0],p[1])); }
     }
-    let fitted = kurbo::simplify::simplify_bezpath(poly.iter(), tolerance, &Default::default());
+    // Preserve deliberate corners while fitting ordinary sampled pen jitter into curves.
+    let options = kurbo::simplify::SimplifyOptions::default().angle_thresh(0.3);
+    let fitted = kurbo::simplify::simplify_bezpath(poly.iter(), tolerance, &options);
     let mut anchors: Vec<[f64;6]> = Vec::new();
     for el in fitted.iter() {
         match el {
@@ -41,7 +43,7 @@ mod tests {
         let p: Vec<f64> = (0..100).flat_map(|i| [i as f64, (i as f64/15.0).sin()*20.0]).collect();
         let mut out = vec![0.0; 1200];
         let n = unsafe { fit_pencil(p.as_ptr(),100,0.75,out.as_mut_ptr(),out.len()) };
-        assert!(n>=2 && n<100);
+        assert!(n>=2 && n<100, "expected simplification, got {n} anchors");
         assert!((out[0]-p[0]).abs()<1e-6 && (out[(n-1)*6]-p[198]).abs()<1e-6);
     }
 }

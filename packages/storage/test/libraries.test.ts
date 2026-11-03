@@ -39,3 +39,10 @@ describe('local published library snapshots',()=>{
     const detached=detachInstance(s,'main',result.instanceId);s=s.commit(detached.transaction);const n=s.pages.get('main')!.page.nodes.get(detached.id)!;expect(n.kind).toBe('Frame');expect(n.element.props.className).toContain('left-10 top-20');expect(s.undo().pages.get('main')!.page.nodes.get(result.instanceId)!.kind).toBe('Instance');
   });
 });
+it('keeps pinned image bytes isolated from an unaccepted library upgrade',async()=>{
+  const path='assets/示例.png',asset=(text:string)=>({docId:'doc_library',path,type:'image/png',blob:new Blob([text],{type:'image/png'})});
+  const imageSource=source().replace('<Text designId="default-text">默认内容</Text>',`<Image designId="image-main" src="${path}"/>`);
+  const owner=libraryDoc().commit({label:'图片',ops:[{type:'catalog',source:imageSource}]}),v1=await publishLibrary(storage,owner,'图片库',[asset('old')]),v2=await publishLibrary(storage,owner,'图片库',[asset('new')]);
+  const consumer=new DocumentSession(emptyDocument('图片使用方').files),first=libraryImport(consumer,v1),next=libraryImport(consumer.commit(first.transaction),v2,true);
+  expect(next.assets[0].path).not.toBe(first.assets[0].path);expect(await first.assets[0].blob.text()).toBe('old');expect(await next.assets[0].blob.text()).toBe('new');
+});

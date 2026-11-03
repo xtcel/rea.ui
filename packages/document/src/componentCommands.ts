@@ -29,7 +29,8 @@ export function extractComponent(session:DocumentSession,pageId:string,ids:reado
   const root=cloneDesignTree(original),key=uid('component'),instanceId=uid('instance'),defs=new Map(candidate.components),cls=root.props.className??'';
   const clean=cloneElement(root,{className:patchClassNames(cls,{'position-type':'relative',left:null,top:null,rotate:null})});
   defs.set(key,createElement(Component,{id:key,designId:uid('definition'),name:name.trim()||'新组件'},clean));
-  const placement=sourceElement('Instance',{designId:instanceId,component:key,name:name.trim()||'新组件',className:patchClassNames('',placementStyles(cls))});
+  const placementPatch=placementStyles(cls);delete placementPatch.width;delete placementPatch.height;
+  const placement=sourceElement('Instance',{designId:instanceId,component:key,name:name.trim()||'新组件',className:patchClassNames('',placementPatch)});
   ops.push({type:'catalog',source:catalogSource(defs)},{type:'replace',pageId,id:rootId,fragment:placement});
   return {transaction:{label:'创建组件',ops},key,instanceId};
 }

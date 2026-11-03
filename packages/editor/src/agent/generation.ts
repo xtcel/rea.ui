@@ -6,7 +6,7 @@ import type { DesignSystem } from './designSystem';
 import type { ProjectContext } from './client';
 
 const string = { type: 'string' };
-export const uiSchema = { type: 'object', additionalProperties: false, required: ['name', 'summary', 'pages'], properties: {
+export const uiSchema = { type: 'object', additionalProperties: false, required: ['name', 'summary', 'pages', 'components'], properties: {
   name: string, summary: string, components: {type:['string','null']}, pages: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'source'], properties: { id: string, source: string } } },
 } };
 export function generatedDocument(value: unknown): { document: DocumentRecord; summary: string } {

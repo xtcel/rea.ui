@@ -3,7 +3,7 @@ export interface SelectOption {value:string;label:string;group?:string}
 export function Select({label,value,options,onChange,disabled}:{label:string;value?:string;options:readonly SelectOption[];onChange:(value:string)=>void;disabled?:boolean}) {
   const groups=[...new Set(options.map(o=>o.group))];
   return <label className="rea-select-label"><span>{label}</span><select className="rea-input" aria-label={label} value={value??''} disabled={disabled} onChange={e=>onChange(e.target.value)}>
-    <option value="" disabled>Mixed / 选择</option>{groups.map(group=>group?<optgroup key={group} label={group}>{options.filter(o=>o.group===group).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>:options.filter(o=>!o.group).map(o=><option key={o.value} value={o.value}>{o.label}</option>))}
+    {!options.some(option=>option.value==='')&&<option value="" disabled>Mixed / 选择</option>}{groups.map(group=>group?<optgroup key={group} label={group}>{options.filter(o=>o.group===group).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>:options.filter(o=>!o.group).map(o=><option key={o.value} value={o.value}>{o.label}</option>))}
   </select></label>;
 }
 export function Segmented({label,value,options,onChange,disabled}:{label:string;value?:string;options:readonly SelectOption[];onChange:(value:string)=>void;disabled?:boolean}) {

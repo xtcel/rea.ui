@@ -84,15 +84,7 @@ export function VectorTools({ tool:activeTool, node, camera, pan, world, local, 
   function move(e:PointerEvent<HTMLDivElement>){
     const p=pos(e);setHover(p);
     if(drag.current&&drag.current.pointer===e.pointerId){
-      const g=drag.current,next=structuredClone(g.base),a=next.anchors[g.index];
-      if(g.part==='anchor'){a.x=p.x;a.y=p.y;}else{
-        a[g.part]=[p.x-a.x,p.y-a.y];
-        if(a.mode==='smooth'||a.mode==='mirror'){
-          const other=g.part==='in'?'out':'in',length=a.mode==='mirror'?Math.hypot(...a[g.part]!):Math.hypot(...(a[other]??[0,0])),angle=Math.atan2(p.y-a.y,p.x-a.x)+Math.PI;
-          a[other]=[Math.cos(angle)*length,Math.sin(angle)*length];
-        }
-      }
-      setDraft(next);return;
+      setDraft(draggedPath(drag.current,p));return;
     }
     const d=drawing.current;if(!d||d.pointer!==e.pointerId)return;
     if(tool==='pencil'){
@@ -101,13 +93,20 @@ export function VectorTools({ tool:activeTool, node, camera, pan, world, local, 
       for(const event of events.length?events:[e.nativeEvent]){const q=pos(event),last=d.points.at(-1)!;if(Math.hypot(q.x-last.x,q.y-last.y)>.5/camera.zoom)d.points.push(q);}
       setDraft({anchors:d.points.map((q,i)=>({id:`a-${i}`,...q})),closed:false});
     }else if(tool==='pen'&&d.anchor!==undefined){
-      setDraft(old=>{if(!old)return old;const next=structuredClone(old),a=next.anchors[d.anchor!],dx=p.x-a.x,dy=p.y-a.y;if(Math.hypot(dx,dy)*camera.zoom>2){a.out=[dx,dy];a.in=[-dx,-dy];a.mode='mirror';}return next;});
+      // Pointer-up can clear the gesture before React evaluates this updater.
+      const index=d.anchor;
+      setDraft(old=>{if(!old)return old;const next=structuredClone(old),a=next.anchors[index];if(!a)return old;const dx=p.x-a.x,dy=p.y-a.y;if(Math.hypot(dx,dy)*camera.zoom>2){a.out=[dx,dy];a.in=[-dx,-dy];a.mode='mirror';}return next;});
     }
+  }
+  function draggedPath(g:NonNullable<typeof drag.current>,p:Point){
+    const next=structuredClone(g.base),a=next.anchors[g.index];
+    if(g.part==='anchor'){a.x=p.x;a.y=p.y;}else{a[g.part]=[p.x-a.x,p.y-a.y];if(a.mode==='smooth'||a.mode==='mirror'){const other=g.part==='in'?'out':'in',length=a.mode==='mirror'?Math.hypot(...a[g.part]!):Math.hypot(...(a[other]??[0,0])),angle=Math.atan2(p.y-a.y,p.x-a.x)+Math.PI;a[other]=[Math.cos(angle)*length,Math.sin(angle)*length];}}
+    return next;
   }
   function up(e:PointerEvent<HTMLDivElement>,cancelled=false){
     if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
     if(cancelled){setDraft(null);drawing.current=null;drag.current=null;return;}
-    if(drag.current){if(draft)commit(draft);drag.current=null;return;}
+    if(drag.current){commit(draggedPath(drag.current,pos(e)));drag.current=null;return;}
     const d=drawing.current;if(!d)return;
     if(tool==='pencil'){
       try{

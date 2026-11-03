@@ -1,4 +1,4 @@
-import { canonicalFragment, cloneFragment, parseFragment, parsePage, catalogSource, parseCatalog, componentDependencies, serializeElement, materializeElement, visualChildren } from '@rea/document';
+import { canonicalFragment, cloneFragment, parseFragment, parsePage, catalogSource, parseCatalog, componentDependencies, componentTarget, serializeElement, materializeElement, visualChildren } from '@rea/document';
 import type { ComponentCatalog } from '@rea/document';
 import { Children, cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
@@ -17,7 +17,9 @@ export interface ClipboardFragment {
 }
 export function copyFragment(parsed: ParsedPage, ids: readonly string[], documentId: string,components?:ComponentCatalog,bounds?:Record<string,Rect>): ClipboardFragment {
   const source=ids.some(id=>!parsed.syntax.has(id))?ids.map(id=>{const n=parsed.page.nodes.get(id);if(!n)throw new Error('图层不存在。');const cloned=materializeElement(n.element),b=bounds?.[id];return serializeElement(b?cloneElement(cloned,{className:patchClassNames(cloned.props.className??'',{'position-type':'absolute',...{left:b.x,top:b.y,width:b.width,height:b.height}})}):cloned);}).join('\n'):canonicalFragment(parsed,ids);
-  const keys=new Set<string>();function refs(n:ReactElement<ContainerProps>){if(n.type===Instance&&components)for(const key of componentDependencies({components},(n.props as InstanceProps).component))keys.add(key);for(const c of visualChildren(n.props.children))refs(c);}
+  const keys=new Set<string>();function add(key:string){if(components)for(const dep of componentDependencies({components},key))keys.add(dep);}
+  function values(key:string,input:InstanceProps['values']){for(const [name,p]of Object.entries(components?.get(key)?.props.parameters??{}))if(p.type==='instance'&&input?.[name])add(String(input[name]));}
+  function refs(n:ReactElement<ContainerProps>){if(n.type===Instance&&components){const p=n.props as InstanceProps;add(p.component);values(p.component,p.values);for(const [path,override]of Object.entries(p.overrides??{})){const target=componentTarget(components,p.component,path);if(target?.type===Instance){const key=override.props?.component??(target.props as InstanceProps).component;add(key);values(key,override.props?.values);}}}for(const c of visualChildren(n.props.children))refs(c);}
   if(components)refs(parseFragment(source).source);
   return { version:keys.size?2:1,documentId,pageId:parsed.page.id,source,...(keys.size&&components?{components:catalogSource(new Map([...components].filter(([key])=>keys.has(key))))}:{}) };
 }

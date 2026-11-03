@@ -1,6 +1,6 @@
 import { Children, cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
-import { ALL_IMPORTS, catalogSource, componentDependencies, componentTarget, parseCatalog } from '@rea/document';
+import { ALL_IMPORTS, catalogSource, componentDependencies, componentTarget, parseCatalog, serializeElement } from '@rea/document';
 import type { DocumentSession, Transaction } from '@rea/document';
 import { getNodeKind, isAssetPath } from '@rea/design';
 import type { ComponentProps, ContainerProps, InstanceProps, NodeOverride } from '@rea/design';
@@ -66,7 +66,7 @@ export function libraryImport(session:DocumentSession,version:LocalLibraryVersio
 }
 export function previewLibraryUpdate(session:DocumentSession,version:LocalLibraryVersion){
   const imported=libraryImport(session,version,true),before=[...session.components.values()].filter(d=>d.props.library?.id===version.id),after=parseCatalog((imported.transaction.ops[0] as {source:string}).source);
-  const changes=before.map(d=>{const next=after.get(d.props.id);return{name:d.props.name??d.props.id,status:!next?'删除':JSON.stringify(next.props)!==JSON.stringify(d.props)?'更新':'未变'};});
+  const changes=before.map(d=>{const next=after.get(d.props.id);return{name:d.props.name??d.props.id,status:!next?'删除':serializeElement(next)!==serializeElement(d)?'更新':'未变'};});
   for(const [key,d]of after)if(d.props.library?.id===version.id&&!before.some(old=>old.props.id===key))changes.push({name:d.props.name??key,status:'新增'});
   const conflicts:string[]=[];try{session.commit(imported.transaction);}catch(error){conflicts.push(error instanceof Error?error.message:String(error));}
   return{...imported,changes,conflicts};

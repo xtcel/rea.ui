@@ -159,7 +159,9 @@ export function canonicalFragment(parsed: ParsedPage, ids: readonly string[]): s
         for (const [childId, syntax] of parsed.syntax) {
             if (syntax.start! < start || syntax.end! > node.end!)
                 continue;
-            const kind = parsed.page.nodes.get(childId)!.kind;
+            const name=syntax.openingElement.name;
+            const kind = parsed.page.nodes.get(childId)?.kind ?? (name.type==='JSXIdentifier'?parsed.bindings.get(name.name):undefined);
+            if(!kind)throw new Error('源片段包含未知原语。');
             edits.push({ start: syntax.openingElement.name.start! - start, end: syntax.openingElement.name.end! - start, text: kind });
             if (syntax.closingElement)
                 edits.push({ start: syntax.closingElement.name.start! - start, end: syntax.closingElement.name.end! - start, text: kind });

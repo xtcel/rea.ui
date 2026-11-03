@@ -12,7 +12,7 @@ import { textContent, Page, Instance } from '@rea/design';
 import type { InstanceProps, NodeOverride, SlotProps } from '@rea/design';
 import { COMPONENT_FILE, componentEditor, componentValues, componentPageId, parseCatalog, resolvePage, withComponentRoot } from './components';
 import type { ComponentCatalog } from './components';
-import { sourceElement, sourceLiteral } from './serialize';
+import { sourceElement, sourceLiteral, serializeElement } from './serialize';
 
 export type StylePatch = Partial<Record<PropertyGroupKey, PropertyInput>>;
 export type SourceOperation =
@@ -209,7 +209,7 @@ export class DocumentSession {
     for (const op of transaction.ops) {
       if(op.type==='catalog'){
         const next=parseCatalog(op.source),previous=parseCatalog(files[COMPONENT_FILE]);
-        if(!op.libraryUpdate)for(const [key,def]of previous)if(def.props.library&&JSON.stringify(next.get(key)?.props)!==JSON.stringify(def.props))throw new Error('库组件只读，请编辑来源并发布，再使用库升级。');
+        if(!op.libraryUpdate)for(const [key,def]of previous)if(def.props.library&&(!next.has(key)||serializeElement(next.get(key)!)!==serializeElement(def)))throw new Error('库组件只读，请编辑来源并发布，再使用库升级。');
         files[COMPONENT_FILE]=op.source;manifest={...manifest,version:3};writeManifest();
       } else if (op.type === 'addPage' || op.type === 'duplicatePage') {
         if (manifest.pages.some(p => p.id === op.id)) throw new Error('页面 id 已存在。');

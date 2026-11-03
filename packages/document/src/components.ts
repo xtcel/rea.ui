@@ -135,6 +135,8 @@ export function resolvePage(page:ReactElement<PageProps>,catalog:ComponentCatalo
       const routes=Object.fromEntries(Object.keys(def.props.parameters??{}).map(key=>{const binding=original.bindings?.[`value:${key}`],exposed=parentScope&&binding?parentScope.routes[binding]:undefined;return[key,exposed??{key,...(parentScope?{target:innerPrefix.join('/')}:{})}];}));
       const next:Scope={values,routes,outer:parentScope?.outer??sourceId,component:parentScope?.component??ip.component,prefix:innerPrefix,layers:[{overrides:variant?.overrides??{},prefix:innerPrefix},{overrides:ip.overrides??{},prefix:innerPrefix},...(parentScope?.layers??[])],contents:[...ownContents,...parentScope?.contents??[]]};
       const root=componentRoot(def),resolved=walk(root,next,depth+1);
+      const addresses=new Set<string>();function collect(n:ReactElement<ContainerProps>){addresses.add(n.props.designId);for(const c of visualChildren(n.props.children))collect(c);}collect(resolved);
+      for(const target of Object.keys({...variant?.overrides,...ip.overrides}))if(!addresses.has(`${String(props.designId)}/${target}`))throw new Error(`覆盖目标不存在：${target}`);
       for(const content of ownContents)if(!matchedContents.has(content))throw new Error(`插槽不存在：${content.slot}`);
       // Keep instance layout independent; definition root stretches within the instance's measured box.
       const rootClass=resolved.props.className??'',width=fixedValue(rootClass,'width'),height=fixedValue(rootClass,'height');

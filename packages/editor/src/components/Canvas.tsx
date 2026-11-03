@@ -124,9 +124,13 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         const element = find(id);
         if (!element)
             return;
-        const b = element.getBoundingClientRect(), center = worldPoint(b.left + b.width / 2, b.top + b.height / 2);
+        // WebKit client rects divide out CSS zoom; Chromium includes it. Measure the
+        // reported scale and origin inside the same zoom boundary as the artwork.
+        const root=shadow(),origin=root?.querySelector('[data-page-origin]')?.getBoundingClientRect(),probe=root?.querySelector('[data-coordinate-probe]')?.getBoundingClientRect();
+        const b = element.getBoundingClientRect(),scale=probe?.width?probe.width/100:camera.zoom;
+        const center=origin?{x:(b.left+b.width/2-origin.left)/scale,y:(b.top+b.height/2-origin.top)/scale}:worldPoint(b.left+b.width/2,b.top+b.height/2);
         const computed = getComputedStyle(element);
-        const width = Math.max(4,parseFloat(computed.width)||b.width/camera.zoom), height=Math.max(4,parseFloat(computed.height)||b.height/camera.zoom);
+        const width = Math.max(4,parseFloat(computed.width)||b.width/scale), height=Math.max(4,parseFloat(computed.height)||b.height/scale);
         return { x: center.x - width / 2, y: center.y - height / 2, width, height };
     }
     function rotationFor(id: string): number {
@@ -506,7 +510,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     else if (isContainer(node))
         onSelection({ ...selection, scope: hit, ids: [] }); }}>
     <div className="rea-canvas-content-position" style={{ position: 'absolute', left: camera.x, top: camera.y }}>
-      <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ zoom: camera.zoom }}>
+      <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ position:'relative', zoom: camera.zoom }}>
       <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} pathPreview={vectorEditingId&&pathDraft?{id:vectorEditingId,path:pathDraft}:null} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} zoom={camera.zoom}/>
       {editingId && editedElement && editedBox && <TextEditor key={editingId} id={editingId} text={editedText} target={editedElement} box={editedBox} rotation={rotationFor(editingId)} onFinish={onTextFinish}/>}
       </div>

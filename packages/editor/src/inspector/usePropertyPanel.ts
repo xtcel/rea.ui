@@ -9,7 +9,7 @@ export function usePropertyPanel(page:InspectedPage,ids:readonly string[],transa
   const latest=useRef({page,ids,transact});latest.current={page,ids,transact};
   const capture=useCallback(()=>{
     const content=document.querySelector<HTMLElement>('.rea-canvas-content'),root=content?.querySelector('[data-shadow-canvas]')?.shadowRoot,origin=root?.querySelector('[data-page-origin]')?.getBoundingClientRect();if(!root||!content||!origin)return;
-    const zoom=Number(content.dataset.cameraZoom)||1,next=new Map<string,MeasuredRect>();
+    const probe=root.querySelector('[data-coordinate-probe]')?.getBoundingClientRect(),zoom=probe?.width?probe.width/100:Number(content.dataset.cameraZoom)||1,next=new Map<string,MeasuredRect>();
     root.querySelectorAll<HTMLElement|SVGElement>('[data-design-id]').forEach(element=>{const b=element.getBoundingClientRect();next.set(element.getAttribute('data-design-id')!,{x:(b.left-origin.left)/zoom,y:(b.top-origin.top)/zoom,width:element instanceof HTMLElement?element.offsetWidth:b.width/zoom,height:element instanceof HTMLElement?element.offsetHeight:b.height/zoom,...(element instanceof HTMLElement&&element.offsetParent===element.parentElement?{localX:element.offsetLeft,localY:element.offsetTop}:{})});});
     setMeasurements(old=>JSON.stringify([...old])===JSON.stringify([...next])?old:next);
   },[]);

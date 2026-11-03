@@ -54,3 +54,17 @@ describe('declarative components and instances',()=>{
     expect(s.pages.get('home')!.page.nodes.get('nested-own')!.element.props.children).toBe('正文');
   });
 });
+it('rejects broken unused variants and preserves slot content through a two-axis switch',()=>{
+  const defs=`<Component id="card-main" designId="definition-main" variants={[{name:'常规',axes:{size:'small',state:'normal'},overrides:{'card-root':{styles:{bg:'#ffffff'}}}},{name:'禁用',axes:{size:'large',state:'disabled'},overrides:{'card-root':{styles:{opacity:.5}}}}]}><Frame designId="card-root" className="relative w-80 h-40"><Slot designId="slot-main" slotId="body-main"/></Frame></Component>`;
+  let s=doc('<Instance designId="card-one" component="card-main" variant={{size:"small",state:"normal"}}><SlotContent designId="own-slot" slotId="body-main"><Text designId="own-text">自定义</Text></SlotContent></Instance>',defs);
+  s=s.commit({label:'切换组合',ops:[{type:'set',pageId:'home',id:'card-one',props:{variant:{size:'large',state:'disabled'}}}]});
+  expect(s.pages.get('home')!.page.nodes.get('own-text')!.element.props.children).toBe('自定义');
+  expect(()=>doc('',defs.replace("'card-root':{styles:{opacity:.5}}","'missing-node':{styles:{opacity:.5}}"))).toThrow('覆盖目标');
+});
+it('keeps a hundred linked backgrounds synchronized while preserving one local override',()=>{
+  let s=doc(Array.from({length:100},(_,i)=>`<Instance designId="instance-${i}" component="button-main"/>`).join(''));
+  s=s.commit({label:'独立背景',ops:[{type:'set',pageId:'home',id:'instance-0/button-root',styles:{bg:'#ff0000'}}]});
+  s=s.commit({label:'主组件背景',ops:[{type:'set',pageId:'edit-button-main',id:'button-root',styles:{bg:'#00ff00'}}]});
+  expect([...s.pages.get('home')!.page.nodes.values()].filter(n=>n.element.props.className?.includes('bg-[#00FF00]'))).toHaveLength(99);
+  expect(s.pages.get('home')!.page.nodes.get('instance-0/button-root')!.element.props.className).toContain('bg-[#FF0000]');
+});

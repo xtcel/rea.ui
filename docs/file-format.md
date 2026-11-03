@@ -1,6 +1,6 @@
-# REA UI v2 文件格式
+# REA UI v2 / v3 文件格式
 
-一个文档是内存中的虚拟目录。唯一可编辑设计源是清单和页面 TSX 文本；AST、索引、React 元素和 DOM 均可重建。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
+一个文档是内存中的虚拟目录。唯一可编辑设计源是清单、页面与组件目录 TSX 文本；AST、索引、React 元素和 DOM 均可重建。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
 
 ## 目录和清单
 
@@ -43,7 +43,7 @@ export default (
 );
 ```
 
-仅允许从 `@rea/design` 命名导入（可使用别名），和一个默认导出的 `<Page>` JSX。属性只能使用静态字符串或布尔字面量，`className` 必须为字符串；字符串表达式 `{"文字"}` 可用。拒绝其他模块语句、函数调用、模板表达式、spread、事件属性、key、ref、style，以及数值/对象/数组属性。不执行任何页面代码。
+仅允许从 `@rea/design` 命名导入（可使用别名），和一个默认导出的 `<Page>` JSX。属性可使用静态字符串、有限数字、布尔值、null、数组或普通对象字面量，`className` 必须为字符串；字符串表达式 `{"文字"}` 可用。拒绝其他模块语句、函数调用、模板表达式、spread、事件属性、key、ref、style，以及计算属性、对象 spread、非有限数值与原型键。不执行任何页面代码。
 
 公共属性：`designId`、`name?`、`hidden?`、`locked?`、`className?`。容器有 `children`，`Page` 另有 `id`，`Image` 另有 `src`，`Vector` 另有 `d`、`viewBox`。
 
@@ -54,7 +54,10 @@ export default (
 | Rect / Ellipse | 无子节点；Ellipse 默认 `rounded-full`，显式圆角可覆盖 |
 | Text | 仅字符串；按 JSX 文本规则处理缩进，显式字符串保留空格 |
 | Image | 无子节点；src 必须为安全的 `assets/…` 相对路径 |
-| Vector | 无子节点；需要路径 d 和四个数值的 viewBox；使用 fill/stroke 类 |
+| Vector | 无子节点；互斥的 d 或结构化 path，以及合法 viewBox；使用 fill/stroke 类 |
+| Line / Polygon / Star | 端点/箭头、边数、角数/内半径参数；无子节点 |
+| Instance | 引用组件，可含 SlotContent；禁止内联普通视觉结构 |
+| Slot / SlotContent | 命名插槽与实例自有内容；SlotContent 必须是 Instance 的直接子节点 |
 
 隐藏和锁定向后代继承。普通节点修改、删除、插入到锁定容器中均被拒绝；可先解锁锁定的父级。
 
@@ -81,7 +84,7 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 2. 路径必须相对、安全且使用 `/`。拒绝绝对路径、盘符、反斜杠、空路径段、`.`、`..`、控制字符、目录条目（结尾 `/`）。
 3. 最多 5000 条目，解压后合计最多 256MiB，任一条目压缩比不得超过 200。超限在分配解压缓冲区前拒绝。
 4. 必须有 UTF-8 `rea.json`，所有清单页面必须存在并通过静态解析，id 必须一致。拒绝清单未引用的页面文件。
-5. `assets/` 路径同时遵守 Image 的资源路径限制。根目录清单及 `pages/`、`assets/` 之外的文件忽略并给出警告。
+5. `assets/` 路径同时遵守 Image 的资源路径限制。根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的文件忽略并给出警告。
 6. 所有校验通过后，在一个 IndexedDB 事务中写入新文档和资源，失败时无残留。
 
 压缩比限制也适用于高度重复的正常文件；若其超过阈值，导入会按同样规则拒绝。
@@ -93,3 +96,28 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 文档列表同时支持手动导入旧 `.design.tsx`。新的 `.page.tsx` 不是独立文档，请使用 `.reaui` 交换整个文档。
 
 页面代码导出为当前页面原文，前置一行注明 Tailwind v4 默认主题与 preflight 的注释；复制源码仍复制精确原文。
+
+
+## v3 组件与路径
+
+没有组件的 v2 文档可直接打开；首次写入组件目录时原子升级清单为 v3。页面文件保持原路径。v3 的可选组件目录固定为 `components/main.components.tsx`，根为 `<Components>`，每个 `<Component id designId>` 恰好包含一个视觉根；原语仍从 `@rea/design` 导入，不执行代码。
+
+```tsx
+export default <Components>
+  <Component id="card-main" designId="card-definition" name="卡片"
+    parameters={{title:{type:'string',default:'标题'}}}>
+    <Frame designId="card-root" className="relative w-80 h-48 bg-white">
+      <Text designId="card-title" binding="title" />
+      <Slot designId="card-body" slotId="body-main" accepts={['Text','Instance']} />
+    </Frame>
+  </Component>
+</Components>;
+```
+
+页面以 `<Instance designId="card-one" component="card-main" values={{title:'欢迎'}} />` 引用。`parameters` 支持 string/number/boolean/enum/instance；`bindings` 可绑定 visible、style:width 等规范样式组、嵌套 component 与 value:属性名。`variants` 保存 `{name, axes, overrides}`，完整维度组合唯一。`overrides` 按源节点身份/嵌套实例路径保存 `{text,styles,props}`，不保存展开树。
+
+插槽内容以真实源子树保存：`<SlotContent designId="owned-body" slotId="body-main">...</SlotContent>`；嵌套插槽用 `target="nested-instance"` 指定源实例路径。结构修改只允许在实例自有插槽内进行。展开身份为实例 id、嵌套实例 id 与源节点 id 的组合。派生身份不会写回文件。
+
+结构化路径示例：`path={{closed:false,anchors:[{id:'a-one',x:0,y:0,out:[30,0]},{id:'a-two',x:100,y:60,in:[-30,0],mode:'smooth'}]}}`。控制柄是相对锚点的位移，模式为 corner/smooth/mirror。原始 SVG d 保持兼容；含圆弧或多个轮廓的 d 可继续渲染，但本次不能转换为锚点路径。
+
+跨文档库导入会将定义和依赖快照写入目录，`library` 记录库 id、组件 id、固定版本和内容 hash；库发布记录保存在本机 IndexedDB meta。源节点身份跨版本稳定，二进制资源路径按发布版本隔离。手动升级候选校验成功后一次提交，删除仍被引用的属性、覆盖目标或插槽会阻止升级。`.reaui` 携带定义与资源，可离线打开；本机库发布历史不随单个文档导出。

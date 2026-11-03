@@ -5,7 +5,7 @@
 ## 真源与派生数据
 
 ```text
-rea.json + pages/*.page.tsx + assets
+rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
                 ↓
 @rea/document：清单与 Babel 静态 TSX 解析（不执行代码）
                 ↓
@@ -20,7 +20,7 @@ rea.json + pages/*.page.tsx + assets
 文件差异历史（Undo / Redo）→ 防抖 500ms → IndexedDB
 ```
 
-清单和页面 TSX 是唯一可编辑真源。DocumentSession 的 AST、React 元素和索引由文件重建；UI 不维护平行的可编辑节点 JSON。资源是独立的二进制 blob。
+清单、页面和组件目录 TSX 是唯一可编辑真源。DocumentSession 的 AST、React 元素和索引由文件重建；UI 不维护平行的可编辑节点 JSON。资源是独立的二进制 blob。
 
 ## 模块边界
 
@@ -97,3 +97,14 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 自动布局复用 `set` 和 M3 的同父级 `move` 操作：开启时按原位置排序、移除自由定位；关闭时读取当前布局偏移与尺寸，恢复绝对定位。Frame 子节点转为流式时保留 `relative` 作为内部自由定位子节点的包含块。选中流式节点时位置和对齐禁用；分布按整体首尾边界和节点宽高均分实际间隙。
 
 `tailwind/src/extended.ts` 补充旋转、描边、效果、文字和 flex 属性组；`composites.ts` 集中处理描边位置和宽高模式。阴影解析只在括号外拆分逗号，不执行动态代码；投影和内阴影合并写入单个类。字号切换保留已有行高，缺省时补写此前等价像素行高。颜色精确匹配当前安装的 v4 色板。完整映射和已知近似见 [样式对照表](styling-reference.md)。
+
+
+## 矢量与组件扩展
+
+`add-vector-tools-and-component-libraries` 在现有静态 TSX 和事务层上增加参数化形状、路径、组件目录及本机库，不引入第二份可编辑场景。FigCraft 固定参考与 MIT 材料见 `third_party/figcraft/`。铅笔采样经 WASM 的 kurbo 曲线拟合，锚点/控制柄与形状转换保存为静态路径属性。
+
+相机给内容与屏幕叠层提供同一 zoom。内容使用布局缩放 CSS zoom，让 WKWebView 按当前比例重绘 DOM 文字和 SVG；选框叠层使用原有相机坐标。测量通过明确的 data-camera-zoom 换算，命中通过真实 SVG path 与随 zoom 调整的屏幕容差。
+
+`DocumentSession.components` 保存解析定义，`pages` 和 `componentPages` 是派生展开页；每个虚拟节点保存源实例地址，用于将编辑路由至 values 或属性覆盖。组件编辑入口将视觉根包装为临时工作面，事务只写回实际组件内容。所有基础定义和变体均校验，包括未被页面使用的定义。
+
+`storage/libraries.ts` 原子发布不可变版本与资源 hash；引用文档持有依赖快照，固定版本、显式预览升级、冲突阻断与撤销共同避免源文件修改影响其他文档。剪贴板收集组件依赖和本地资源，跨文档粘贴时带入闭包；派生图层单独复制时物化为独立内容。
