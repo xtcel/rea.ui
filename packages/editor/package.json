@@ -7,13 +7,16 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@rea/design": "workspace:*",
     "@rea/document": "workspace:*",
     "@rea/geometry": "workspace:*",
-    "@rea/design": "workspace:*",
     "@rea/renderer-dom": "workspace:*",
-    "lucide-react": "1.66.0",
     "@rea/storage": "workspace:*",
-    "@rea/tailwind": "workspace:*"
+    "@rea/tailwind": "workspace:*",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-fs": "^2.7.1",
+    "lucide-react": "1.66.0"
   },
   "peerDependencies": {
     "react": "^19.3.1",

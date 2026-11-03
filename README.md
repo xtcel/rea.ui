@@ -25,6 +25,19 @@ pnpm preview    # 生产预览
 
 pnpm 使用项目缓存 `.pnpm-store/`，锁文件固定依赖版本。
 
+## macOS 桌面版
+
+桌面版使用 Tauri 2 封装同一套 React 界面和 Rust/WASM 几何内核，支持 macOS 12+、Apple Silicon。
+
+```bash
+pnpm desktop:dev        # 本地桌面开发，自动启动 Web 开发服务
+pnpm desktop:build:mac  # 构建 Apple Silicon .app 与 .dmg
+pnpm desktop:build      # 按当前主机架构构建，macOS 配置输出 .app 与 .dmg
+pnpm design:app         # 重建可编辑的应用界面设计稿
+```
+
+首次启动桌面版会自动导入 [ReaUI_App.reaui](ReaUI_App.reaui)：包含首页与编辑器两页、249 个可编辑图层。也可在编辑器主菜单中选择「导入 .reaui…」手动打开。构建环境、产物路径、保存方式与签名状态见 [桌面版说明](docs/desktop.md)。
+
 ## 编辑操作
 
 | 操作 | 方法 |

@@ -9,6 +9,10 @@
   },
   "scripts": {
     "dev": "pnpm build:wasm && pnpm --filter @rea/web dev",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:build:mac": "tauri build --target aarch64-apple-darwin --bundles app,dmg",
+    "design:app": "node scripts/build-app-design.mjs",
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "pnpm build:wasm && pnpm typecheck && pnpm --filter @rea/web build",
     "test:rust": "cargo test --workspace",
@@ -18,7 +22,9 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@rea/design": "workspace:*",
     "@tailwindcss/node": "4.3.3",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

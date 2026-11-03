@@ -1,4 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core';
+import { StorageService, importReaui } from '@rea/storage';
 
 export const isDesktop = isTauri;
 
@@ -22,11 +23,12 @@ export async function saveFile(blob: Blob, filename: string): Promise<void> {
 /** Install the editable UI example once, without replacing existing projects. */
 export async function installDesktopExample(url: string): Promise<void> {
   if (!isDesktop()) return;
-  const { StorageService, importReaui } = await import('@rea/storage');
   const storage = new StorageService();
-  if (await storage.getMeta('desktop:app-design:v1')) return;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('无法读取内置 UI 设计示例。');
-  await importReaui(storage, new Uint8Array(await response.arrayBuffer()));
-  await storage.setMeta('desktop:app-design:v1', 'installed');
+  try {
+    if (await storage.getMeta('desktop:app-design:v1')) return;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('无法读取内置 UI 设计示例。');
+    await importReaui(storage, new Uint8Array(await response.arrayBuffer()));
+    await storage.setMeta('desktop:app-design:v1', 'installed');
+  } finally { await storage.close(); }
 }

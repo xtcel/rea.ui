@@ -1,0 +1,19 @@
+[package]
+name = "rea-ui-desktop"
+version = "0.1.0"
+description = "REA UI desktop design workspace"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[lib]
+name = "rea_ui_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.3", features = [] }
+tauri-plugin-dialog = "2.7.3"
+tauri-plugin-fs = "2.5.2"

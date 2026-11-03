@@ -1,0 +1,17 @@
+{
+  "format": "reaui",
+  "version": 2,
+  "id": "doc_reaui_app",
+  "name": "ReaUI_App",
+  "pages": [
+    {
+      "id": "home",
+      "file": "pages/home.page.tsx"
+    },
+    {
+      "id": "editor",
+      "file": "pages/editor.page.tsx"
+    }
+  ],
+  "createdAt": "2026-11-03T00:00:00.000Z"
+}
