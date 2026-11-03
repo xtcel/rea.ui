@@ -2,7 +2,9 @@
 
 本设计将 [RFC-001](../../../docs/proposals/0001-react-source-design-editor.md) 转为 `spec-driven` OpenSpec 变更。原文保留为来源，规范性行为见本变更的 `specs/*/spec.md`，实施依赖与阶段门见 `tasks.md`。本文中的拟议接口与未来阶段不表示已经实现或获得本次评审批准。
 
-仓库当前采用 React/TypeScript + Rust/WASM：`packages/document` 使用 Babel 静态解析和局部源码事务，`packages/design` 提供基础原语与索引，`packages/renderer-dom` 提供 DOM/SVG，`packages/editor` 提供基础 UI，`packages/geometry` 对接 `crates/geometry`。现有文档记录基础绘制、移动、缩放、撤销重做和浏览器 TSX 保存；源码面板只读、历史未持久化、专业组件和完整 Schema 尚未实现。本次仅阅读现有文档，未重跑产品测试。
+提案转换时，仓库采用 React/TypeScript + Rust/WASM：`packages/document` 使用 Babel 静态解析和局部源码事务，`packages/design` 提供基础原语与索引，`packages/renderer-dom` 提供 DOM/SVG，`packages/editor` 提供基础 UI，`packages/geometry` 对接 `crates/geometry`。当时文档记录基础绘制、移动、缩放、撤销重做和浏览器 TSX 保存；源码面板只读、历史未持久化、专业组件和完整 Schema 尚未实现。转换时仅阅读现有文档，未重跑产品测试。
+
+2026-11-03 已对当前工作区完成代码审计并重跑基础自动测试，见 [实施审计与能力矩阵](implementation-audit.md)。M1–M4 已实现的基础子项在 `tasks.md` 标记完成，剩余正式契约和验收单独保留。当前格式为 `rea.json + pages/*.page.tsx`，Group 仍有布局盒，画布缩放仍由 TypeScript 计算；下文单文件 DesignDocument、逻辑 Group、完整 WASM 缩放、组件、统一事务与文件服务等契约仍为目标，不能从现有基础能力推定完成。
 
 该基线来自 [README](../../../README.md)、[架构说明](../../../docs/architecture.md) 与 [验证记录](../../../docs/verification.md)，不等同于本变更的完整 P0/P1 验收。`openspec/specs/` 尚无基线，因此能力采用 ADDED Requirements 建立契约。
 

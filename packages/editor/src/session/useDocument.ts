@@ -4,6 +4,7 @@ import type { SourceOperation, Transaction } from '@rea/document';
 import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2 } from '@rea/storage';
 import { withDocumentMetadata } from './metadata';
 import type { AssetRecord, DocumentRecord, SaveStatus } from '@rea/storage';
+import { isDesktop } from '../platform';
 
 export function useDocument() {
   const [storage] = useState(() => new StorageService());
@@ -54,6 +55,24 @@ export function useDocument() {
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', visibility);
     return () => { window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', visibility); };
+  }, []);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    let closing = false;
+    void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
+      const window = getCurrentWindow();
+      const stop = await window.onCloseRequested(async event => {
+        event.preventDefault();
+        if (closing) return;
+        closing = true;
+        try { await saver.current?.flush(); await window.destroy(); }
+        catch (error) { closing = false; setNotice(`关闭前保存失败：${String(error)}。请先导出 .reaui 备份。`); }
+      });
+      if (disposed) stop(); else unlisten = stop;
+    }).catch(error => setNotice(`桌面关闭保护初始化失败：${String(error)}`));
+    return () => { disposed = true; unlisten?.(); };
   }, []);
   function publish(next: DocumentSession) {
     if (next === latest.current) return;

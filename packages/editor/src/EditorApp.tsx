@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Frame as FrameIcon, Hand, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X } from 'lucide-react';
+import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X } from 'lucide-react';
 import type { Rect } from '@rea/geometry';
 import { Text } from '@rea/design';
 import type { SourceOperation, Transaction, StylePatch, DocumentSession } from '@rea/document';
@@ -20,18 +20,18 @@ import type { DocumentModel } from './session/useDocument';
 import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots, toggleSelection } from './session/selection';
 import type { SelectionState } from './session/selection';
 import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard } from './session/clipboard';
+import { saveFile } from './platform';
 export type EditorTool = 'select' | 'hand' | 'board' | 'rectangle' | 'ellipse' | 'text';
 const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().replaceAll('-', '')}`;
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob), anchor = document.createElement('a');
-  anchor.href = url; anchor.download = filename.replace(/[\\/:*?"<>|]/g, '_'); anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 export function EditorApp() {
   const model = useDocument();
-  if (!model.current) return <div className="p-8 text-sm" role="status">正在打开本地文档…</div>;
-  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} />;
+  return <EditorWorkspace model={model} />;
 }
-function DocumentEditor({ model, current }: { model: DocumentModel; current: DocumentSession }) {
+export function EditorWorkspace({ model, onHome }: { model: DocumentModel; onHome?: () => void }) {
+  if (!model.current) return <div className="p-8 text-sm" role="status">正在打开本地文档…</div>;
+  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} onHome={onHome} />;
+}
+function DocumentEditor({ model, current, onHome }: { model: DocumentModel; current: DocumentSession; onHome?: () => void }) {
   const pages = [...current.pages.values()].map(parsed => parsed.page);
   const [pageId, setPageId] = useState(pages[0].id), [selection, setSelection] = useState<SelectionState>(() => emptySelection(pages[0].id));
   const canvas = useRef<CanvasApi | null>(null);
@@ -124,7 +124,7 @@ function DocumentEditor({ model, current }: { model: DocumentModel; current: Doc
     reorder(ids: string[]) { model.execute({ type: 'reorderPages', ids }, '页面排序'); },
   };
   function run(action: () => Promise<unknown>) { void action().catch(error => model.setNotice(String(error))); }
-  async function exportDocument() { const file = await model.exportFile(); download(file.blob, file.name); }
+  async function exportDocument() { const file = await model.exportFile(); await saveFile(file.blob, file.name); }
   useEffect(() => {
     const blocked=(target:EventTarget|null)=>showDocuments||shortcuts||editingId||document.querySelector('[role="menu"],dialog[open]')||(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
     function keydown(event:KeyboardEvent) {
@@ -160,10 +160,11 @@ function DocumentEditor({ model, current }: { model: DocumentModel; current: Doc
   const Shape = shape === 'ellipse' ? Circle : Square;
   const saveLabels = { saving: '保存中…', saved: '已保存', error: '保存失败 · 导出备份', conflict: '版本冲突 · 重新加载' };
   const toolbar = <>
+    {onHome && <IconButton label="返回首页" onClick={onHome}><Home size={17} /></IconButton>}
     <Menu label="主菜单" items={[
       { label: '新建文档', action: () => run(() => model.create()) }, { label: '打开文档…', action: () => setShowDocuments(true) },
       { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => input.current?.click() },
-      { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => download(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`) },
+      { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
       { label: '撤销', shortcut: '⌘/Ctrl+Z', disabled: !current.past.length, action: model.undo },
       { label: '重做', shortcut: '⌘/Ctrl+Shift+Z', disabled: !current.future.length, action: model.redo },
       { label: '编组', shortcut: '⌘/Ctrl+G', disabled: !selectedIds.length, action: () => group() },
