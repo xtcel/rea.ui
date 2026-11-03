@@ -1,6 +1,6 @@
 import { Children, cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
-import { ALL_IMPORTS, catalogSource, componentDependencies, parseCatalog } from '@rea/document';
+import { ALL_IMPORTS, catalogSource, componentDependencies, componentTarget, parseCatalog } from '@rea/document';
 import type { DocumentSession, Transaction } from '@rea/document';
 import { getNodeKind, isAssetPath } from '@rea/design';
 import type { ComponentProps, ContainerProps, InstanceProps, NodeOverride } from '@rea/design';
@@ -41,20 +41,21 @@ export function libraryImport(session:DocumentSession,version:LocalLibraryVersio
   // Resources are immutable too: a rejected upgrade must not replace the pinned version's bytes.
   const assetMap=new Map(version.assets.map(a=>[a.path,`assets/${keyFor(version.id,`${version.version}:${version.hash}:${a.path}`)}/${a.path.slice(7)}`]));
   const target=(path:string)=>path.split('/').map(id=>idMap.get(id)??id).join('/');
-  function overrides(input:Record<string,NodeOverride>|undefined){if(!input)return;return Object.fromEntries(Object.entries(input).map(([path,override])=>[target(path),{...override,...(override.props?{props:{...override.props,...(override.props.component?{component:keys.get(override.props.component)??override.props.component}:{})}}:{})}]));}
+  function values(component:string,input:InstanceProps['values']){if(!input)return;const params=source.get(component)?.props.parameters??{};return Object.fromEntries(Object.entries(input).map(([key,value])=>[key,params[key]?.type==='instance'&&typeof value==='string'?keys.get(value)??value:value]));}
+  function overrides(input:Record<string,NodeOverride>|undefined,owner:string){if(!input)return;return Object.fromEntries(Object.entries(input).map(([path,override])=>{const node=componentTarget(source,owner,path),component=override.props?.component??(node?.props as InstanceProps|undefined)?.component;return[target(path),{...override,...(override.props?{props:{...override.props,...(override.props.component?{component:keys.get(override.props.component)??override.props.component}:{}),...(component&&override.props.values?{values:values(component,override.props.values)}:{})}}:{})}];}));}
   function copy(n:ReactElement<ContainerProps>):ReactElement<ContainerProps>{
     const p={...n.props,designId:idMap.get(n.props.designId)!} as Record<string,unknown>,kind=getNodeKind(n);
     if(kind==='Image'&&typeof p.src==='string')p.src=assetMap.get(p.src)??p.src;
     if(kind==='SlotContent'&&typeof p.target==='string')p.target=target(p.target);
     if(typeof p.className==='string')for(const [oldPath,newPath]of assetMap)p.className=(p.className as string).replaceAll(oldPath,newPath);
     if(kind==='Instance'){
-      const ip=n.props as InstanceProps;p.component=keys.get(ip.component)??ip.component;p.overrides=overrides(ip.overrides);
+      const ip=n.props as InstanceProps;p.component=keys.get(ip.component)??ip.component;p.overrides=overrides(ip.overrides,ip.component);
       if(ip.values){const params=source.get(ip.component)?.props.parameters??{};p.values=Object.fromEntries(Object.entries(ip.values).map(([key,value])=>[key,params[key]?.type==='instance'&&typeof value==='string'?keys.get(value)??value:value]));}
     }
     if(kind==='Component'){
       const cp=n.props as ComponentProps;p.id=keys.get(cp.id)!;p.library={id:version.id,name:version.name,version:version.version,component:cp.id,hash:version.hash};
       if(cp.parameters)p.parameters=Object.fromEntries(Object.entries(cp.parameters).map(([key,value])=>[key,{...value,...(value.type==='instance'&&value.default?{default:keys.get(String(value.default))??value.default}:{})}]));
-      if(cp.variants)p.variants=cp.variants.map(v=>({...v,overrides:overrides(v.overrides)!}));
+      if(cp.variants)p.variants=cp.variants.map(v=>({...v,overrides:overrides(v.overrides,cp.id)!}));
     }
     return cloneElement(n,p,...Children.toArray(n.props.children).map(c=>isValidElement<ContainerProps>(c)?copy(c):c));
   }

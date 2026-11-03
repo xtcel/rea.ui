@@ -1,3 +1,4 @@
+import {createElement} from 'react';
 import type * as T from '@babel/types';
 import { patchClassNames } from '@rea/tailwind';
 import type { PropertyGroupKey, PropertyInput } from '@rea/tailwind';
@@ -7,9 +8,9 @@ import { parseManifest, newPageSource } from './manifest';
 import type { DocumentManifest } from './manifest';
 import { applyStructure } from './structure';
 import type { NodeRect } from './structure';
-import { textContent } from '@rea/design';
+import { textContent, Page, Instance } from '@rea/design';
 import type { InstanceProps, NodeOverride, SlotProps } from '@rea/design';
-import { COMPONENT_FILE, componentEditor, componentPageId, parseCatalog, resolvePage, withComponentRoot } from './components';
+import { COMPONENT_FILE, componentEditor, componentValues, componentPageId, parseCatalog, resolvePage, withComponentRoot } from './components';
 import type { ComponentCatalog } from './components';
 import { sourceElement, sourceLiteral } from './serialize';
 
@@ -189,6 +190,8 @@ export class DocumentSession {
     if(files[COMPONENT_FILE]&&this.manifest.version!==3)throw new Error('组件目录需要文档格式 v3。');
     const componentPages=new Map<string,ParsedPage>();
     for(const [key,def]of this.components){const parsed=componentEditor(def);componentPages.set(key,{...parsed,page:resolvePage(parsed.source,this.components,def)});}
+    // Check every published combination, including definitions not used on a page.
+    for(const [key,def]of this.components)for(const variant of [undefined,...def.props.variants??[]])resolvePage(createElement(Page,{id:'validation',designId:'validation-page'},createElement(Instance,{designId:'validation-instance',component:key,values:componentValues(def,{},true),variant:variant?.axes})),this.components);
     this.componentPages=componentPages;
     const pages = new Map<string, ParsedPage>();
     for (const page of this.manifest.pages) {

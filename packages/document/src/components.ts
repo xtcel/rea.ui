@@ -17,6 +17,13 @@ const record = (v:unknown): v is Record<string,unknown> => !!v&&typeof v==='obje
 function object(v:unknown,label:string){if(!record(v))throw new Error(`${label}需要静态对象。`);return v;}
 export const visualChildren = (children:ReactNode) => Children.toArray(children).filter((c):c is ReactElement<ContainerProps>=>isValidElement<ContainerProps>(c));
 export function componentRoot(def:ReactElement<ComponentProps>){return visualChildren(def.props.children)[0];}
+/** Source paths contain instance identities, then the target's source identity. */
+export function componentTarget(catalog:ComponentCatalog,key:string,path:string):ReactElement<ContainerProps>|undefined{
+  function find(n:ReactElement<ContainerProps>,id:string):ReactElement<ContainerProps>|undefined{if(n.props.designId===id)return n;for(const c of visualChildren(n.props.children)){const match=find(c,id);if(match)return match;}}
+  let def=catalog.get(key),node:ReactElement<ContainerProps>|undefined;const parts=path.split('/');
+  for(let i=0;i<parts.length;i++){if(!def)return;node=find(componentRoot(def),parts[i]);if(!node)return;if(i<parts.length-1){if(node.type!==Instance)return;def=catalog.get((node.props as InstanceProps).component);}}
+  return node;
+}
 
 function validateOverride(value:unknown){
   const v=object(value,'覆盖');

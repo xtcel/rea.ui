@@ -5,7 +5,7 @@ import type { ComponentProps, ContainerProps, InstanceProps, NodeOverride, SlotP
 import { patchClassNames, readAllProperties } from '@rea/tailwind';
 import type { PropertyInput, PropertyGroupKey } from '@rea/tailwind';
 import type { Transaction, SourceOperation, DocumentSession, StylePatch } from './session';
-import { catalogSource, componentRoot, visualChildren } from './components';
+import { catalogSource, componentRoot, componentTarget, visualChildren } from './components';
 import { serializeElement, sourceElement } from './serialize';
 import type { NodeRect } from './structure';
 
@@ -72,9 +72,9 @@ export function setComponentRoot(session:DocumentSession,key:string,root:ReactEl
 export function componentDependencies(session:Pick<DocumentSession,'components'>,key:string):string[]{
   const seen=new Set<string>();function visit(id:string){if(seen.has(id))return;seen.add(id);const def=session.components.get(id);if(!def)throw new Error(`组件不存在：${id}`);
     function values(component:string,input:InstanceProps['values']){const target=session.components.get(component);if(!target)throw new Error(`组件不存在：${component}`);for(const [name,p]of Object.entries(target.props.parameters??{}))if(p.type==='instance'&&input?.[name])visit(String(input[name]));}
-    function overrides(input:Record<string,NodeOverride>|undefined){for(const override of Object.values(input??{}))if(override.props?.component){visit(override.props.component);values(override.props.component,override.props.values);}}
-    function walk(n:ReactElement<ContainerProps>){if(n.type===Instance){const p=n.props as InstanceProps;visit(p.component);values(p.component,p.values);overrides(p.overrides);}for(const c of visualChildren(n.props.children))walk(c);}
-    walk(componentRoot(def));for(const p of Object.values(def.props.parameters??{}))if(p.type==='instance'&&p.default)visit(String(p.default));for(const v of def.props.variants??[])overrides(v.overrides);
+    function overrides(input:Record<string,NodeOverride>|undefined,owner:string){for(const [path,override]of Object.entries(input??{})){const target=componentTarget(session.components,owner,path);if(target?.type===Instance){const component=override.props?.component??(target.props as InstanceProps).component;visit(component);values(component,override.props?.values);}}}
+    function walk(n:ReactElement<ContainerProps>){if(n.type===Instance){const p=n.props as InstanceProps;visit(p.component);values(p.component,p.values);overrides(p.overrides,p.component);}for(const c of visualChildren(n.props.children))walk(c);}
+    walk(componentRoot(def));for(const p of Object.values(def.props.parameters??{}))if(p.type==='instance'&&p.default)visit(String(p.default));for(const v of def.props.variants??[])overrides(v.overrides,id);
   }
   visit(key);return [...seen];
 }
