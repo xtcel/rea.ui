@@ -1,5 +1,8 @@
 import { PAGE_ID } from '@rea/design';
 
+/** Non-design, document-owned metadata. It travels inside .reaui but is never sent to the Agent workspace. */
+export const AGENT_SESSIONS_FILE = 'agent/sessions.json';
+
 export interface DocumentManifest {
   format: 'reaui'; version: 2 | 3; id: string; name: string;
   pages: { id: string; file: string }[];

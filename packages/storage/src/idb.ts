@@ -110,6 +110,10 @@ export class StorageService {
     const db = await this.getDB(), tx = db.transaction('meta', 'readwrite'), done = completed(tx);
     tx.objectStore('meta').put({ key, value }); await done;
   }
+  async deleteMeta(key: string): Promise<void> {
+    const db = await this.getDB(), tx = db.transaction('meta', 'readwrite'), done = completed(tx);
+    tx.objectStore('meta').delete(key); await done;
+  }
   async updateMeta<T>(key:string,update:(previous:T|undefined)=>T):Promise<T>{
     const db=await this.getDB(),tx=db.transaction('meta','readwrite'),done=completed(tx);void done.catch(()=>{});
     try{const stored=await request<{value:T}|undefined>(tx.objectStore('meta').get(key)),value=update(stored?.value);tx.objectStore('meta').put({key,value});await done;return value;}catch(error){try{tx.abort();}catch{}await done.catch(()=>{});throw error;}

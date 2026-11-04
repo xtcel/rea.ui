@@ -320,10 +320,14 @@
 .home-system-color-values { display:flex; flex-wrap:wrap; gap:16px; }
 .home-system-color-values > span { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--rea-muted); }
 .home-system-color-values i { width:15px; height:15px; border-radius:3px; border:1px solid #0001; }
-.home-attachments { display:flex; flex-wrap:wrap; gap:7px; padding:0 1px 8px; }
-.home-attachments > span { display:flex; align-items:center; gap:5px; background:var(--rea-hover); border-radius:7px; padding:6px 8px; font-size:11px; max-width:230px; }
-.home-attachments > span > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.home-attachments button { padding:2px; display:flex; }
+.home-composer-chips { display:flex; flex-wrap:wrap; gap:6px; padding:0 1px 10px; }
+.home-composer-chips > span { display:flex; align-items:center; gap:5px; background:var(--rea-hover); border-radius:7px; padding:5px 8px; font-size:11px; max-width:230px; }
+.home-composer-chips > span > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.home-composer-chips > span.is-element { background:var(--rea-selected); color:var(--rea-accent); }
+.home-composer-chips button { padding:2px; display:flex; border-radius:4px; }
+.home-composer-chips button:hover:not(:disabled) { background:#00000010; }
+.home-composer-chips .chip-scope { display:flex; width:16px; height:16px; align-items:center; justify-content:center; padding:0; color:var(--rea-muted); }
+.home-composer-chips .chip-scope.is-on { background:var(--rea-accent); color:#fff; }
 .home-conversation { max-height:380px; overflow:auto; margin-bottom:22px; padding:0 4px; }
 .home-conversation-turn + .home-conversation-turn { margin-top:25px; }
 .home-user-message { background:var(--rea-chrome); padding:14px 16px; border-radius:8px; margin-left:40px; overflow-wrap:anywhere; }

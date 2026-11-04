@@ -40,7 +40,7 @@ pnpm design:app         # 重建可编辑的应用界面设计稿
 
 ## 本地 AI 生成
 
-支持使用本机 **Codex CLI** 生成可编辑 UI，并选择设计系统、关联本地项目代码、添加 `.reaui` 设计参考。先在终端运行 `codex login`，再到首页「设置 → 本地 AI Agent」检测连接。桌面版与 `pnpm dev` 均可使用；生成成功会保存为新项目并打开编辑器。
+支持使用本机 **Codex CLI** 生成可编辑 UI，并选择设计系统、关联本地项目代码、添加 `.reaui` 设计参考。先在终端运行 `codex login`，再到首页「设置 → 本地 AI Agent」检测连接。桌面版与 `pnpm dev` 均可使用；提交需求后先创建项目、打开编辑器，在左侧 AI 会话中查看执行过程，右侧同步显示通过校验的设计。后续对话继续修改同一项目，支持停止、自动修复与整轮撤销。
 
 「设计系统」支持 AI 生成、语义配色/字体/间距/圆角配置、组件规范、使用指南与实时预览。关联项目只用于生成参考。配置方法与真实 Codex 复测命令见 [本地 Agent 说明](docs/local-agent.md)。
 
@@ -73,10 +73,12 @@ pnpm design:app         # 重建可编辑的应用界面设计稿
 | 保存与备份 | IndexedDB 防抖自动保存；主菜单「导出为 .reaui」保存整个文档与资源；保存失败提供导出入口 |
 | 页面代码 / 快捷键 | 主菜单导出当前页面 `.tsx`，或打开快捷键一览 |
 | 工作区布局 | 拖动左右栏边缘调宽（200–400px，刷新保留）；页面区域可折叠、调高；小于 900px 时通过顶栏打开互斥抽屉，点击遮罩关闭 |
+| AI 会话 | 左栏「AI」标题右侧切换、新建、删除会话；会话随 `.reaui` 保存，生成期间不可切换 |
+| 引用画布元素 | 工具栏「选择方式」右侧的 AI 按钮打开元素选择器，勾选图层加入对话；引用即本轮修改范围，越界改动只提示不拦截 |
 
 ## 文档与样式
 
-文档由 `rea.json`、`pages/<pageId>.page.tsx` 和 `assets/` 组成，使用 `.reaui`（ZIP）作为单文件交换格式。每个页面是独立的静态 TSX 文件，清单只存页面 id、文件路径和顺序。图层使用 `Page / Frame / Group / Rect / Ellipse / Text / Image / Vector`。
+文档由 `rea.json`、`pages/<pageId>.page.tsx`、`assets/` 和可选的 `agent/sessions.json` 组成，使用 `.reaui`（ZIP）作为单文件交换格式。每个页面是独立的静态 TSX 文件，清单只存页面 id、文件路径和顺序。图层使用 `Page / Frame / Group / Rect / Ellipse / Text / Image / Vector`。AI 会话随文档保存：一个文档可有多条会话，导出或转交 `.reaui` 后对方仍能看到历史对话，会话不参与设计源校验，也不进入撤销历史。
 
 样式全部写入 Tailwind CSS `className`，例如 `absolute left-20 top-16 w-80 h-[200px] bg-blue-500 rounded-lg`。使用 Tailwind **v4 默认主题和 preflight**，运行时编译在 Shadow DOM 中隔离。属性编辑只修补对应基础类，保留变体与未知类。
 

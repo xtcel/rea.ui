@@ -4,7 +4,7 @@ import { isDesktop } from '../platform';
 export interface AgentConfig { executable: string; model: string }
 export interface AgentInfo { path: string; version: string; loggedIn: boolean }
 export interface ProjectContext { path: string; name: string; files: string[]; context: string; truncated: boolean }
-export interface AgentStatus { id: string; state: 'running' | 'completed' | 'cancelled' | 'failed'; events: string[]; result: unknown; error: string | null }
+export interface AgentStatus { id: string; state: 'running' | 'completed' | 'cancelled' | 'failed'; events: string[]; result: unknown; error: string | null; preview?: Record<string, string> | null; previewError?: string | null }
 export const defaultAgentConfig: AgentConfig = { executable: '', model: '' };
 export function isAgentConfig(v: unknown): v is AgentConfig { return !!v && typeof v === 'object' && 'executable' in v && typeof v.executable === 'string' && 'model' in v && typeof v.model === 'string'; }
 export async function agentRequest<T>(method: string, payload: unknown = {}): Promise<T> {

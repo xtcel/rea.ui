@@ -1,6 +1,7 @@
 import { cloneElement, createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X, Minus, MoveUpRight, Triangle, Star, Hexagon, PenTool, Pencil } from 'lucide-react';
 import type { Rect } from '@rea/geometry';
+import type { ReactNode } from 'react';
 import { Text } from '@rea/design';
 import { sourceElement, extractComponent, detachInstance, placementStyles } from '@rea/document';
 import type { SourceOperation, Transaction, StylePatch, DocumentSession } from '@rea/document';
@@ -9,22 +10,27 @@ import { exportPageCode, libraryVersions } from '@rea/storage';
 import { fixedValue, patchClassNames, writeTextSizing } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
 import { Canvas } from './components/Canvas';
-import type { CanvasApi, ViewCommand } from './components/Canvas';
+import type { CanvasApi, CanvasMenuRequest, ViewCommand } from './components/Canvas';
+import { layerMenu, canvasMenu } from './components/layerMenu';
+import { layoutTransaction } from './inspector/model';
 import { usePropertyPanel } from './inspector/usePropertyPanel';
 import { Inspector } from './components/Inspector';
 import { InspectPanel } from './components/InspectPanel';
 import { LayersPanel } from './components/LayersPanel';
 import { DocumentListDialog } from './components/DocumentListDialog';
 import { EditorShell } from './components/EditorShell';
-import { Button, Dialog, IconButton, InlineName, Menu, Panel, Tabs } from './ui';
+import { Button, ContextMenu, Dialog, IconButton, InlineName, Menu, Panel, Tabs } from './ui';
 import { useDocument } from './session/useDocument';
 import type { DocumentModel } from './session/useDocument';
 import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots, toggleSelection } from './session/selection';
 import type { SelectionMode, SelectionState } from './session/selection';
 import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard, rewriteClipboardAssets, clipboardAssetPaths } from './session/clipboard';
+import type { ClipboardFragment } from './session/clipboard';
 import { saveFile } from './platform';
 import { ComponentAssets } from './components/ComponentAssets';
 import { ComponentInspector } from './components/ComponentInspector';
+import type { AgentCanvasContext } from './agent/context';
+import type { AgentRef } from './agent/sessions';
 export type EditorTool = 'select' | 'hand' | 'board' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'arrow' | 'triangle' | 'polygon' | 'star' | 'pen' | 'pencil';
 export interface CreationGeometry { path?: PathData; endpoints?: Pick<LineProps,'x1'|'y1'|'x2'|'y2'> }
 const shapeTools = ['rectangle','ellipse','line','arrow','triangle','polygon','star'] as const;
@@ -33,24 +39,29 @@ export function EditorApp() {
   const model = useDocument();
   return <EditorWorkspace model={model} />;
 }
-export function EditorWorkspace({ model, onHome }: { model: DocumentModel; onHome?: () => void }) {
+export function EditorWorkspace({ model, onHome, agent }: { model: DocumentModel; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode }) {
   if (!model.current) return <div className="p-8 text-sm" role="status">正在打开本地文档…</div>;
-  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} onHome={onHome} />;
+  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} onHome={onHome} agent={agent} />;
 }
-function DocumentEditor({ model, current, onHome }: { model: DocumentModel; current: DocumentSession; onHome?: () => void }) {
+function DocumentEditor({ model, current, onHome, agent }: { model: DocumentModel; current: DocumentSession; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode }) {
   const pages = [...current.pages.values()].map(parsed => parsed.page);
   const [pageId, setPageId] = useState(pages[0].id), [selection, setSelection] = useState<SelectionState>(() => emptySelection(pages[0].id));
-  const [editingComponent,setEditingComponent]=useState<string|null>(null),[leftTab,setLeftTab]=useState('layers'),[createComponentDialog,setCreateComponentDialog]=useState(false),[componentName,setComponentName]=useState('新组件');
+  const [editingComponent,setEditingComponent]=useState<string|null>(null),[leftTab,setLeftTab]=useState(agent ? 'agent' : 'layers'),[createComponentDialog,setCreateComponentDialog]=useState(false),[componentName,setComponentName]=useState('新组件');
   const canvas = useRef<CanvasApi | null>(null);
   const sessionRef=useRef(current);sessionRef.current=current;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [textDraft, setTextDraft] = useState<{ id: string; parentId: string; className: string } | null>(null);
   const [tool, setTool] = useState<EditorTool>('select'), [shape, setShape] = useState<EditorTool>('rectangle');
   const [viewCommand, setViewCommand] = useState<{ type: ViewCommand; serial: number }>({ type: 'fit', serial: 0 });
-  const [zoom, setZoom] = useState(100), [panel, setPanel] = useState<'layers' | 'inspector' | null>(null);
+  const [zoom, setZoom] = useState(100), [panel, setPanel] = useState<'layers' | 'inspector' | null>(() => agent && window.innerWidth < 900 ? 'layers' : null);
   const [showDocuments, setShowDocuments] = useState(false), [shortcuts, setShortcuts] = useState(false), [renaming, setRenaming] = useState(false);
   const [tab, setTab] = useState('design');
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('direct');
+  const [agentRefs, setAgentRefs] = useState<AgentRef[]>([]);
+  const [agentTouched, setAgentTouched] = useState<readonly string[]>([]);
+  const [contextMenu, setContextMenu] = useState<CanvasMenuRequest | null>(null);
+  const internalClipboard = useRef<ClipboardFragment | null>(null);
+  const agentTimer = useRef<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const measure = useCallback(() => {}, []);
   const [warnings, setWarnings] = useState('');
@@ -80,6 +91,51 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
   const propertyNodes=selectedIds.map(id=>{const n=page.nodes.get(id)!;if(n.kind!=='Instance')return n;const child=page.nodes.get(n.children[0]);return child?{...n,element:cloneElement(n.element,{className:patchClassNames(child.element.props.className??'',placementStyles(n.element.props.className??''))})}:n;});
   function chooseTool(next: EditorTool) { setTool(next); if ((shapeTools as readonly string[]).includes(next)) setShape(next); }
   function view(type: ViewCommand) { setViewCommand(previous => ({ type, serial: previous.serial + 1 })); }
+  function addAgentRefs(next: readonly AgentRef[]) {
+    setAgentRefs(items => {
+      const map = new Map(items.map(ref => [`${ref.pageId}:${ref.designId}`, ref]));
+      for (const ref of next) map.set(`${ref.pageId}:${ref.designId}`, ref);
+      return [...map.values()].slice(-8);
+    });
+  }
+  function removeAgentRef(pageId: string, designId: string) { setAgentRefs(items => items.filter(ref => ref.pageId !== pageId || ref.designId !== designId)); }
+  function toggleAgentRefSubtree(pageId: string, designId: string) {
+    setAgentRefs(items => items.map(ref => ref.pageId === pageId && ref.designId === designId ? { ...ref, subtree: !ref.subtree } : ref));
+  }
+  /** One click on the selection: attach every selected root, or detach when all are already attached. */
+  function toggleSelectionRefs(ids: readonly string[]) {
+    const roots = selectionRoots(page, [...ids]).filter(id => page.nodes.has(id));
+    if (!roots.length) return;
+    const linked = roots.every(id => agentRefs.some(ref => ref.pageId === page.id && ref.designId === id));
+    if (linked) { setAgentRefs(items => items.filter(ref => !roots.some(id => ref.pageId === page.id && ref.designId === id))); return; }
+    addAgentRefs(roots.map(id => {
+      const node = page.nodes.get(id)!;
+      return { pageId: page.id, designId: id, kind: node.kind, name: node.name, subtree: false };
+    }));
+    if (agent) setLeftTab('agent');
+    if (agent && window.innerWidth < 900) setPanel('layers');
+  }
+  function focusAgentNode(designId: string) {
+    for (const parsed of current.pages.values()) {
+      if (!parsed.page.nodes.has(designId)) continue;
+      setEditingComponent(null); setEditingId(null); setTextDraft(null);
+      if (parsed.page.id !== page.id) setPageId(parsed.page.id);
+      setSelection({ pageId: parsed.page.id, ids: [designId], scope: null });
+      view('selection');
+      return;
+    }
+  }
+  function markAgentTouched(ids: readonly string[]) {
+    setAgentTouched([...ids]);
+    if (agentTimer.current) window.clearTimeout(agentTimer.current);
+    agentTimer.current = window.setTimeout(() => setAgentTouched([]), 2600);
+  }
+  useEffect(() => () => { if (agentTimer.current) window.clearTimeout(agentTimer.current); }, []);
+  const agentContext: AgentCanvasContext = {
+    page, selectedIds, refs: agentRefs,
+    addRefs: addAgentRefs, removeRef: removeAgentRef, toggleSubtree: toggleAgentRefSubtree, clearRefs: () => setAgentRefs([]),
+    focus: focusAgentNode, markTouched: markAgentTouched,
+  };
   function properties(id: string, props?: Record<string, unknown>, styles?: StylePatch) { model.execute({ type: 'set', pageId: page.id, id, props, styles }); }
   function commit(transaction: Transaction, ids?: string[]) { const ok=model.transact(transaction);if(ok&&ids)setSelection({...selection,ids});return ok; }
   function remove() {
@@ -110,6 +166,94 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
       if(after.some((id,i)=>id!==before[i]))ops.push({type:'reorderChildren',pageId:page.id,id:parent,ids:after});
     }if(ops.length)commit({label:'调整层级',ops});
   }
+  function clipboardFragment():ClipboardFragment { const roots=selectionRoots(page,selectedIds); return copyFragment(parsed,roots,current.manifest.id,current.components,Object.fromEntries(roots.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1]))); }
+  function writeText(text:string) { const clipboard=navigator.clipboard; return clipboard?clipboard.writeText(text):Promise.reject(new Error('当前环境不支持剪贴板。')); }
+  function copySelection() {
+    try { const data=clipboardFragment();internalClipboard.current=data;void writeText(data.source).catch(()=>model.setNotice('已复制到应用内剪贴板；粘贴请在编辑器内完成。')); }
+    catch(error) { model.setNotice(String(error)); }
+  }
+  function copySelectionCode() {
+    try { const source=clipboardFragment().source;void writeText(source).then(()=>model.setNotice('已复制图层代码。'),error=>model.setNotice(`无法复制：${String(error)}`)); }
+    catch(error) { model.setNotice(String(error)); }
+  }
+  function copySelectionClasses() {
+    const classes=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)?.element.props.className?.trim()).filter(Boolean).join('\n');
+    if(classes)void writeText(classes).then(()=>model.setNotice('已复制样式类名。'),error=>model.setNotice(`无法复制：${String(error)}`));
+  }
+  /** Menu paste prefers the system clipboard but keeps the last copy so custom components survive. */
+  async function readPaste():Promise<ClipboardFragment> {
+    const remembered=internalClipboard.current;
+    try { const plain=await navigator.clipboard.readText();if(remembered&&remembered.source.trim()===plain.trim())return remembered;if(plain.trim())return readClipboard('',plain); }
+    catch { /* Reading needs permission; the remembered fragment is still usable. */ }
+    if(remembered)return remembered;
+    throw new Error('剪贴板中没有可粘贴的设计图层。');
+  }
+  async function applyPaste(captured:ClipboardFragment,options:{center?:{x:number;y:number};parentId?:string;replace?:readonly string[]}={}) {
+    const parentId=options.parentId??page.source.props.designId;let data=captured;
+    if(data.documentId!==current.manifest.id){
+      const paths=clipboardAssetPaths(data);
+      if(paths.length){
+        const assets=await model.storage.getAssets(data.documentId),mapping=new Map(paths.map(path=>[path,path.startsWith('assets/lib-')?path:`assets/paste-${data.documentId.replace(/[^a-z0-9_-]/gi,'')}/${path.slice(7)}`]));
+        const picked=paths.map(path=>{const asset=assets.find(item=>item.path===path);if(!asset)throw new Error('剪贴板引用的资源不在本机，请使用 .reaui 文件导入。');return{...asset,docId:current.manifest.id,path:mapping.get(path)!};});
+        await model.addAssets(picked);data=rewriteClipboardAssets(data,mapping);
+      }
+    }else data={...data,components:undefined};
+    if(sessionRef.current.manifest.id!==current.manifest.id)throw new Error('文档已切换，请重新粘贴。');
+    const prepared=preparePaste(data,options.center,sessionRef.current.components);
+    const ops:SourceOperation[]=selectionRoots(page,options.replace??[]).map(id=>({type:'delete' as const,pageId:page.id,id}));
+    if(prepared.componentSource)ops.push({type:'catalog',source:prepared.componentSource});
+    ops.push({type:'insert',pageId:page.id,parentId,fragment:prepared.fragment});
+    commit({label:options.replace?.length?'粘贴并替换':'粘贴图层',ops},prepared.ids);
+  }
+  function pasteHere(request:CanvasMenuRequest) {
+    run(async()=>{const data=await readPaste();const center=request.parentId===page.source.props.designId?request.point:canvas.current?.pointInParent(request.point,request.parentId)??request.point;await applyPaste(data,{parentId:request.parentId,center});});
+  }
+  function pasteReplace() {
+    const roots=selectionRoots(page,selectedIds);if(!roots.length)return;
+    const target=page.nodes.get(roots[0])!,local=canvas.current?.localBox(roots[0]),parentId=target.parentId??page.source.props.designId;
+    run(async()=>{const data=await readPaste();await applyPaste(data,{parentId,center:local?{x:local.x+local.width/2,y:local.y+local.height/2}:undefined,replace:roots});});
+  }
+  function addAutoLayout() {
+    const frames=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)!).filter(node=>!!node&&node.kind==='Frame'&&!node.locked);
+    if(!frames.length){model.setNotice('请选择一个未锁定的画框以添加自动布局。');return;}
+    commit(layoutTransaction(frames,page,true,'row',new Map()));
+  }
+  function toggleHidden() {
+    const nodes=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)!).filter(node=>!!node&&!node.locked);
+    if(!nodes.length){model.setNotice('请选择未锁定的图层。');return;}
+    const hidden=!nodes.every(node=>node.element.props.hidden);
+    commit({label:'显示 / 隐藏图层',ops:nodes.map(node=>({type:'set',pageId:page.id,id:node.id,props:{hidden}}))});
+  }
+  function toggleLock() {
+    const nodes=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)!).filter(Boolean);if(!nodes.length)return;
+    const locked=!nodes.every(node=>node.locked);
+    commit({label:'锁定 / 解锁图层',ops:nodes.map(node=>({type:'set',pageId:page.id,id:node.id,props:{locked}}))});
+  }
+  /** Mirror layers with a size-preserving scale, so flipping stays reversible from the same token. */
+  function flip(axis:'x'|'y') {
+    const token=axis==='x'?'-scale-x-100':'-scale-y-100';
+    const nodes=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)!).filter(node=>!!node&&!node.locked);
+    if(!nodes.length){model.setNotice('请选择未锁定的图层。');return;}
+    commit({label:'翻转图层',ops:nodes.map(node=>{const tokens=(node.element.props.className??'').split(/\s+/).filter(Boolean);return{type:'set' as const,pageId:page.id,id:node.id,props:{className:(tokens.includes(token)?tokens.filter(value=>value!==token):[...tokens,token]).join(' ')}};})});
+  }
+  function detachInstances() {
+    const ids=selectionRoots(page,selectedIds).filter(id=>page.nodes.get(id)?.kind==='Instance');
+    if(!ids.length)model.setNotice('请选择组件实例。');
+    for(const id of ids)separateInstance(id);
+  }
+  function selectLayer(id:string) { setSelection(state=>({...state,pageId:page.id,ids:[id]})); }
+  function openLayerMenu(id:string,x:number,y:number) {
+    setSelection({...selection,pageId:page.id,ids:[id]});
+    const rect=canvas.current?.box(id);
+    setContextMenu({x,y,point:rect?{x:rect.x+rect.width/2,y:rect.y+rect.height/2}:canvas.current?.viewportCenter()??{x:0,y:0},parentId:page.nodes.get(id)?.parentId??page.source.props.designId,hits:[id]});
+  }
+  const menuActions = contextMenu && selectedIds.length ? {
+    select: selectLayer, copy: copySelection, pasteHere: () => pasteHere(contextMenu), pasteReplace, copyAsCode: copySelectionCode, copyAsClasses: copySelectionClasses,
+    reorder, group, ungroup, autoLayout: addAutoLayout, createComponent, detach: detachInstances, toggleHidden, toggleLock, flip, remove,
+  } : null;
+  const menuEntries = !contextMenu ? [] : menuActions
+    ? layerMenu(page, selectedIds, contextMenu.hits, menuActions)
+    : canvasMenu({ pasteHere: () => pasteHere(contextMenu), selectAll: () => setSelection({ ...selection, ids: scopedChildren(page, selection.scope) }), fit: () => view('fit'), actual: () => view('actual') });
   function moveLayer(id:string,parentId:string,index:number) {
     const node=page.nodes.get(id);if(!node)return;const siblings=page.nodes.get(parentId)!.children;
     const oldIndex=node.parentId===parentId?siblings.indexOf(id):-1;if(oldIndex>=0&&oldIndex<index)index--;
@@ -155,6 +299,12 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
       const command=event.metaKey||event.ctrlKey,key=event.key.toLowerCase();
       if(command){
         if(key==='z'){event.preventDefault();if(event.shiftKey)model.redo();else model.undo();return;}
+        if(key==='a'&&event.shiftKey){event.preventDefault();addAutoLayout();return;}
+        if(key==='h'&&event.shiftKey){event.preventDefault();toggleHidden();return;}
+        if(key==='l'&&event.shiftKey){event.preventDefault();toggleLock();return;}
+        if(key==='k'&&event.altKey){event.preventDefault();createComponent();return;}
+        if(key==='b'&&event.altKey){event.preventDefault();detachInstances();return;}
+        if(key==='r'&&event.shiftKey){event.preventDefault();pasteReplace();return;}
         if(key==='a'){event.preventDefault();setSelection({...selection,ids:scopedChildren(page,selection.scope)});return;}
         if(key==='g'){event.preventDefault();if(event.shiftKey)ungroup();else group(event.altKey?'Frame':'Group');return;}
         if(key==='d'){event.preventDefault();duplicate();return;}
@@ -167,6 +317,7 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
         if(event.key==='Tab'&&event.target instanceof HTMLElement&&event.target.closest('button,a')&&!event.target.closest('.rea-canvas'))return;
         event.preventDefault();setSelection(navigateSelection(page,selection,event.key,event.shiftKey));if(event.key==='Escape'){setTool('select');setPanel(null);}return;
       }
+      if(event.shiftKey&&(key==='h'||key==='v')){event.preventDefault();flip(key==='h'?'x':'y');return;}
       const tools:Record<string,EditorTool>={v:'select',h:'hand',f:'board',r:'rectangle',o:'ellipse',t:'text',l:event.shiftKey?'arrow':'line',p:event.shiftKey?'pencil':'pen',y:'polygon',s:'star'};if(tools[key]){event.preventDefault();chooseTool(tools[key]);}
       if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();remove();}
       if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)&&selectedIds.length){
@@ -175,7 +326,7 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
         if(ops.length)commit({label:'微移图层',coalesceKey:`move:${page.id}:${[...selectedIds].sort().join(',')}`,ops});
       }
     }
-    function copy(event:ClipboardEvent){if(blocked(event.target)||!selectedIds.length||!event.clipboardData)return;event.preventDefault();try{const data=copyFragment(parsed,selectedIds,current.manifest.id,current.components,Object.fromEntries(selectedIds.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1])));event.clipboardData.setData(FRAGMENT_MIME,JSON.stringify(data));event.clipboardData.setData('text/plain',data.source);if(event.type==='cut')remove();}catch(error){model.setNotice(String(error));}}
+    function copy(event:ClipboardEvent){if(blocked(event.target)||!selectedIds.length||!event.clipboardData)return;event.preventDefault();try{const data=copyFragment(parsed,selectionRoots(page,selectedIds),current.manifest.id,current.components,Object.fromEntries(selectedIds.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1])));internalClipboard.current=data;event.clipboardData.setData(FRAGMENT_MIME,JSON.stringify(data));event.clipboardData.setData('text/plain',data.source);if(event.type==='cut')remove();}catch(error){model.setNotice(String(error));}}
     function paste(event:ClipboardEvent){
       if(blocked(event.target)||!event.clipboardData)return;event.preventDefault();
       try{
@@ -183,20 +334,7 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
         const parentId=isContainer(selected)&&selected!.kind!=='Instance'&&!selected!.locked?selected!.id:page.source.props.designId;
         const cross=captured.documentId!==current.manifest.id||captured.pageId!==page.id;
         let center=cross?canvas.current?.viewportCenter():undefined;if(center&&parentId!==page.source.props.designId)center=canvas.current?.pointInParent(center,parentId)??center;
-        run(async()=>{
-          let data=captured;
-          if(data.documentId!==current.manifest.id){
-            const paths=clipboardAssetPaths(data);
-            if(paths.length){
-              const assets=await model.storage.getAssets(data.documentId),mapping=new Map(paths.map(path=>[path,path.startsWith('assets/lib-')?path:`assets/paste-${data.documentId.replace(/[^a-z0-9_-]/gi,'')}/${path.slice(7)}`]));
-              const selected=paths.map(path=>{const asset=assets.find(a=>a.path===path);if(!asset)throw new Error('剪贴板引用的资源不在本机，请使用 .reaui 文件导入。');return{...asset,docId:current.manifest.id,path:mapping.get(path)!};});
-              await model.addAssets(selected);data=rewriteClipboardAssets(data,mapping);
-            }
-          }else data={...data,components:undefined};
-          if(sessionRef.current.manifest.id!==current.manifest.id)throw new Error('文档已切换，请重新粘贴。');
-          const prepared=preparePaste(data,center,sessionRef.current.components);
-          commit({label:'粘贴图层',ops:[...(prepared.componentSource?[{type:'catalog' as const,source:prepared.componentSource}]:[]),{type:'insert',pageId:page.id,parentId,fragment:prepared.fragment}]},prepared.ids);
-        });
+        run(()=>applyPaste(captured,{parentId,center}));
       }catch(error){model.setNotice(`无法粘贴：${String(error)}`);}
     }
     window.addEventListener('keydown',keydown);window.addEventListener('copy',copy);window.addEventListener('cut',copy);window.addEventListener('paste',paste);
@@ -234,15 +372,16 @@ function DocumentEditor({ model, current, onHome }: { model: DocumentModel; curr
       <IconButton label="抓手工具 (H)" active={tool === 'hand'} onClick={() => chooseTool('hand')}><Hand size={17} /></IconButton>
     </div><span className="rea-divider rea-history" /><div className="rea-history flex"><IconButton label="撤销 (⌘/Ctrl+Z)" disabled={!current.past.length} onClick={model.undo}><Undo2 size={16} /></IconButton><IconButton label="重做 (⌘/Ctrl+Shift+Z)" disabled={!current.future.length} onClick={model.redo}><Redo2 size={16} /></IconButton></div>
     <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-slate-400">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-red-700!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
-    <div className="ml-auto flex shrink-0 items-center"><IconButton label="显示图层" className="rea-mobile-only" active={panel === 'layers'} onClick={() => setPanel(panel === 'layers' ? null : 'layers')}><Layers size={16} /></IconButton><IconButton label="显示属性" className="rea-mobile-only" active={panel === 'inspector'} onClick={() => setPanel(panel === 'inspector' ? null : 'inspector')}><PanelRight size={16} /></IconButton>
+    <div className="ml-auto flex shrink-0 items-center"><IconButton label="显示 AI 与图层" className="rea-mobile-only" active={panel === 'layers'} onClick={() => setPanel(panel === 'layers' ? null : 'layers')}><Layers size={16} /></IconButton><IconButton label="显示属性" className="rea-mobile-only" active={panel === 'inspector'} onClick={() => setPanel(panel === 'inspector' ? null : 'inspector')}><PanelRight size={16} /></IconButton>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
-  return <><EditorShell toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><Tabs value={leftTab} onChange={setLeftTab} tabs={[{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><div className="rea-left-panel-body">{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
+  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
     {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
-    <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} />
+    <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}
   </EditorShell><input ref={input} type="file" accept=".reaui,.design.tsx" hidden aria-label="导入文档" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) run(() => model.importFile(file)); }} />
   {createComponentDialog&&<Dialog title="创建组件" onClose={()=>setCreateComponentDialog(false)}><label className="rea-component-label">组件名称<input className="rea-input" autoFocus value={componentName} onChange={e=>setComponentName(e.target.value)} maxLength={120} onKeyDown={e=>{if(e.key==='Enter')confirmComponent();}}/></label><p className="rea-field-help">选中内容将成为主组件，画布当前位置保留一个关联实例。</p><div className="rea-dialog-actions"><Button onClick={()=>setCreateComponentDialog(false)}>取消</Button><Button disabled={!componentName.trim()} onClick={confirmComponent}>创建组件</Button></div></Dialog>}
   {showDocuments && <DocumentListDialog model={model} onClose={() => setShowDocuments(false)} onExport={exportDocument} />}
-  {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
+  {contextMenu && <ContextMenu label="图层操作" x={contextMenu.x} y={contextMenu.y} entries={menuEntries} onClose={() => setContextMenu(null)} />}
+  {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['显示 / 隐藏 · 锁定 / 解锁', '⇧⌘H / ⇧⌘L'], ['水平 / 垂直翻转', 'Shift+H / Shift+V'], ['自动布局 / 粘贴并替换', 'Shift+A / ⇧⌘R'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
 }

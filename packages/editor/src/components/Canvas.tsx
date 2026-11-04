@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PointerEvent, RefObject } from 'react';
+import type { MouseEvent, PointerEvent, RefObject } from 'react';
 import type { InspectedPage } from '@rea/design';
 import { textContent, isVectorKind } from '@rea/design';
 import type { PathData, VectorProps } from '@rea/design';
@@ -10,7 +10,7 @@ import type { StyleDiagnostic } from '@rea/tailwind';
 import type { SourceOperation, StylePatch, Transaction } from '@rea/document';
 import { SnapSession } from '@rea/geometry';
 import type { DistanceMark, Guide, Rect } from '@rea/geometry';
-import { Frame as FrameIcon, Maximize, Minus, Plus } from 'lucide-react';
+import { Frame as FrameIcon, Maximize, Minus, Plus, Sparkles } from 'lucide-react';
 import { MAX_ZOOM, MIN_ZOOM, zoomAt } from '../session/camera';
 import type { Camera } from '../session/camera';
 import type { EditorTool, CreationGeometry } from '../EditorApp';
@@ -23,6 +23,20 @@ import { descendants, intersects, isContainer, marqueeIds, pointerSelectionHit, 
 import type { SelectionMode, SelectionState } from '../session/selection';
 import { TextEditor } from './TextEditor';
 export type ViewCommand = 'fit' | 'selection' | 'actual' | 'in' | 'out';
+/** A right-click on the canvas, already resolved against the current selection. */
+export interface CanvasMenuRequest {
+    x: number;
+    y: number;
+    /** Pointer position in artwork coordinates. */
+    point: {
+        x: number;
+        y: number;
+    };
+    /** Container that would receive a paste at the pointer. */
+    parentId: string;
+    /** Every designId stacked under the pointer, topmost first. */
+    hits: readonly string[];
+}
 export interface CanvasApi {
     box: (id: string) => Rect | undefined;
     rotation: (id: string) => number;
@@ -71,7 +85,7 @@ interface Gesture {
 const handles = [['nw', 3], ['n', 2], ['ne', 6], ['e', 4], ['se', 12], ['s', 8], ['sw', 9], ['w', 1]] as const;
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish }: {
+export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
     selectionMode?: SelectionMode;
@@ -97,6 +111,11 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     draft?: PageRendererProps['draft'];
     onEdit: (id: string) => void;
     onTextFinish: (text: string | null) => void;
+    touched?: readonly string[];
+    /** designIds on this page already attached to the AI turn. */
+    agentRefs?: readonly string[];
+    onAgentRefs?: (ids: readonly string[]) => void;
+    onContextMenu?: (request: CanvasMenuRequest) => void;
 }) {
     const container = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
@@ -109,6 +128,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     const [vectorEditingId,setVectorEditingId]=useState<string|null>(null);
     const [pathDraft,setPathDraft]=useState<PathData|null>(null);
     const [boxes, setBoxes] = useState<Map<string, Rect>>(new Map()), [guides, setGuides] = useState<Guide[]>([]), [marks, setMarks] = useState<DistanceMark[]>([]), [dropTarget, setDropTarget] = useState<string | null>(null);
+    const [touchedBoxes, setTouchedBoxes] = useState<{ id: string; box: Rect }[]>([]);
     const gesture = useRef<Gesture | null>(null);
     const ready = useCallback(() => { setMeasurement(value => value + 1); const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]'); if (root)
         setBackground(getComputedStyle(root).backgroundColor); }, []);
@@ -117,6 +137,11 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     const canTransform = !!selectedIds.length && selectedIds.every(id => { const n = page.nodes.get(id)!; return (n.position === 'absolute'||n.parentId==='component-editor-surface') && !n.locked; });
     const topNodes = [...page.nodes.values()].filter(n => n.parentId === page.source.props.designId && !n.hidden);
     const content = contentBounds(topNodes.map(n => ({ x: fixedValue(n.element.props.className ?? '', 'left') ?? 0, y: fixedValue(n.element.props.className ?? '', 'top') ?? 0, width: fixedValue(n.element.props.className ?? '', 'width') ?? 320, height: fixedValue(n.element.props.className ?? '', 'height') ?? 200 })));
+    const hadContent = useRef(topNodes.length > 0);
+    useEffect(() => {
+        if (!hadContent.current && topNodes.length > 0) setAutoFit(true);
+        hadContent.current = topNodes.length > 0;
+    }, [page]);
     function shadow() { return container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot; }
     function find(id: string) { return shadow()?.querySelector<HTMLElement>(`[data-design-id="${id}"]`); }
     function worldPoint(x: number, y: number) { const b = container.current!.getBoundingClientRect(); return screenToWorld({ x: x - b.left, y: y - b.top }, camera); }
@@ -161,6 +186,12 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     }
     const selectionBox=boxes.size?contentBounds([...boxes].map(([id,rect])=>boxes.size>1?rotatedBounds(rect,rotationFor(id)):rect)):null;
     const angle=selectedId?rotationFor(selectedId):0;
+    // Anchor the AI shortcut to the rotated top-right corner so it tracks the selection box.
+    const aiCorner = selectionBox && onAgentRefs && selectedIds.length && !creating && !panMode && !editingId && !vectorEditingId
+        ? (() => { const rad = angle * Math.PI / 180, cx = selectionBox.x + selectionBox.width / 2, cy = selectionBox.y + selectionBox.height / 2, dx = selectionBox.width / 2, dy = -selectionBox.height / 2;
+            return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) }; })()
+        : null;
+    const aiLinked = selectedIds.length > 0 && selectedIds.every(id => agentRefs.includes(id));
     function cancel(restoreSelection = false) {
         const g = gesture.current;
         gesture.current = null;
@@ -190,6 +221,11 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         if (b)
             next.set(id, b);
     } setBoxes(next); const bounds = next.size ? contentBounds([...next.values()]) : null; onMeasure(bounds ? { width: bounds.width, height: bounds.height } : null); }, [page, selection, preview, camera, measurement]);
+    useLayoutEffect(() => {
+        const next: { id: string; box: Rect }[] = [];
+        for (const id of touched) { const b = page.nodes.has(id) ? box(id) : undefined; if (b) next.push({ id, box: b }); }
+        setTouchedBoxes(next);
+    }, [touched, page, camera, measurement]);
     function fit() { setCamera(fitBounds(content, size)); setAutoFit(false); }
     function fitSelection() { if (selectionBox) {
         setCamera(fitBounds(selectionBox, size));
@@ -277,6 +313,19 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         if (nodes.length > 500)
             nodes = nodes.filter(n => { const b = box(n.id); return b && intersects(b, viewport); });
         return nodes.map(n => {const b=box(n.id);return b?rotatedBounds(b,rotationFor(n.id)):undefined;}).filter((r): r is Rect => !!r);
+    }
+    function contextMenu(event: MouseEvent<HTMLDivElement>) {
+        if (editingId)
+            return;
+        event.preventDefault();
+        const hits = hitIds(event.clientX, event.clientY, event.nativeEvent);
+        // A right-click inside the current selection keeps it, including locked layers hidden from hit testing.
+        const hit = hits.find(id => selectedIds.includes(id)) ?? pointerSelectionHit(page, hits, selection, selectionMode === 'direct' || event.metaKey || event.ctrlKey);
+        if (hit && !selectedIds.includes(hit))
+            onSelection({ ...selection, ids: [hit] });
+        else if (!hit && selectedIds.length)
+            onSelection({ ...selection, ids: [] });
+        onContextMenu?.({ x: event.clientX, y: event.clientY, point: worldPoint(event.clientX, event.clientY), parentId: containerAt(event.clientX, event.clientY), hits });
     }
     function pointerDown(event: PointerEvent<HTMLDivElement>) {
         if (editingId || gesture.current || (event.button !== 0 && event.button !== 1))
@@ -499,7 +548,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     }
     const editedElement = editingId ? find(editingId) : undefined, editedBox = editingId ? box(editingId) : undefined;
     const editedText = editingId === draft?.element.props.designId ? textContent(draft.element.props.children) : editingId ? textContent(page.nodes.get(editingId)?.element.props.children) : '';
-    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onLostPointerCapture={() => { if (gesture.current)
+    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onLostPointerCapture={() => { if (gesture.current)
         cancel(true); }} onDoubleClick={event => { if (tool !== 'select' || panMode || editingId)
         return; const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, true); if (!hit)
         return; const node = page.nodes.get(hit)!; if (node.kind === 'Text') {
@@ -517,11 +566,13 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     </div>
     <div className="rea-canvas-scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
       {topNodes.filter(n => n.kind === 'Frame').map(node => { const cls = node.element.props.className ?? ''; return <button key={node.id} type="button" className={`rea-artboard-label ${selectedIds.includes(node.id) ? 'rea-active' : ''}`} hidden={camera.zoom < .25} style={{ width: 'max-content', right: 'auto', left: fixedValue(cls, 'left') ?? 0, top: (fixedValue(cls, 'top') ?? 0) - 28 / camera.zoom, transform: `scale(${1 / camera.zoom})`, transformOrigin: 'left top' }} onPointerDown={e => e.stopPropagation()} onClick={e => { if (!node.locked)
-        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, e.shiftKey) }); }}>{node.name}</button>; })}
+        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, e.shiftKey) }); }} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); if (!node.locked)
+        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, false) }); onContextMenu?.({ x: e.clientX, y: e.clientY, point: worldPoint(e.clientX, e.clientY), parentId: node.parentId ?? page.source.props.designId, hits: [node.id] }); }}>{node.name}</button>; })}
       {drawing && <div className={`rea-drawing-preview ${tool === 'ellipse' ? 'rea-ellipse-preview' : ''}`} style={{ left: drawing.x, top: drawing.y, width: drawing.width, height: drawing.height }}/>}
       {marquee && <div className="rea-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, borderWidth: 1 / camera.zoom }}/>}
       {dropTarget && box(dropTarget) && <div className="rea-drop-container" style={{ left: box(dropTarget)!.x, top: box(dropTarget)!.y, width: box(dropTarget)!.width, height: box(dropTarget)!.height, borderWidth: 2 / camera.zoom }}/>}
       {boxes.size > 1 && [...boxes].map(([id, b]) => <div key={id} className="rea-member-box" style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderWidth: 1 / camera.zoom, transform: `rotate(${rotationFor(id)}deg)` }}/>)}
+      {touchedBoxes.map(({ id, box: b }) => <div key={`ai-${id}`} className="rea-ai-touched" style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderWidth: 2 / camera.zoom }}/>)}
       {selectionBox && !creating && !panMode && !editingId && !vectorEditingId && <div className="rea-selection-box" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height, borderWidth: 1 / camera.zoom, transform: `rotate(${angle}deg)` }}>
         {canTransform && handles.map(([name, edge]) => <button key={name} type="button" data-resize-edge={edge} aria-label={`缩放手柄 ${name}`} className={`rea-resize-handle rea-handle-${name}`} style={{ width: 8 / camera.zoom, height: 8 / camera.zoom, borderWidth: 1 / camera.zoom }}/>)}
         {canTransform && selectedId && ['nw', 'ne', 'sw', 'se'].map(name => <button key={name} type="button" className={`rea-rotate-handle rea-handle-${name}`} data-rotate-handle="" aria-label={`旋转手柄 ${name}`} style={{ width: 16 / camera.zoom, height: 16 / camera.zoom, marginLeft: (name.endsWith('w') ? -12 : 12) / camera.zoom, marginTop: (name.startsWith('n') ? -12 : 12) / camera.zoom }}/>)}
@@ -529,6 +580,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
       </div>}
       <svg className="rea-guides" aria-hidden="true">{guides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
     </div>
+    {aiCorner && <button type="button" className={`rea-ai-ref ${aiLinked ? 'is-linked' : ''}`} style={{ left: camera.x + aiCorner.x * camera.zoom, top: camera.y + aiCorner.y * camera.zoom }} aria-pressed={aiLinked} title={`${aiLinked ? '取消引用' : '引用'}${selectedIds.length > 1 ? `选中的 ${selectedIds.length} 个图层` : '选中图层'}给 AI`} onPointerDown={event => event.stopPropagation()} onClick={() => onAgentRefs?.(selectedIds)}><Sparkles size={14} />{selectedIds.length > 1 && <span>{selectedIds.length}</span>}</button>}
     <VectorTools tool={tool} node={vectorEditingId?page.nodes.get(vectorEditingId):undefined} camera={camera} pan={panMode} world={worldPoint} local={vectorLocal} project={vectorWorld} parentAt={containerAt} onCreate={createPath} onPreview={setPathDraft} onChange={path=>{if(vectorEditingId)onCommit({label:'编辑路径',ops:[{type:'set',pageId:page.id,id:vectorEditingId,props:{path,d:undefined}}]});}} onEnd={()=>{setVectorEditingId(null);setPathDraft(null);if(tool==='pen'||tool==='pencil')onToolChange?.('select');}} onNotice={onNotice}/>
     </div>
     {topNodes.length === 0 && !draft && <div className="rea-empty-canvas"><FrameIcon size={28} strokeWidth={1.3}/><p>按 F 创建画框</p><span>也可选择工具栏的画框工具，在画布上拖动</span></div>}

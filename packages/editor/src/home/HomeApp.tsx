@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, FolderOpen, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Paperclip, Plus, Search, Settings2, Shapes, SlidersHorizontal, X } from 'lucide-react';
-import { exportReaui } from '@rea/storage';
+import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, FolderOpen, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Plus, Search, Settings2, Shapes, SlidersHorizontal, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import { EditorWorkspace } from '../EditorApp';
 import { useDocument } from '../session/useDocument';
@@ -17,15 +16,14 @@ import { SystemWorkbench } from '../agent/SystemWorkbench';
 import { agentRequest, defaultAgentConfig, isAgentConfig } from '../agent/client';
 import type { ProjectContext } from '../agent/client';
 import { defaultTokens, resolvedSystem, withTokens } from '../agent/designSystem';
-import { attachmentContext, generatedDocument, uiPrompt, uiSchema } from '../agent/generation';
-import { useAgentTask } from '../agent/useAgentTask';
+import { DesignAgentPanel } from '../agent/DesignAgentPanel';
+import type { DesignRequest } from '../agent/DesignAgentPanel';
 
 const navigation: { id: Section; label: string; icon: typeof House }[] = [
   { id: 'home', label: '首页', icon: House }, { id: 'projects', label: '全部项目', icon: Folder },
   { id: 'systems', label: '设计系统', icon: Shapes }, { id: 'templates', label: '模板', icon: LayoutTemplate },
   { id: 'settings', label: '设置', icon: Settings2 },
 ];
-type ChatMessage = { id: string; text: string; model: string; context: string; files: string[]; state: 'running' | 'completed' | 'failed'; reply?: string; documentId?: string };
 
 function IconControl({ label, children, onClick, pressed }: { label: string; children: ReactNode; onClick: () => void; pressed?: boolean }) {
   return <button type="button" className="home-icon-button" aria-label={label} title={label} aria-pressed={pressed} onClick={onClick}>{children}</button>;
@@ -69,14 +67,12 @@ export function HomeApp() {
   const [selectedSystem, setSelectedSystem] = useState(() => readStored('selected-system', 'rea', (v): v is string => typeof v === 'string'));
   const [agentConfig, setAgentConfig] = useState(() => readStored('agent', defaultAgentConfig, isAgentConfig));
   const [project, setProject] = useState<ProjectContext | null>(null);
-  const generation = useAgentTask();
   const [preparing, setPreparing] = useState(false);
   const sending = useRef(false);
-  const previousResult = useRef('');
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [referenceProjects, setReferenceProjects] = useState<DocumentSummary[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [designRequest, setDesignRequest] = useState<{ documentId: string; request: DesignRequest } | null>(null);
   const [dialog, setDialog] = useState<'project' | 'directory' | 'references' | null>(null);
   const [activeSystem, setActiveSystem] = useState<DesignSystem | null>(null);
   const [newName, setNewName] = useState('');
@@ -84,7 +80,6 @@ export function HomeApp() {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const mobileDialog = useRef<HTMLDialogElement>(null);
   const content = useRef<HTMLElement>(null);
-  const conversation = useRef<HTMLDivElement>(null);
   const systems = [...builtInSystems, ...customSystems];
   const currentSystem = systems.find(item => item.id === selectedSystem) ?? systems[0];
   const usableSystems = systems.filter(item => resolvedSystem(item).published);
@@ -103,7 +98,6 @@ export function HomeApp() {
       writeStored('recent-projects', next); return next;
     });
   }, [model.current?.manifest.id]);
-  useEffect(() => { if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight; }, [messages.length, section]);
   useEffect(() => { writeStored('selected-system', selectedSystem); }, [selectedSystem]);
   useEffect(() => {
     if (!/^(\/|[a-z]:\\)/i.test(preferences.directory)) return;
@@ -162,36 +156,21 @@ export function HomeApp() {
   async function send() {
     if (!prompt.trim() || sending.current || busy) return;
     sending.current = true; setPreparing(true);
-    const text = prompt.trim(), id = crypto.randomUUID();
+    const text = prompt.trim();
     setError('');
-    setMessages(items => [...items, { id, text, model: agentConfig.model || 'Codex 默认模型', context: `${currentSystem.name}${project ? ` · ${project.name}` : ''}`, files: [...attachments.map(file => file.name), ...referenceProjects.map(doc => `引用：${doc.name}`)], state: 'running' }]);
     try {
-      const projectFiles = await Promise.all(referenceProjects.map(async reference => {
-        const record = await model.storage.getDocument(reference.id);
-        if (!record) throw new Error(`引用项目「${reference.name}」已不存在，请移除后重试。`);
-        const files = model.current?.manifest.id === reference.id ? { ...model.current.files } : record.files;
-        const bytes = await exportReaui({ files });
-        return new File([new Uint8Array(bytes)], `${reference.name}.reaui`);
-      }));
-      const references = await attachmentContext([...attachments, ...projectFiles]);
-      // Re-read linked context so generation uses the latest local project state.
-      const context = project ? await agentRequest<ProjectContext>('project', { path: project.path }) : null;
-      setPreparing(false);
-      const result = await generation.generate(uiPrompt(text, currentSystem, context, references, previousResult.current), uiSchema, agentConfig, context?.path);
-      const generated = generatedDocument(result);
-      await model.openGenerated(generated.document);
-      previousResult.current = JSON.stringify(result);
-      setMessages(items => items.map(message => message.id === id ? { ...message, state: 'completed', reply: generated.summary, documentId: generated.document.id } : message));
+      const document = await model.create(text.split('\n')[0].slice(0, 48));
+      setDesignRequest({ documentId: document.id, request: { id: crypto.randomUUID(), text, attachments, references: referenceProjects, system: currentSystem, project } });
       setPrompt(''); setAttachments([]); setReferenceProjects([]); setInEditor(true);
     } catch (error) {
       const reply = error instanceof Error ? error.message : String(error);
-      setError(reply); setMessages(items => items.map(message => message.id === id ? { ...message, state: 'failed', reply } : message));
+      setError(reply);
     } finally { sending.current = false; setPreparing(false); }
   }
   function useTemplate(value: string) { navigate('home'); setPrompt(value); requestAnimationFrame(() => composer.current?.focus()); }
 
   async function openComponentAssets(){if(!model.current)return;await model.storage.setMeta('editor-open-assets',{documentId:model.current.manifest.id});setInEditor(true);}
-  if (inEditor) return <EditorWorkspace model={model} onHome={() => { setInEditor(false); navigate('home'); }} />;
+  if (inEditor) return <EditorWorkspace model={model} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} onConfig={next => { setAgentConfig(next); writeStored('agent', next); }} systems={usableSystems} system={currentSystem} onSystem={setSelectedSystem} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
 
   const filteredDocuments = documents.filter(doc => doc.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : b.updatedAt.localeCompare(a.updatedAt));
   const filteredSystems = systems.filter(system => `${system.name} ${system.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : 0);
@@ -215,7 +194,7 @@ export function HomeApp() {
     </div>;
   }
 
-  const composerUI = <HomeComposer inputRef={composer} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => void generation.cancel().catch(e => setError(String(e)))} sendKey={preferences.sendKey} running={generation.running} preparing={preparing} busy={busy} systems={usableSystems} selectedSystem={currentSystem.id} onSystem={setSelectedSystem} config={agentConfig} onAgentSettings={() => navigate('settings')} project={project} onProject={() => setDialog('directory')} attachments={attachments} onAttach={() => attachmentInput.current?.click()} onRemoveAttachment={index => setAttachments(files => files.filter((_, i) => i !== index))} references={referenceProjects} onReferences={() => setDialog('references')} onRemoveReference={id => setReferenceProjects(items => items.filter(doc => doc.id !== id))} />;
+  const composerUI = <HomeComposer inputRef={composer} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => {}} sendKey={preferences.sendKey} running={false} preparing={preparing} busy={busy} systems={usableSystems} selectedSystem={currentSystem.id} onSystem={setSelectedSystem} config={agentConfig} onAgentSettings={() => navigate('settings')} project={project} onProject={() => setDialog('directory')} attachments={attachments} onAttach={() => attachmentInput.current?.click()} onRemoveAttachment={index => setAttachments(files => files.filter((_, i) => i !== index))} references={referenceProjects} onReferences={() => setDialog('references')} onRemoveReference={id => setReferenceProjects(items => items.filter(doc => doc.id !== id))} />;
 
   return <div className="home-shell">
     <a className="home-skip-link" href="#home-content">跳转到内容</a>
@@ -225,11 +204,10 @@ export function HomeApp() {
       <main ref={content} id="home-content" className="home-content" tabIndex={-1}>
         {error && <div className="home-error" role="alert"><span>{error}</span><IconControl label="关闭错误提示" onClick={() => setError('')}><X size={16} /></IconControl></div>}
         {section === 'systems' && activeSystem ? <SystemWorkbench onOpenComponents={()=>void openComponentAssets()} key={activeSystem.id} system={activeSystem} config={agentConfig} project={project} onProject={() => setDialog('directory')} isBuiltIn={builtInSystems.some(s => s.id === activeSystem.id)} onClose={() => setActiveSystem(null)} onSave={saveSystem} onUse={system => { saveSystem(system); setSelectedSystem(system.id); setActiveSystem(null); navigate('home'); }} onDelete={customSystems.some(s => s.id === activeSystem.id) ? () => { const next = customSystems.filter(s => s.id !== activeSystem.id); if (!writeStored('systems', next)) { setError('无法保存删除操作，请重试。'); return; } setCustomSystems(next); if (selectedSystem === activeSystem.id) setSelectedSystem('rea'); setActiveSystem(null); } : undefined} /> : section === 'home' ? <div className="home-overview">
-          <section className={`home-idea ${messages.length ? 'has-conversation' : ''}`} aria-labelledby="home-idea-title">
+          <section className="home-idea" aria-labelledby="home-idea-title">
             <div className="home-idea-heading"><span className="home-idea-mark" aria-hidden="true"><Shapes size={25} strokeWidth={1.5} /></span><h1 id="home-idea-title">从一个想法，开始设计。</h1><p>说说你想创造什么，其余的我们一起完成。</p></div>
-            {messages.length > 0 && <div ref={conversation} className="home-conversation" role="log" aria-label="设计生成对话">{messages.map(message => <div key={message.id} className="home-conversation-turn"><div className="home-user-message"><p>{message.text}</p>{message.files.length > 0 && <small><Paperclip size={12} />{message.files.join('、')}</small>}<small>{message.model} · {message.context}</small></div><div className="home-ai-message"><span className="home-ai-avatar">r</span><div><strong>REA <small>Codex CLI</small></strong>{message.state === 'running' ? <p className="agent-progress" role="status"><LoaderCircle size={14} />{generation.status?.events.at(-1) || '正在读取设计参考…'}</p> : <p>{message.reply}</p>}{message.documentId && <button type="button" className="home-text-button" onClick={() => openProject(message.documentId!)}>打开生成设计 <ArrowRight size={14} /></button>}{message.state === 'failed' && <button type="button" className="home-text-button" onClick={() => { setPrompt(message.text); composer.current?.focus(); }}>修改需求后重试 <ArrowRight size={14} /></button>}</div></div></div>)}</div>}
             {composerUI}
-            {!messages.length && <div className="home-prompt-suggestions">{templates.map(template => <button type="button" key={template.id} onClick={() => { setPrompt(template.prompt); composer.current?.focus(); }}><LayoutTemplate size={13} /><span>{template.id === 'website' ? '设计一个产品官网' : template.id === 'dashboard' ? '搭建数据看板' : '创建移动端页面'}</span><ArrowUpRight size={12} /></button>)}</div>}
+            {<div className="home-prompt-suggestions">{templates.map(template => <button type="button" key={template.id} onClick={() => { setPrompt(template.prompt); composer.current?.focus(); }}><LayoutTemplate size={13} /><span>{template.id === 'website' ? '设计一个产品官网' : template.id === 'dashboard' ? '搭建数据看板' : '创建移动端页面'}</span><ArrowUpRight size={12} /></button>)}</div>}
           </section>
           <section className="home-recent-projects" aria-labelledby="home-recent-title"><header className="home-section-heading"><div><h2 id="home-recent-title">最近项目</h2><p>继续上次的创作，或者开启新的可能。</p></div><button type="button" className="home-text-button" onClick={() => navigate('projects')}>全部项目 <ArrowRight size={14} /></button></header>{loading ? <div className="home-loading" role="status"><LoaderCircle size={17} />正在读取本地项目…</div> : projectCollection(recentDocuments.slice(0, 2), true)}</section>
           <footer className="home-overview-footer"><span>每个好设计，都始于一个想法。</span><span>REA UI</span></footer>

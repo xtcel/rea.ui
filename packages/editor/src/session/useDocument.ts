@@ -3,6 +3,7 @@ import { DocumentSession } from '@rea/document';
 import type { SourceOperation, Transaction } from '@rea/document';
 import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2 } from '@rea/storage';
 import { withDocumentMetadata } from './metadata';
+import { applyAgentSnapshot } from './agent';
 import type { AssetRecord, DocumentRecord, SaveStatus } from '@rea/storage';
 import { isDesktop } from '../platform';
 
@@ -83,8 +84,22 @@ export function useDocument() {
     catch (error) { setNotice(error instanceof Error ? error.message : String(error)); return false; }
   }
   function execute(operation: SourceOperation, label = '编辑图层', coalesceKey?: string) { return transact({ label, coalesceKey, ops: [operation] }); }
+  /** Persist document-owned metadata (AI sessions) into the document so it travels with .reaui. */
+  function writeMetadata(path: string, content: string | null): boolean {
+    const session = latest.current;
+    if (!session) return false;
+    try { const next = session.withMetadata(path, content); if (next !== session) publish(next); return true; }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); return false; }
+  }
   async function open(id: string) { await saver.current?.flush(); activate(await storage.openDocument(id)); }
-  async function create(name?: string) { await saver.current?.flush(); const doc = await storage.createDocument(name); await storage.setMeta('lastOpenedId', doc.id); activate(doc); }
+  async function create(name?: string) { await saver.current?.flush(); const doc = await storage.createDocument(name); await storage.setMeta('lastOpenedId', doc.id); activate(doc); return doc; }
+  function applyAgentFiles(documentId: string, expectedRev: number, files: Record<string, string>, turnId: string): number {
+    const session = latest.current;
+    if (!session) throw new Error('文档尚未加载。');
+    const next = applyAgentSnapshot(session, documentId, expectedRev, files, turnId);
+    publish(next);
+    return next.rev;
+  }
   async function openGenerated(document: DocumentRecord) {
     new DocumentSession(document.files);
     await saver.current?.flush();
@@ -136,7 +151,7 @@ export function useDocument() {
       if (docs[0]) activate(await storage.openDocument(docs[0].id)); else await create();
     }
   }
-  return { current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
+  return { current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, applyAgentFiles, writeMetadata, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
     undo: () => { if (latest.current) publish(latest.current.undo()); }, redo: () => { if (latest.current) publish(latest.current.redo()); } };
 }
 export type DocumentModel = ReturnType<typeof useDocument>;

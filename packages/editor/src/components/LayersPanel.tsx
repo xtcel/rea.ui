@@ -9,11 +9,12 @@ export interface PageActions {
   add: () => void; duplicate: (id: string) => void; remove: (id: string) => void;
   rename: (id: string, name: string) => void; reorder: (ids: string[]) => void;
 }
-export function LayersPanel({ pages, page, selectedId, selectedIds = [], onSelect, onMove, onPageChange, onClose, actions, onChange }: {
+export function LayersPanel({ pages, page, selectedId, selectedIds = [], onSelect, onMove, onPageChange, onClose, actions, onChange, onNodeMenu }: {
   pages: readonly InspectedPage[]; page: InspectedPage; selectedId: string | null;
   selectedIds?: readonly string[]; onMove?: (id: string, parentId: string, index: number) => void;
   onSelect: (id: string, additive?: boolean) => void; onPageChange: (id: string) => void; onClose: () => void;
   actions: PageActions; onChange: (id: string, props: Record<string, unknown>) => void;
+  onNodeMenu?: (id: string, x: number, y: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [pagesCollapsed, setPagesCollapsed] = useState(false), [pageHeight, setPageHeight] = useState(180);
@@ -40,6 +41,7 @@ export function LayersPanel({ pages, page, selectedId, selectedIds = [], onSelec
     const controls = layerControls(node, page);
     const Icon = ({ Text: Type, Vector: PenTool, Frame, Rect: Square, Ellipse: Circle, Image, Group: Folder, Page: Frame, Line: PenTool, Polygon: PenTool, Star: PenTool } as Partial<Record<string,typeof Frame>>)[node.kind]??Folder;
     return <li key={node.id}><div className={`rea-layer-row group ${selected ? 'rea-selected' : ''}`} data-layer-selected={selected} data-layer-id={node.id} data-drop={drop?.id === node.id ? drop.zone : undefined} style={{ paddingLeft: 8 + depth * 14 }}
+      onContextMenu={event => { if (!onNodeMenu) return; event.preventDefault(); event.stopPropagation(); onNodeMenu(node.id, event.clientX, event.clientY); }}
       draggable={!node.locked && renaming !== node.id} onDragStart={event => { event.stopPropagation(); draggedLayer.current=node.id; event.dataTransfer.effectAllowed='move'; event.dataTransfer.setData('application/x-reaui-layer',node.id); }} onDragEnd={() => { draggedLayer.current=null;setDrop(null); }}
       onDragOver={event => { const id=draggedLayer.current;if(!id||node.locked||id===node.id||descendants(page,id).includes(node.id))return;event.preventDefault();event.stopPropagation();const bounds=event.currentTarget.getBoundingClientRect(),ratio=(event.clientY-bounds.top)/bounds.height;setDrop({id:node.id,zone:isContainer(node)&&ratio>.25&&ratio<.75?'inside':ratio<.5?'before':'after'});event.dataTransfer.dropEffect='move'; }}
       onDrop={event => { event.preventDefault();event.stopPropagation();const id=draggedLayer.current;if(!id||!drop||drop.id!==node.id)return;const parentId=drop.zone==='inside'?node.id:node.parentId!,siblings=page.nodes.get(parentId)!.children,index=drop.zone==='inside'?siblings.length:siblings.indexOf(node.id)+(drop.zone==='before'?1:0);onMove?.(id,parentId,index);draggedLayer.current=null;setDrop(null); }}>

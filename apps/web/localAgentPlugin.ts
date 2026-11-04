@@ -58,7 +58,7 @@ export function localAgentPlugin(): Plugin {
           let body = '';
           for await (const chunk of req) {
             body += String(chunk);
-            if (Buffer.byteLength(body) > 400_000) throw new Error('请求内容超过限制。');
+            if (Buffer.byteLength(body) > 3_000_000) throw new Error('请求内容超过限制。');
           }
           const input = JSON.parse(body) as { method: string; payload: unknown };
           const result = await request(input.method, input.payload);

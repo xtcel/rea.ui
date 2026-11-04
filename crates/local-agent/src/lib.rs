@@ -22,6 +22,8 @@ struct Job {
     events: Vec<String>,
     result: Option<Value>,
     error: Option<String>,
+    preview: Option<Value>,
+    preview_error: Option<String>,
 }
 
 #[derive(Default)]
@@ -246,6 +248,148 @@ fn push_event(job: &Arc<Mutex<Job>>, message: String) {
     }
 }
 
+const COMPONENT_SOURCE: &str = "components/main.components.tsx";
+const WORKSPACE_RULES: &str = "# REA UI design workspace\nEdit only rea.json, pages/*.page.tsx and components/main.components.tsx. Read the manifest and existing source first. Preserve manifest identity and existing designId values. Use only static @rea/design primitives, static Tailwind className, no executable JS, HTML, events or style. Save a complete valid page after each meaningful section so the host can validate and render it live. Never modify the reference project. Report brief action summaries, never private reasoning. The final JSON contains only summary.\n";
+
+fn design_paths(files: &Value) -> Result<Vec<String>, String> {
+    let source = files
+        .get("rea.json")
+        .and_then(Value::as_str)
+        .ok_or("缺少设计清单。")?;
+    let manifest: Value = serde_json::from_str(source).map_err(|_| "设计清单格式错误。")?;
+    let pages = manifest["pages"].as_array().ok_or("设计清单缺少页面。")?;
+    if pages.is_empty() || pages.len() > 12 {
+        return Err("AI 编辑最多支持 12 个页面。".into());
+    }
+    let mut paths = vec!["rea.json".to_string()];
+    for page in pages {
+        let id = field(page, "id");
+        if id.is_empty()
+            || id.len() > 64
+            || !id.starts_with(|c: char| c.is_ascii_lowercase())
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            return Err("页面路径不合法。".into());
+        }
+        let path = format!("pages/{id}.page.tsx");
+        if field(page, "file") != path || paths.contains(&path) {
+            return Err("页面路径不合法或重复。".into());
+        }
+        paths.push(path);
+    }
+    if files.get(COMPONENT_SOURCE).is_some() {
+        paths.push(COMPONENT_SOURCE.into());
+    }
+    Ok(paths)
+}
+
+fn validate_sources(files: &Value) -> Result<Vec<String>, String> {
+    let paths = design_paths(files)?;
+    let object = files.as_object().ok_or("设计文件格式错误。")?;
+    if object.len() != paths.len()
+        || paths
+            .iter()
+            .any(|path| files.get(path).and_then(Value::as_str).is_none())
+        || object
+            .values()
+            .any(|v| v.as_str().is_none_or(|s| s.len() > 500_000))
+        || files.to_string().len() > MAX_RESULT as usize
+    {
+        return Err("设计文件类型或大小超出限制。".into());
+    }
+    Ok(paths)
+}
+
+fn read_source(root: &Path, path: &str) -> Result<String, String> {
+    let full = root.join(path);
+    if path.contains('/')
+        && std::fs::symlink_metadata(full.parent().unwrap())
+            .map_err(|e| e.to_string())?
+            .file_type()
+            .is_symlink()
+    {
+        return Err("设计目录不能使用符号链接。".into());
+    }
+    let metadata = std::fs::symlink_metadata(&full).map_err(|e| e.to_string())?;
+    if !metadata.is_file() || metadata.len() > 500_000 {
+        return Err("设计文件必须是小于 500KB 的普通文件。".into());
+    }
+    let mut source = String::new();
+    std::fs::File::open(full)
+        .map_err(|e| e.to_string())?
+        .take(500_001)
+        .read_to_string(&mut source)
+        .map_err(|e| e.to_string())?;
+    if source.len() > 500_000 {
+        return Err("设计文件超过大小限制。".into());
+    }
+    Ok(source)
+}
+
+fn workspace_snapshot(root: &Path) -> Result<Value, String> {
+    if !std::fs::symlink_metadata(root)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_dir()
+    {
+        return Err("设计工作区必须是普通目录。".into());
+    }
+    let mut files = json!({"rea.json": read_source(root, "rea.json")?});
+    if root.join(COMPONENT_SOURCE).symlink_metadata().is_ok() {
+        files[COMPONENT_SOURCE] = Value::String(read_source(root, COMPONENT_SOURCE)?);
+    }
+    for path in design_paths(&files)? {
+        if path != "rea.json" && path != COMPONENT_SOURCE {
+            files[&path] = Value::String(read_source(root, &path)?);
+        }
+    }
+    validate_sources(&files)?;
+    Ok(files)
+}
+
+fn public_progress(event: &Value) -> Option<String> {
+    match field(event, "type") {
+        "thread.started" => Some("已连接本地 Codex CLI".into()),
+        "turn.started" => Some("正在分析需求与设计系统…".into()),
+        "item.started" | "item.completed" => {
+            let item = &event["item"];
+            match field(item, "type") {
+                "command_execution" => {
+                    let command = field(item, "command");
+                    let paths: Vec<_> = command
+                        .split(|c: char| c.is_whitespace() || "\"'();".contains(c))
+                        .filter(|s| {
+                            *s == "rea.json"
+                                || s.starts_with("pages/") && s.ends_with(".page.tsx")
+                                || *s == COMPONENT_SOURCE
+                        })
+                        .take(3)
+                        .collect();
+                    Some(if paths.is_empty() {
+                        "正在读取或编辑工作区文件…".into()
+                    } else {
+                        format!("正在处理设计文件：{}", paths.join("、"))
+                    })
+                }
+                "agent_message" if field(event, "type") == "item.completed" => {
+                    let message = field(item, "text").trim();
+                    if message.is_empty() || message.starts_with('{') || message.starts_with("```")
+                    {
+                        None
+                    } else {
+                        Some(message.chars().take(500).collect())
+                    }
+                }
+                // Reasoning events are private. Only actions and public messages reach the UI.
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 impl AgentService {
     pub fn request(&self, method: &str, payload: Value) -> Result<Value, String> {
         match method {
@@ -281,7 +425,7 @@ impl AgentService {
                     }
                 }
                 Ok(
-                    json!({"id":id,"state":job.state,"events":job.events,"result":job.result,"error":job.error}),
+                    json!({"id":id,"state":job.state,"events":job.events,"result":job.result,"error":job.error,"preview":job.preview,"previewError":job.preview_error}),
                 )
             }
             _ => Err("不支持的本地 Agent 操作。".into()),
@@ -311,6 +455,8 @@ impl AgentService {
             return Err("模型名称格式不合法，请检查 Agent 设置。".into());
         }
         let path = codex_path(field(&payload, "executable"))?;
+        let workspace = payload.get("files");
+        let workspace_paths = workspace.map(validate_sources).transpose()?;
         let mut jobs = self.jobs.lock().unwrap();
         if jobs.values().any(|j| j.lock().unwrap().state == "running") {
             return Err("已有生成任务正在运行，请等待完成或先取消。".into());
@@ -330,7 +476,21 @@ impl AgentService {
             let schema_file = temp.join("schema.json");
             let output_file = temp.join("result.json");
             std::fs::write(&schema_file, schema.to_string()).map_err(|e| e.to_string())?;
-            let cwd = if field(&payload, "projectPath").is_empty() {
+            let design_root = temp.join("design");
+            if let (Some(files), Some(paths)) = (workspace, workspace_paths) {
+                std::fs::create_dir_all(design_root.join("pages")).map_err(|e| e.to_string())?;
+                std::fs::create_dir_all(design_root.join("components"))
+                    .map_err(|e| e.to_string())?;
+                for path in paths {
+                    std::fs::write(design_root.join(&path), files[&path].as_str().unwrap())
+                        .map_err(|e| e.to_string())?;
+                }
+                std::fs::write(design_root.join("AGENTS.md"), WORKSPACE_RULES)
+                    .map_err(|e| e.to_string())?;
+            }
+            let cwd = if workspace.is_some() {
+                design_root.clone()
+            } else if field(&payload, "projectPath").is_empty() {
                 temp.clone()
             } else {
                 project_path(field(&payload, "projectPath"))?
@@ -340,7 +500,11 @@ impl AgentService {
                 "exec",
                 "--json",
                 "--sandbox",
-                "read-only",
+                if workspace.is_some() {
+                    "workspace-write"
+                } else {
+                    "read-only"
+                },
                 "--skip-git-repo-check",
                 "--ephemeral",
                 "--color",
@@ -384,29 +548,8 @@ impl AgentService {
                         continue;
                     }
                     if let Ok(event) = serde_json::from_str::<Value>(&line) {
-                        match field(&event, "type") {
-                            "thread.started" => {
-                                push_event(&reader_job, "已连接本地 Codex CLI".into())
-                            }
-                            "turn.started" => {
-                                push_event(&reader_job, "正在分析参考与设计系统…".into())
-                            }
-                            "item.completed" => {
-                                let item = &event["item"];
-                                match field(item, "type") {
-                                    "command_execution" => {
-                                        push_event(&reader_job, "正在参考项目代码…".into())
-                                    }
-                                    "agent_message" => {
-                                        push_event(&reader_job, "正在整理生成结果…".into())
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            "error" | "turn.failed" => {
-                                push_event(&reader_job, field(&event, "message").to_string())
-                            }
-                            _ => {}
+                        if let Some(message) = public_progress(&event) {
+                            push_event(&reader_job, message);
                         }
                     }
                 }
@@ -424,11 +567,23 @@ impl AgentService {
             });
             let watcher = job.clone();
             let work_dir = temp.clone();
+            let has_workspace = workspace.is_some();
             std::thread::spawn(move || {
                 let started = Instant::now();
                 loop {
                     {
                         let mut job = watcher.lock().unwrap();
+                        if has_workspace && job.state == "running" {
+                            match workspace_snapshot(&design_root) {
+                                Ok(snapshot) => {
+                                    job.preview = Some(snapshot);
+                                    job.preview_error = None;
+                                }
+                                Err(error) => {
+                                    job.preview_error = Some(error);
+                                }
+                            }
+                        }
                         if started.elapsed() > Duration::from_secs(600) && job.state == "running" {
                             job.state = "failed".into();
                             job.error =
@@ -508,6 +663,111 @@ impl Drop for AgentService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn source_files() -> Value {
+        json!({"rea.json": "{\"format\":\"reaui\",\"version\":2,\"id\":\"doc_test\",\"name\":\"Test\",\"createdAt\":\"2026-11-04T00:00:00Z\",\"pages\":[{\"id\":\"main\",\"file\":\"pages/main.page.tsx\"}]}", "pages/main.page.tsx": "initial source"})
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn streams_workspace_files_before_completion_and_keeps_final_snapshot() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("rea-workspace-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let executable = root.join("fake-codex");
+        std::fs::write(&executable, r##"#!/bin/sh
+output=''
+mode=''
+cwd=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) output="$2"; shift 2 ;;
+    --sandbox) mode="$2"; shift 2 ;;
+    -C) cwd="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ "$mode" != 'workspace-write' ]; then exit 10; fi
+cd "$cwd" || exit 11
+if [ ! -f AGENTS.md ]; then exit 12; fi
+prompt="$(cat)"
+echo '{"type":"item.completed","item":{"type":"reasoning","text":"private reasoning"}}'
+echo '{"type":"item.started","item":{"type":"command_execution","command":"cat pages/main.page.tsx"}}'
+echo 'stage one' > pages/main.page.tsx
+sleep 0.8
+echo 'stage two' > pages/main.page.tsx
+sleep 0.8
+if [ "$prompt" = 'bad-final' ]; then echo '{"pages":[]}' > rea.json; fi
+echo '{"summary":"done"}' > "$output"
+"##).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let service = AgentService::default();
+        for prompt in ["design", "bad-final"] {
+            let id = service.request("start", json!({"executable":executable,"prompt":prompt,"schema":{"type":"object"},"files":source_files(),"projectPath":root})).unwrap()["id"].as_str().unwrap().to_string();
+            let started = Instant::now();
+            let mut saw_intermediate = false;
+            loop {
+                let status = service.request("status", json!({"id":id})).unwrap();
+                if status["state"] == "running"
+                    && status["preview"]["pages/main.page.tsx"]
+                        .as_str()
+                        .is_some_and(|s| s.contains("stage one"))
+                {
+                    saw_intermediate = true;
+                }
+                assert!(!status["events"].to_string().contains("private reasoning"));
+                if status["state"] != "running" {
+                    assert_eq!(status["state"], "completed");
+                    assert!(saw_intermediate);
+                    if prompt == "bad-final" {
+                        assert!(status["previewError"].is_string());
+                    } else {
+                        assert!(status["previewError"].is_null());
+                        assert_eq!(status["preview"]["pages/main.page.tsx"], "stage two\n");
+                    }
+                    break;
+                }
+                assert!(started.elapsed() < Duration::from_secs(8));
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        }
+        assert!(!root.join("pages").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_traversal_missing_sources_oversize_and_symlinks() {
+        use std::os::unix::fs::symlink;
+        let mut files = source_files();
+        files["rea.json"] = Value::String(
+            "{\"pages\":[{\"id\":\"../outside\",\"file\":\"pages/../outside.page.tsx\"}]}".into(),
+        );
+        assert!(validate_sources(&files).is_err());
+        files = source_files();
+        files.as_object_mut().unwrap().remove("pages/main.page.tsx");
+        files["unexpected"] = Value::String("wrong file".into());
+        assert!(validate_sources(&files).is_err());
+        files = source_files();
+        files["pages/main.page.tsx"] = Value::String("x".repeat(500_001));
+        assert!(validate_sources(&files).is_err());
+        let root = std::env::temp_dir().join(format!("rea-symlink-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("pages")).unwrap();
+        std::fs::write(
+            root.join("rea.json"),
+            source_files()["rea.json"].as_str().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(root.join("secret"), "must not read").unwrap();
+        symlink(root.join("secret"), root.join("pages/main.page.tsx")).unwrap();
+        assert!(workspace_snapshot(&root).is_err());
+        std::fs::remove_file(root.join("pages/main.page.tsx")).unwrap();
+        std::fs::remove_dir(root.join("pages")).unwrap();
+        symlink(&root, root.join("pages")).unwrap();
+        assert!(workspace_snapshot(&root).is_err());
+        std::fs::remove_file(root.join("pages")).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[cfg(unix)]
     #[test]

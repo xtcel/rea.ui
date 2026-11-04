@@ -73,3 +73,4 @@ export const shellWidths = (left: number, right: number) => ({ '--rea-left': `${
 export * from './NumberField';
 export * from './Select';
 export * from './ColorField';
+export * from './ContextMenu';

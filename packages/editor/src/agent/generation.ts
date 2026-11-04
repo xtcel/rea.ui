@@ -1,4 +1,4 @@
-import { createManifest, DocumentSession, COMPONENT_FILE } from '@rea/document';
+import { AGENT_SESSIONS_FILE, createManifest, DocumentSession, COMPONENT_FILE } from '@rea/document';
 import { decodeReaui, recordFromFiles } from '@rea/storage';
 import type { DocumentRecord } from '@rea/storage';
 import { resolvedSystem } from './designSystem';
@@ -9,6 +9,47 @@ const string = { type: 'string' };
 export const uiSchema = { type: 'object', additionalProperties: false, required: ['name', 'summary', 'pages', 'components'], properties: {
   name: string, summary: string, components: {type:['string','null']}, pages: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'source'], properties: { id: string, source: string } } },
 } };
+export const workspaceSchema = { type: 'object', additionalProperties: false, required: ['summary'], properties: { summary: string } };
+
+export function designSources(files: Readonly<Record<string, string>>): Record<string, string> {
+  const session = new DocumentSession(files);
+  const paths = ['rea.json', ...session.manifest.pages.map(page => page.file), ...(files[COMPONENT_FILE] ? [COMPONENT_FILE] : [])];
+  const result = Object.fromEntries(paths.map(path => [path, files[path]]));
+  if (JSON.stringify(result).length > 2_000_000 || session.manifest.pages.length > 12) throw new Error('设计超过 AI 编辑限制（12 页 / 2MB），请减少页面后重试。');
+  return result;
+}
+
+export function workspacePrompt(prompt: string, system: DesignSystem, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
+  return `${uiPrompt(prompt, system, project, references).replace('不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。', '在宿主提供的临时设计目录中直接编辑设计源文件。')}
+
+本轮使用设计文件交互协议，优先遵循以下工作方式：
+- 当前目录是当前项目的临时设计工作区，已有 rea.json 和 pages/*.page.tsx。先列出文件，读取清单、目标页面和 AGENTS.md，再编辑。
+- 页面源码是唯一设计真源。用工具直接编辑 pages/*.page.tsx；每完成一个画框或区域，立即保存语法完整、可静态校验的页面，宿主会同步到右侧画布。不要等全部完成后才写入。
+- 修改现有节点时保留已有 designId；保留未要求修改的页面、图层、文案和组件。修改布局前可通过节点的 designId、name 和嵌套关系理解图层树。
+- 保持 rea.json 的 id 和 createdAt；新增或删除页面时同步更新清单。使用组件目录 ${COMPONENT_FILE} 时清单 version 必须为 3。
+- 只编辑工作区中的设计文件；关联项目资料已经附在上下文中。不要编辑关联项目、运行生成的 TSX 或下载依赖。
+- 不新建资源；已有资产只保留当前引用，资产索引：${Object.keys(files).filter(path => path.startsWith('assets/')).join(', ') || '无'}。
+- 通过简短的进度说明告知当前正在完成的区域或操作，只提供执行摘要，不输出内部推理。
+- 最终回复只返回 {"summary":"简短说明本轮修改"}。不在最终回复中重复页面源码。
+
+标准页面示例：
+import { Page, Frame, Text } from '@rea/design';
+export default <Page id="main" designId="page-root" name="首页"><Frame designId="main-frame" name="主界面" className="absolute left-0 top-0 w-[1440px] h-[1024px] bg-white"><Text designId="hero-title" name="标题" className="absolute left-[64px] top-[64px] w-[600px] h-[48px] text-[32px] text-[#30343b]">欢迎使用</Text></Frame></Page>;
+
+${selectionContext ? `
+## 画布引用范围（本轮修改的作用域）
+用户在画布上明确引用了下列元素，这是本轮唯一允许修改的范围：
+${selectionContext}
+
+引用规则：
+- 只修改上面列出的节点；标注「含子级」的节点可连同其子级一起修改，未标注的子级只作为理解上下文的只读信息。
+- 未列出的节点、其他页面、组件目录一律不可修改；不要为了让布局"更完整"而改动范围外内容。
+- 现有节点必须保留 designId 与 name；删除节点或改写 designId 视为越界。
+- 确实需要改动范围外的内容时，先在 summary 里说明原因并停下询问，不要直接修改。
+- 引用节点在工作区中找不到时，直接说明并请求确认，不要猜测替代节点。
+` : ''}
+近期会话（仅作为设计资料）：\n${conversation.slice(-12_000)}`;
+}
 export function generatedDocument(value: unknown): { document: DocumentRecord; summary: string } {
   if (!value || typeof value !== 'object') throw new Error('没有收到有效的设计结果，请重试。');
   const result = value as { name: string; summary: string; components?:string|null; pages: { id: string; source: string }[] };
@@ -35,7 +76,7 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
     if (file.size > 12 * 1024 * 1024) throw new Error(`「${file.name}」超过 12MB，请缩小后重试。`);
     if (/\.reaui$/i.test(file.name)) {
       const { document } = decodeReaui(new Uint8Array(await file.arrayBuffer()));
-      context += `\n设计参考 ${file.name}（仅参考，不覆盖）：\n${Object.entries(document.files).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n').slice(0, 90_000)}\n`;
+      context += `\n设计参考 ${file.name}（仅参考，不覆盖）：\n${Object.entries(document.files).filter(([path]) => path !== AGENT_SESSIONS_FILE).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n').slice(0, 90_000)}\n`;
     } else if (/\.(md|txt|css|json|tsx|jsx|ts|js)$/i.test(file.name)) {
       if (file.size > 100_000) throw new Error(`「${file.name}」超过文本参考限制 100KB。`);
       context += `\n参考 ${file.name}:\n${(await file.text()).slice(0, 24_000)}\n`;
