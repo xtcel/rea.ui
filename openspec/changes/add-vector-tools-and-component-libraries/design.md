@@ -26,7 +26,7 @@ Line 带首尾箭头参数；Polygon count=3 是三角形，Star 保存角数与
 
 ### 4. 缩放与测量
 
-外层屏幕平移，内容层 CSS zoom，覆盖层屏幕坐标；显式 camera/context 代替解析 DOM transform 字符串。设计坐标不随相机变化，不入历史。实测 WebKit 的 client rect 会除去 CSS zoom，因此使用同缩放边界内的原点与 100px 探针校准测量；渲染 CSS 将声明值中的 rem 解析为设计根字号 16px 对应的像素，避免 rem 与 px 在 WebKit 中缩放不一致。先做 macOS 实测，覆盖 100/144/200/300%，再扩展至 800/1600%；浏览器与 DPR 1/2 检查布局、命中、文本覆盖层、旋转、吸附。CSS zoom 的布局影响是验证重点；未经验证不得宣称已根治。
+外层屏幕平移，内容层 `transform: scale()`（origin `0 0`），覆盖层屏幕坐标；显式 camera/context 代替解析 DOM transform 字符串。设计坐标不随相机变化，不入历史。不采用 CSS `zoom`：WebKit 把 `zoom` 下的 `font-size` 乘反或钳制在约 9.7px 的最小字号，缩小画布时小字号文字不跟随缩放，撑破盒子并互相重叠（WebKit bug 272351、317209；`transform` 无此下限）。测量使用同缩放边界内的原点与 100px 探针校准，兼容 WebKit 探针按倍率报告、Chromium 按 CSS 像素报告两种口径；渲染 CSS 将声明值中的 rem 解析为设计根字号 16px 对应的像素，避免 rem 与 px 在 WebKit 中缩放不一致。已在 Playwright WebKit 与 Chromium 实测 16/49/85% 布局、命中、文本框选、拖动与文本覆盖层；100/200/300% 与真机 WKWebView 仍需人工复核。
 
 ### 5. 完整组件规则
 
@@ -38,7 +38,7 @@ Line 带首尾箭头参数；Polygon count=3 是三角形，Star 保存角数与
 
 ## Risks / Trade-offs
 
-- CSS zoom 的测量差异 → 使用统一转换并在 macOS WKWebView 实测，不仅跑 jsdom。
+- 缩放实现的差异 → 内容层用 `transform: scale()` 而非 CSS `zoom`，测量统一走探针并在 WebKit/Chromium 实测，不仅跑 jsdom。
 - 现有页面 ID 仅页内唯一 → 组件定义身份和实例地址使用命名空间，不让跨页重名冲突。
 - FigCraft 真实复制实例与 TSX 引用实例不同 → 复用规则和测试，展开树保持只读。
 - 历史 proposal 仍写“仅 UI” → 本次批准扩展参考范围；长期单文件迁移与高级网络不因本次自动完成。

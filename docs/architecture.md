@@ -103,7 +103,7 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 `add-vector-tools-and-component-libraries` 在现有静态 TSX 和事务层上增加参数化形状、路径、组件目录及本机库，不引入第二份可编辑场景。FigCraft 固定参考与 MIT 材料见 `third_party/figcraft/`。铅笔采样经 WASM 的 kurbo 曲线拟合，锚点/控制柄与形状转换保存为静态路径属性。
 
-相机给内容与屏幕叠层提供同一 zoom。内容使用布局缩放 CSS zoom，让 WKWebView 按当前比例重绘 DOM 文字和 SVG；选框叠层使用原有相机坐标。测量通过同一缩放层的原点与 100px 探针校准，data-camera-zoom 提供相机倍率回退，命中通过真实 SVG path 与随 zoom 调整的屏幕容差。渲染时将 CSS 声明中的 rem 解析为设计根字号 16px 对应的像素，保留选择器和字符串原文，修正 WebKit 对 rem 与 px 的缩放差异。
+相机给内容与屏幕叠层提供同一 zoom。内容层用 `transform: scale()` 缩放、`transform-origin: 0 0`，让 WKWebView 按当前比例重绘 DOM 文字和 SVG；选框叠层使用原有相机坐标。这里不能用 CSS `zoom`：WebKit 在 `zoom` 下会把 `font-size` 乘反或钳制在最小字号，缩小画布时文字不跟随缩放并互相重叠（WebKit bug 272351、317209），而 `transform` 没有这个下限。测量通过同一缩放层的原点与 100px 探针校准，data-camera-zoom 提供相机倍率回退，命中通过真实 SVG path 与随 zoom 调整的屏幕容差。渲染时将 CSS 声明中的 rem 解析为设计根字号 16px 对应的像素，保留选择器和字符串原文，修正 WebKit 对 rem 与 px 的缩放差异。
 
 `DocumentSession.components` 保存解析定义，`pages` 和 `componentPages` 是派生展开页；每个虚拟节点保存源实例地址，用于将编辑路由至 values 或属性覆盖。组件编辑入口将视觉根包装为临时工作面，事务只写回实际组件内容。所有基础定义和变体均校验，包括未被页面使用的定义。
 

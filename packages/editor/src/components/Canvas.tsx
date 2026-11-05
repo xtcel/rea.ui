@@ -559,7 +559,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     else if (isContainer(node))
         onSelection({ ...selection, scope: hit, ids: [] }); }}>
     <div className="rea-canvas-content-position" style={{ position: 'absolute', left: camera.x, top: camera.y }}>
-      <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ position:'relative', zoom: camera.zoom }}>
+      <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ position:'relative', transform: `scale(${camera.zoom})`, transformOrigin: '0 0' }}>
       <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} pathPreview={vectorEditingId&&pathDraft?{id:vectorEditingId,path:pathDraft}:null} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} zoom={camera.zoom}/>
       {editingId && editedElement && editedBox && <TextEditor key={editingId} id={editingId} text={editedText} target={editedElement} box={editedBox} rotation={rotationFor(editingId)} onFinish={onTextFinish}/>}
       </div>
