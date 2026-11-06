@@ -220,6 +220,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     type GuideDragState = { pointerId: number; axis: GuideAxis; mode: 'creating' | 'moving'; id?: string; position: number; deleting: boolean; element: HTMLElement };
     const guideDrag = useRef<GuideDragState | null>(null);
     const [guideView, setGuideView] = useState<GuideView | null>(null);
+    const [guideHover, setGuideHover] = useState<{ axis: GuideAxis; position: number } | null>(null);
     const snapGuidePosition = (value: number, shift: boolean) => { const grid = shift ? 8 : 1; return Math.round(value / grid) * grid; };
     function guideDeleteZone(axis: GuideAxis, clientX: number, clientY: number) {
         const bounds = container.current?.getBoundingClientRect();
@@ -253,6 +254,13 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         const point = worldPoint(clientX, clientY);
         const axis: GuideAxis = zone === 'top' ? 'x' : 'y';
         onGuidesChange([...guides, { id: `g-${crypto.randomUUID().replaceAll('-', '')}`, axis, position: snapGuidePosition(axis === 'x' ? point.x : point.y, false) }]);
+    }
+    /** Hovering a ruler previews the guide a click would drop there — it is never data. */
+    function previewGuideFromRuler(zone: 'top' | 'left', clientX: number, clientY: number) {
+        if (guideDrag.current) return;
+        const point = worldPoint(clientX, clientY);
+        const axis: GuideAxis = zone === 'top' ? 'x' : 'y';
+        setGuideHover({ axis, position: snapGuidePosition(axis === 'x' ? point.x : point.y, false) });
     }
     function startGuideDrag(id: string, axis: GuideAxis, position: number, pointerId: number, clientX: number, clientY: number, element: HTMLElement) {
         if (!showGuides || guideDrag.current || !onGuidesChange) return;
@@ -288,6 +296,9 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
             ? [...guides, { id: DRAFT_GUIDE_ID, axis: guideView.axis, position: guideView.position }]
             : guides.map(guide => guide.id === guideView.id ? { ...guide, position: guideView.position } : guide)
         : [...guides];
+    // The hover preview belongs to the ruler: no rulers, no preview, and an active guide
+    // gesture already draws its own line.
+    const guidePreview = showRulers && !guideView ? guideHover : null;
     // Overlay pointer capture never bubbles through .rea-canvas, so bind once on window.
     // The ref keeps the handlers fresh without rebinding on every pointermove.
     const guideHandlers = useRef({ update: updateGuideDrag, finish: finishGuideDrag, cancel: cancelGuideDrag });
@@ -300,6 +311,9 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         abort: () => guideHandlers.current.cancel(),
         lost: () => guideHandlers.current.cancel(),
     }), []);
+    // Hiding the rulers removes the only source of hover positions, so drop the stale one
+    // instead of letting it reappear when the rulers come back.
+    useEffect(() => { if (!showRulers) setGuideHover(null); }, [showRulers]);
     function cancel(restoreSelection = false) {
         const g = gesture.current;
         gesture.current = null;
@@ -696,13 +710,16 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
       </div>}
       <svg className="rea-guides" aria-hidden="true">{snapGuides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
     </div>
-    <CanvasRulers camera={camera} size={size} visible={showRulers} containerRef={container}
+    <CanvasRulers camera={camera} size={size} visible={showRulers}
       origin={rulerOrigin} locked={rulerLocked} range={selectionBox ?? null}
+      activeGuide={guideView ? { axis: guideView.axis, position: guideView.position } : null}
       onRulerPointerDown={startRulerDrag}
       onRulerClick={createGuideFromRuler}
+      onRulerHover={previewGuideFromRuler}
+      onRulerHoverEnd={() => setGuideHover(null)}
       onOriginChange={next => onRulerOriginChange?.(next)}
       onRulerContextMenu={(zone, x, y) => onRulerContextMenu?.(zone, x, y)} />
-    <CanvasGuides guides={displayGuides} camera={camera} size={size} visible={showGuides} view={guideView} onGuidePointerDown={startGuideDrag} onGuideContextMenu={(id, x, y) => onGuideContextMenu?.(id, x, y)} />
+    <CanvasGuides guides={displayGuides} camera={camera} size={size} visible={showGuides} rulerVisible={showRulers} view={guideView} preview={guidePreview} onGuidePointerDown={startGuideDrag} onGuideContextMenu={(id, x, y) => onGuideContextMenu?.(id, x, y)} />
     {aiCorner && <button type="button" className={`rea-ai-ref ${aiLinked ? 'is-linked' : ''}`} style={{ left: camera.x + aiCorner.x * camera.zoom, top: camera.y + aiCorner.y * camera.zoom }} aria-pressed={aiLinked} title={`${aiLinked ? '取消引用' : '引用'}${selectedIds.length > 1 ? `选中的 ${selectedIds.length} 个图层` : '选中图层'}给 AI`} onPointerDown={event => event.stopPropagation()} onClick={() => onAgentRefs?.(selectedIds)}><Sparkles size={14} />{selectedIds.length > 1 && <span>{selectedIds.length}</span>}</button>}
     <VectorTools tool={tool} node={vectorEditingId?page.nodes.get(vectorEditingId):undefined} camera={camera} pan={panMode} world={worldPoint} local={vectorLocal} project={vectorWorld} parentAt={containerAt} onCreate={createPath} onPreview={setPathDraft} onChange={path=>{if(vectorEditingId)onCommit({label:'编辑路径',ops:[{type:'set',pageId:page.id,id:vectorEditingId,props:{path,d:undefined}}]});}} onEnd={()=>{setVectorEditingId(null);setPathDraft(null);if(tool==='pen'||tool==='pencil')onToolChange?.('select');}} onNotice={onNotice}/>
     </div>

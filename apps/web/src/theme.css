@@ -287,13 +287,23 @@
 .rea-ruler-ticks { position:absolute; inset:0; width:100%; height:100%; overflow:hidden; }
 .rea-ruler-ticks line { stroke:currentColor; stroke-width:.5; opacity:.55; }
 .rea-ruler-ticks text { fill:currentColor; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; }
-.rea-ruler-indicator { position:absolute; background:var(--rea-accent); opacity:.65; pointer-events:none; }
-.rea-indicator-x { left:0; top:0; bottom:0; width:1px; }
-.rea-indicator-y { left:0; top:0; right:0; height:1px; }
-.rea-manual-guides { position:absolute; inset:0; z-index:24; overflow:hidden; pointer-events:none; }
+/* Only while a guide is being dragged: a 3px notch marks its value in the band. The old
+   always-on pointer line is gone — hovering a ruler now previews a guide instead. */
+.rea-ruler-indicator { position:absolute; background:var(--rea-manual-guide); pointer-events:none; }
+.rea-indicator-x { top:0; bottom:0; width:3px; margin-left:-1px; }
+.rea-indicator-y { left:0; right:0; height:3px; margin-top:-1px; }
+/* Manual guides sit above the rulers: the line must reach its tick value, and the
+   ruler bands stay clickable because only the 8px hit strips opt into pointers, and
+   those start below the ruler (see CanvasGuides). */
+.rea-manual-guides { position:absolute; inset:0; z-index:27; overflow:hidden; pointer-events:none; }
 .rea-manual-guide { position:absolute; background:var(--rea-manual-guide); }
 .rea-manual-guide.is-active { box-shadow:0 0 0 1px var(--rea-accent); }
-.rea-manual-guide.is-draft, .rea-manual-guide.is-deleting { opacity:.55; }
+.rea-manual-guide.is-draft { opacity:.55; }
+.rea-manual-guide.is-deleting { opacity:.55; }
+/* Hover preview: same dimming as a draft, so it reads as "not committed yet". */
+.rea-manual-guide.is-preview { opacity:.55; }
+/* Sketch keeps the preview solid where it crosses the ruler so the value stays legible. */
+.rea-guide-cap { position:absolute; background:var(--rea-manual-guide); pointer-events:none; }
 .rea-manual-guide-hit { position:absolute; pointer-events:auto; touch-action:none; }
 /* Hover feedback lives on the hit strip because the 1px line itself is not hit-testable. */
 .rea-manual-guide:has(.rea-manual-guide-hit:hover) { box-shadow:0 0 0 1px var(--rea-manual-guide); }

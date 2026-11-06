@@ -111,11 +111,15 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 ## 标尺与手动参考线
 
-`add-canvas-rulers-and-guides` 的标尺、手动参考线都是 `.rea-canvas-wrap` 内的**固定屏幕空间覆盖层**，不写入Shadow DOM 内容层，也不改变 `.rea-canvas` 尺寸、`screenToWorld()` / `worldPoint()` 的相机坐标契约。刻度用 `screen = world * zoom + camera.x|camera.y` 换算，0 点是**标尺原点**（默认页面世界坐标 (0,0)，可拖动、可锁定、可重置），标签值是 `world - origin`，因此移动原点只改变读数，不改参考线与图层的坐标；`ruler.ts` 的 `niceStep(zoom)` 从 1/2/5×10ⁿ 中选出满足 `step * zoom >= 8px` 的最小步长，主刻度为次刻度 10 倍，刻度文字保持屏幕字号不随缩放变化。指针位置指示通过 DOM ref 直接写入，避免 `pointermove` 触发 `Canvas` 重渲染；有选区时标尺再用半透明色带标出选区跨度。
+`add-canvas-rulers-and-guides` 的标尺、手动参考线都是 `.rea-canvas-wrap` 内的**固定屏幕空间覆盖层**，不写入Shadow DOM 内容层，也不改变 `.rea-canvas` 尺寸、`screenToWorld()` / `worldPoint()` 的相机坐标契约。刻度用 `screen = world * zoom + camera.x|camera.y` 换算，0 点是**标尺原点**（默认页面世界坐标 (0,0)，可拖动、可锁定、可重置），标签值是 `world - origin`，因此移动原点只改变读数，不改参考线与图层的坐标；`ruler.ts` 的 `niceStep(zoom)` 从 1/2/5×10ⁿ 中选出满足 `step * zoom >= 8px` 的最小步长，主刻度为次刻度 10 倍，刻度文字保持屏幕字号不随缩放变化。标尺本身**不再跟随鼠标显示位置指示**：早期用 DOM ref 直接改 `style.left/top` 的那条短标记已移除，指针在画布内移动时标尺保持干净，只在悬停标尺时给出参考线预览；有选区时标尺再用半透明色带标出选区跨度。
 
 **两种参考线相互独立**：手势期间由 Rust/WASM `SnapSession` 返回的智能参考线是临时粉色 `#c52b76` 线，不持久化；手动参考线是 `--rea-manual-guide`（`#7c3aed` 紫）的 1px 线，按页面保存在 `editor/guides.json`，随 `.reaui` 交换，经 `DocumentSession.withMetadata()` 写入，递增 revision 但不进入撤销历史，也不进入 TSX 或代码导出（格式见 [文件格式](file-format.md)）。`guides.ts` 解析时对损坏数据、未知页面、非法坐标容错丢弃，上限 200 条 / 64KB；`appendGuide()` 负责取整与上限判断。
 
 添加参考线有四条路径，**都不要求标尺开启**：在标尺上**单击**（顶部 → 垂直参考线、左侧 → 水平参考线，与 Sketch 一致）、从标尺向画布拖出、顶栏「视图」菜单的两项（视口中心）、画布空白处右键菜单的两项（右键落点的世界坐标）。任何添加动作在 `showGuides=false` 时都会先自动开启「显示参考线」，避免出现「添加成功但看不见」；从标尺创建同样不会被静默忽略。
+
+**绘制层级是「手动参考线 > 标尺 > 智能参考线」**：参考线的屏幕跨度本来就是整个视口（从 y=0 / x=0 起），之前只是被标尺条带盖住。把 `.rea-manual-guides` 提到标尺之上后，线条自然压过刻度，用户能直接看出这条线对应哪个读数。代价是命中带的 8px 会跟着压到标尺上，因此 `CanvasGuides` 接收 `rulerVisible`，把命中带的起点内缩一个 `RULER_THICKNESS`：标尺条带始终属于标尺，在它上面按下仍然是单击建线 / 拖动原点 / 右键菜单。拖拽预览态两条线之外还有第三段——`.rea-guide-cap` 是同一位置上不透明度为 1 的短段，盖在 55% 的预览线之上，用于还原 Sketch「预览线经过标尺的部分保持实色」的处理；当整条线还在标尺条带内时，这一段扩展到整行 / 整列。
+
+**悬停预览**是一层独立的状态（`Canvas` 的 `guideHover`），由 `CanvasRulers` 在标尺条带的 `pointermove` / `pointerleave` 上触发：进入条带就按「单击会落下哪条线」算出世界坐标并渲染一条 55% 的预览线，离开立即清除；它不写数据、不可拖、不进吸附候选，`guideView` 存在（已有手势在跑）时让位。`showGuides` 关闭时预览仍然显示（`CanvasGuides` 因此在 `!visible` 时只在有 preview 的情况下才提前返回），因为预览描述的是「点击会创建什么」。拖拽已有参考线时改用另一条通路：`CanvasRulers` 的 `activeGuide` 在条带里画一段 3px 宽的落点标记，松手即消失——这就是上一版「跟随鼠标的指示线」被收窄后的形态。
 
 拖拽使用与图层 `gesture` **并列的 `guideDrag` ref 状态机**（`creating` / `moving`），标尺和参考线的 `pointerdown` 拦截冒泡并使用自身 pointer capture。由于覆盖层是 `.rea-canvas` 的**兄弟节点**，被 capture 的 `pointermove` / `pointerup` 不会冒泡经过画布 handler，因此 `guideGesture.ts` 的 `bindGuideGesture()` 在 `window` **捕获阶段**统一绑定四种事件（`pointermove` / `pointerup` / `pointercancel` / `lostpointercapture`），并通过 ref 保持 handler 为最新状态；画布上原有的参考线分支退化为兜底，不会重复消费。CSS 侧覆盖层容器是 `pointer-events:none`，标尺条带与 8px 命中带必须显式 `pointer-events:auto` 才能接收手势，两者由 `guidesOverlay.test.ts` 守卫。
 
@@ -125,4 +129,4 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 吸附接入不改 Rust ABI：`SnapSession` 增加可选第三参数 `guides`，`snap_rects` 使用「对象候选 + 参考线候选」合并缓冲区，而 `distribute_marks` 使用**只含对象候选的独立缓冲区**，避免零宽 / 零高参考线产生虚假间距标注；旧的两参数调用保持原行为。`guideSnapRects()` 把可见参考线转成 `{width:0}` / `{height:0}` 的矩形并按 6px 屏幕阈值（除以 zoom）裁剪视口外条目。
 
-`showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、指针指示与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺原点与锁定状态是**视图态**，存在编辑器内存里，不写入文档也不跨会话保留。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。
+`showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、悬停预览与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺原点与锁定状态是**视图态**，存在编辑器内存里，不写入文档也不跨会话保留。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。

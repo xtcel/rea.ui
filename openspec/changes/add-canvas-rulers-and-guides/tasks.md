@@ -1,4 +1,4 @@
-> 实施说明：按 2026-11-06 二次确认（标尺默认关闭、两个独立开关、`#7c3aed`、菜单分层）与第三次确认（单击标尺即建线、沿法线拖出画布删除、右键标尺按方向删、`⌃R` + 原点拖动/锁定/重置 + 选区区间高亮 + 角块右键清除全部）修订了任务描述，使其与最终实现一致。未勾选项为确实尚未完成的工作，不因自动检查通过而代签。
+> 实施说明：按 2026-11-06 二次确认（标尺默认关闭、两个独立开关、`#7c3aed`、菜单分层）、第三次确认（单击标尺即建线、沿法线拖出画布删除、右键标尺按方向删、`⌃R` + 原点拖动/锁定/重置 + 选区区间高亮 + 角块右键清除全部）、第四轮的视觉细节（参考线绘制在标尺之上、命中带让出标尺条带、预览线与标尺重叠部分保持不透明）与第五轮的交互修正（移除跟随鼠标的标尺指示线、改为悬停标尺即预览、拖动时保留落点标记）修订了任务描述，使其与最终实现一致。未勾选项为确实尚未完成的工作，不因自动检查通过而代签。
 
 ## 1. 文档元数据通道（document / storage）
 
@@ -12,9 +12,10 @@
 - [x] 2.1 新增 `packages/editor/src/session/ruler.ts`：`niceStep(zoom)`、`rulerTicks(offset, zoom, viewport, origin = 0)`、`worldToScreen(world, offset, zoom)`、`RULER_THICKNESS`，含负坐标与 10%–300% 边界；刻度网格锚定 `origin`、标签取 `world - origin`
 - [x] 2.2 测试 `ruler.test.ts`：100% / 50% / 10% / 300% 的步长与标签、平移后 0 点、负刻度、刻度数量上限与 `-0` 正规化；原点为正 / 为负时标签偏移
 - [x] 2.3 新增 `components/CanvasRulers.tsx`：顶部 / 左侧 SVG 刻度条带 + 角块，随 `camera` / `size` / `origin` 用 `useMemo` 重算刻度；`pointerdown` 使用自身 pointer capture，按 `classifyRulerDrag()` 分流为单击建线 / 拖动原点 / 向画布拖出建线；角块提供右键菜单、锁定图标与双击重置；`range` 非空时绘制选区色带
-- [x] 2.4 指针位置指示：在容器上挂载 passive `pointermove`，用 DOM ref 直接更新指示位置，不引起 `Canvas` 重渲染
-- [x] 2.5 在 `apps/web/src/theme.css` 增加标尺覆盖层、刻度文字、指示标记、角块（含 `pointer-events:auto` 以接管自身右键）、`is-locked` 与区间色带样式（20px、`--rea-chrome` / `--rea-border`、10px 等宽）
+- [x] 2.4 标尺**不再**跟随鼠标显示位置指示（初版在容器上挂 passive `pointermove` 用 DOM ref 写指示位置的实现已移除）。改为两条提示：`CanvasRulers` 在条带的 `pointermove` / `pointerleave` 上通知 `Canvas` 计算 `guideHover` 悬停预览；拖拽参考线时通过 `activeGuide` 在条带内画 3px 落点标记
+- [x] 2.5 在 `apps/web/src/theme.css` 增加标尺覆盖层、刻度文字、落点标记、角块（含 `pointer-events:auto` 以接管自身右键）、`is-locked` 与区间色带样式（20px、`--rea-chrome` / `--rea-border`、10px 等宽）
 - [x] 2.6 新增 `components/rulerGesture.ts` 纯函数：`classifyRulerDrag()`（<4px 为 `pending`、沿轴为 `origin`、跨轴为 `guide`）、`shiftOrigin()`（按缩放反向位移、`zoom<=0` 保护）、`clickGuideAxis()`、`isOutsideCanvas()`；测试 `rulerGesture.test.ts` 6 项，覆盖分流、位移方向与四向出界判定，并守卫「沿法线出界才删」的不对称性
+- [x] 2.7 悬停预览：`CanvasGuides` 增加 `preview` prop 与 `.rea-manual-guide.is-preview`（55%），复用 `.rea-guide-cap` 让压在标尺上的那段保持实色；`showGuides` 关闭时预览仍然渲染（`!visible && !preview` 才提前返回），`showRulers` 关闭或已有手势时预览让位；徽标统一由 `marker`（手势线或预览）驱动。`guidesOverlay.test.ts` 增补预览与落点标记的样式契约
 
 ## 3. 参考线数据模型与覆盖层（editor）
 
@@ -56,6 +57,6 @@
 ## 7. 验证与文档
 
 - [x] 7.1 运行 `pnpm test`、`pnpm test:rust`、`pnpm typecheck`、`pnpm build` 并修复回归；确认既有智能参考线、间距标注、绘制 / 移动 / 缩放手势无退化。结果见 `docs/verification.md`
-- [ ] 7.2 浏览器人工验收**部分完成**：2026-11-06 用无头 Chrome（1440×900，CDP 真实指针事件）两轮验证了标尺开关、四条添加入口、**单击标尺建线**、拖动改位置、**竖线拖出右边界 / 横线拖出上边界删除**、参考线右键菜单删除、**顶部标尺右键按方向删除**、**角块右键清除全部**、**原点拖动**、**锁定后刻度不变**、**选区区间色带**、刷新恢复，记录见 `docs/verification.md`。**仍缺**：50% / 200% 缩放下的刻度与命中对齐、`Esc` / `pointercancel` / 失焦实机、`.reaui` 往返恢复、跨标签页同步、移动端（≤900px）抽屉与参考线共存、吸附视觉提示组合
+- [ ] 7.2 浏览器人工验收**部分完成**：2026-11-06 用无头 Chrome（1440×900，CDP 真实指针事件）四轮验证了标尺开关、四条添加入口、**单击标尺建线**、拖动改位置、**竖线拖出右边界 / 横线拖出上边界删除**、参考线右键菜单删除、**顶部标尺右键按方向删除**、**角块右键清除全部**、**原点拖动**、**锁定后刻度不变**、**选区区间色带**、**参考线压过标尺且命中带让出标尺条带**、**悬停标尺即预览且移开消失**、**画布内移动标尺不再有指示线**、**拖动时落点标记出现 / 松手消失**、**关闭显示参考线时预览仍在**、刷新恢复，记录见 `docs/verification.md`。**仍缺**：50% / 200% 缩放下的刻度与命中对齐、`Esc` / `pointercancel` / 失焦实机、`.reaui` 往返恢复、跨标签页同步、移动端（≤900px）抽屉与参考线共存、吸附视觉提示组合
 - [x] 7.3 更新 `docs/file-format.md`、`docs/architecture.md`、`docs/verification.md`、`DESIGN.md`、`README.md`
 - [x] 7.4 新增 `⌃R` 开关标尺（只拦截 `Ctrl+R`，`⌘R` 留给浏览器），并同步 `EditorApp.tsx` 的快捷键一览对话框；`⌃R` 同时出现在顶栏「视图」菜单与标尺右键菜单的快捷键提示中
