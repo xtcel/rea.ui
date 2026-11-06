@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
 export function Button({ className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button type="button" className={`inline-flex min-h-8 items-center justify-center gap-2 rounded border border-[var(--rea-border)] bg-white px-3 text-xs hover:bg-[var(--rea-hover)] disabled:opacity-40 ${className}`} {...props} />;
@@ -12,7 +12,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
 export function IconButton({ label, active, className = '', children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; active?: boolean }) {
   return <Tooltip label={label}><button type="button" aria-label={label} aria-pressed={active} title={label} className={`inline-flex size-8 shrink-0 items-center justify-center rounded text-[var(--rea-muted)] hover:bg-[var(--rea-hover)] disabled:opacity-30 ${active ? 'bg-[var(--rea-selected)] text-[var(--rea-accent)]!' : ''} ${className}`} {...props}>{children}</button></Tooltip>;
 }
-export interface MenuItem { label: string; shortcut?: string; action: () => void; disabled?: boolean; danger?: boolean }
+export interface MenuItem { label: string; shortcut?: string; action: () => void; disabled?: boolean; danger?: boolean; checked?: boolean }
 export function MenuPopup({ items, x, y, onClose, label }: { items: readonly MenuItem[]; x: number; y: number; onClose: () => void; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
@@ -32,7 +32,7 @@ export function MenuPopup({ items, x, y, onClose, label }: { items: readonly Men
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
     }
-  }}>{items.map(item => <button key={item.label} role="menuitem" type="button" disabled={item.disabled} className={`flex min-h-9 w-full items-center justify-between gap-6 rounded px-3 text-left text-xs hover:bg-[var(--rea-hover)] disabled:opacity-35 ${item.danger ? 'text-red-700' : ''}`} onClick={() => { onClose(); item.action(); }}>{item.label}{item.shortcut && <kbd className="text-[11px] text-[var(--rea-muted)]">{item.shortcut}</kbd>}</button>)}</div>, document.body);
+  }}>{items.map(item => <button key={item.label} role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked={item.checked} type="button" disabled={item.disabled} className={`flex min-h-9 w-full items-center justify-between gap-6 rounded px-3 text-left text-xs hover:bg-[var(--rea-hover)] disabled:opacity-35 ${item.danger ? 'text-red-700' : ''}`} onClick={() => { onClose(); item.action(); }}><span className="inline-flex items-center gap-2">{item.checked !== undefined && <span className="inline-flex size-3 shrink-0 items-center justify-center text-[var(--rea-accent)]">{item.checked ? <Check size={12} /> : null}</span>}{item.label}</span>{item.shortcut && <kbd className="text-[11px] text-[var(--rea-muted)]">{item.shortcut}</kbd>}</button>)}</div>, document.body);
 }
 export function Menu({ label, children, items, className = '' }: { label: string; children: ReactNode; items: readonly MenuItem[]; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);

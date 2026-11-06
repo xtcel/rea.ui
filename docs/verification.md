@@ -1,3 +1,123 @@
+# 标尺与参考线验证记录（2026-11-06）
+
+实施日期：2026-11-06。对应 OpenSpec `add-canvas-rulers-and-guides`。自动检查与文档任务 7.1 / 7.3 / 7.4 已完成；**7.2 浏览器人工验收保持未勾选**，见下文边界。
+
+## 自动检查
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm test`（含 `build:wasm`） | 47 个测试文件：45 通过 / 2 跳过；373 项测试：371 通过 / 2 跳过 |
+| `pnpm test:rust`（`cargo test --workspace`） | 15 项通过：geometry 7、local-agent 5、desktop 3 |
+| `cargo fmt --all -- --check` | 通过 |
+| `pnpm build` | WASM、TypeScript、Vite 生产构建通过 |
+| `openspec validate add-canvas-rulers-and-guides --strict` | 通过 |
+| `git diff --check` | 通过 |
+
+构建产物：`index.js` 约 1.23MB（gzip 约 356kB）、CSS 约 96.8kB（gzip 约 18kB）、`rea_geometry.wasm` 84.58kB（gzip 32.81kB）。仍保留既有的单 chunk 大于 500kB 提示，本次未做体积优化。
+
+`cargo fmt` 首次检查发现 `crates/geometry/src/lib.rs` 的 `mod pencil;` / `mod snapping;` 顺序与 rustfmt 不一致；该文件来自历史提交 `471a56b`，git 原本干净，并非本提案改动。按 rustfmt 顺序调整这两个声明（无行为影响）后复查通过。
+
+本轮 shell 的默认 PATH 未包含 `~/.cargo/bin`，直接执行 `pnpm test` 会因 `spawnSync cargo ENOENT` 失败。使用 `PATH="$HOME/.cargo/bin:$PATH"` 重跑后脚本本身通过；此前用已编译 WASM 执行的 `pnpm exec vitest run` 得到当时相同的 344 项通过 / 2 项跳过结果，说明只是工具链环境问题，不是测试回归。上表数字为补入 `guideGesture.test.ts` / `guidesOverlay.test.ts` 及两项偏好写入测试后的最终全量结果。
+
+## 新增覆盖
+
+- `session/ruler.test.ts`：`worldToScreen()` 互逆、`niceStep()` 在 10%–300% 的步长、主刻度标签、平移后 0 点、负坐标与刻度数量上限（含 `-0` 正规化）。
+- `session/guides.test.ts`：合法结构、非法 / 损坏 / 未知页面条目容错、确定性序列化、页面清理、200 条上限、`guideSnapRects()` 视口裁剪与零宽 / 零高候选。
+- `session/viewPreferences.test.ts`：两个默认值、旧记录兼容、独立读取与写入、写入保留其它偏好键、`rea:preferences` 事件派发、非法字段回退、localStorage 缺失 / 损坏容错。`useViewPreferences()` hook 的 `storage` 监听因 node 测试环境无 DOM 渲染依赖，未做自动测试。
+- `components/guidesMenu.test.ts` 与既有 `layerMenu.test.ts`：画布菜单两个独立勾选项、清除项禁用态、独立参考线菜单、元素菜单不含视图项、不传 view actions 时旧画布菜单不变。
+- `components/guideGesture.test.ts`：捕获阶段绑定四种指针事件、事件字段转发、非激活态静默、`pointercancel` 的 pointerId 匹配、dispose 解绑且不吞掉画布事件。
+- `components/guidesOverlay.test.ts`：覆盖层容器 `pointer-events:none`、标尺条带与命中带 `pointer-events:auto` / `touch-action:none`、标尺 > 智能参考线 > 手动参考线的层级顺序。
+- `document/src/metadata.test.ts`：`editor/guides.json` 可写、拒绝设计源路径、大小限制、写入不进入撤销历史。
+- `storage/test/guides-file.test.ts`：`.reaui` 往返与导出确定性、损坏 / 非对象 / 超大文件丢弃并告警、旧容器无告警。
+- `geometry/src/geometry.test.ts`：参考线吸附命中、双缓冲下 `marks` 不受零尺寸候选影响、等距对象优先、1000 次会话内存稳定、旧两参数调用兼容。
+- 既有智能参考线、间距标注、绘制 / 移动 / 缩放手势、属性面板与组件 / 矢量测试全部回归通过。
+
+## 静态审查修复
+
+自动化全绿后对覆盖层接线做了一轮静态审查，发现两个测试抓不到、但会让交互完全失效的问题，均已修复并补上守卫：
+
+1. **拖拽事件收不到**：标尺 / 参考线覆盖层是 `.rea-canvas` 的兄弟节点，`setPointerCapture()` 把后续 `pointermove` / `pointerup` 定向到覆盖层元素，冒泡不经过 `.rea-canvas` 的 handler，`updateGuideDrag()` / `finishGuideDrag()` 不会执行。新增 `components/guideGesture.ts` 的 `bindGuideGesture(window, handlers)` 在捕获阶段统一接管四种事件；handler 放在 ref 中保持最新，画布内原有分支只作兜底，因状态已清空不会重复消费。
+2. **命中带收不到指针**：`.rea-manual-guides` 是 `pointer-events:none`，8px 命中带继承后同样不可点击，参考线无法拖动或右键。为 `.rea-manual-guide-hit` 显式补 `pointer-events:auto` 与 `touch-action:none`。
+
+另发现 Node 的 `EventTarget` 在 `addEventListener(type, fn, true)` / `removeEventListener(type, fn, true)` 组合下不会解绑（浏览器标准中布尔应与 `{capture:true}` 等价），因此模块统一使用 `{ capture: true }` options 对象，保证两种环境都能解绑。
+
+## 浏览器人工验收（2026-11-06 补充）
+
+首次实现后用户反馈「画布上不显示参考线、也没有添加参考线的功能」。真机复现定位到根因：`showGuides=false` 时从标尺拖出被静默拒绝（标尺和指针指示线仍在，参考线层不渲染、无任何提示），且除了标尺拖出没有任何添加入口。修复后重做验收。
+
+环境：本机开发服务器 `http://127.0.0.1:5173`（用户已运行）、Chrome 156 headless、`Emulation.setDeviceMetricsOverride` 1440×900、通过 CDP `Input.dispatchMouseEvent` 派发真实指针事件。
+
+| 场景 | 结果 |
+|---|---|
+| 默认状态（`showRulers=false`） | 无标尺；参考线层按 `showGuides` 默认值渲染 |
+| 「视图」→ 显示标尺 | 顶部 / 左侧 20px 标尺出现 |
+| 「视图」→ 添加垂直参考线 | 参考线数量 2 → 3 |
+| 画布空白右键 → 添加水平参考线 | 菜单含 9 项（含两个添加项），数量 3 → 4，新线落在右键世界坐标（`top:785.987px`） |
+| `showGuides=false` 下从标尺拖出 | 参考线层先不存在（计数 0）；拖出后自动变为可见（`showGuides` 写回 `true`）、draft 跟随指针、松手新增一条（4 → 5） |
+| 拖动参考线 | `top` 379.891px → 499.657px（+120），坐标徽标显示 `y 460`，`.is-active` 命中 1 条 |
+| 参考线上右键 | 独立「参考线菜单」：删除此参考线 / 显示参考线 / 清除当前页面参考线；删除后数量减 1 |
+| 拖回标尺删除 | 徽标显示 `y -521 · 松开删除`，松手后该条被删除 |
+| 刷新后恢复 | reload 并重新打开文档后参考线仍在（隐藏时计数为 0，开启后按原世界坐标恢复） |
+
+**测试环境伪影**：headless Chrome 默认 800px 视口会进入 ≤900px 布局，`.rea-backdrop`（抽屉遮罩，z-index 35）盖住画布，导致第一次探针的 `pointerdown` 全部落到遮罩上。改用 1440×900 后行为正常；这是既有窄屏抽屉设计，不是本次缺陷，但也说明窄窗口下必须先关闭抽屉才能操作画布。
+
+### 仍未覆盖
+
+- 50% / 200% 缩放档位下刻度文字、参考线线宽与选框 / 命中位置的对齐（本次只测默认缩放）；
+- 移动端（≤900px）抽屉与参考线共存时的操作路径；
+- 跨标签页 `storage` 同步的真实双标签页验证；
+- `.reaui` 导出再导入后的参考线恢复（仅单测覆盖）；
+- 参考线吸附时的紫色手动线 / 粉色智能线 / 间距标注组合视觉。
+
+## 边界与未完成项
+
+自动检查之外，已用无头 Chrome 在桌面视口完成两次真机验收，覆盖标尺开关、四条添加入口、单击建线、拖动、右键删除、拖出画布删除、按方向清除、原点拖动 / 锁定 / 重置、选中区间高亮与刷新恢复。以下场景仍未覆盖，按 `tasks.md` 7.2 单独跟踪：
+
+- 50% / 200% 缩放档位下刻度文字、参考线、选框与命中带的对齐；
+- `Esc` / `pointercancel` / 窗口失焦取消拖拽的实机表现（仅单测覆盖状态机与事件绑定）；
+- `.reaui` 导出再导入后的参考线恢复（仅 `guides-file.test.ts` 覆盖）；
+- 跨标签页 `storage` 同步、移动端（≤900px）抽屉与参考线共存路径；
+- 参考线参与吸附时的紫色手动线 / 粉色智能线 / 间距标注组合视觉。
+
+文档同步完成：`docs/file-format.md`（新元数据文件与导入规则）、`docs/architecture.md`（覆盖层、手势分流与吸附候选）、`docs/verification.md`（本节）、`DESIGN.md`（`--rea-manual-guide` 与区间色带）、`README.md`（操作表）、`EditorApp.tsx` 的快捷键一览（已补 `⌃R`）。
+
+## Sketch 交互对齐（2026-11-06 第二轮）
+
+用户反馈「添加和删除的交互细节和 Sketch 差很多」。对照 Sketch 官方文档（The Canvas，2026-06 更新）后，确认差异不在渲染而在三个手势定义，并按下述口径重做：
+
+| 环节 | Sketch | 改前 | 改后 |
+|---|---|---|---|
+| 添加 | 在标尺上**单击**即建线 | 必须拖出 28px 才建线，原地松手视为取消 | 单击按标尺方向建线；拖出仍可精调；拖出再拖回才取消 |
+| 删除单条 | 沿参考线法线拖出画布 | 写死「左边缘 28px 删竖线、上边缘 28px 删横线」 | 竖线左右、横线上下拖出画布即删 |
+| 批量删除 | Control-点标尺按方向删 | 只有「清除当前页面参考线」 | 顶部 / 左侧标尺分别删垂直 / 水平，角块清除全部 |
+| 标尺原点 | 可拖动、可锁定、可重置 | 固定 (0,0) | 沿轴拖动移动原点，角块锁定 / 重置，双击角块重置 |
+| 快捷键 | `⌃R` | 无 | `⌃R` 开关标尺（不拦 `⌘R`） |
+| 选区 | 标尺高亮图层区间 | 无 | 两条标尺绘制区间色带 |
+| 可见性 | 参考线跟随标尺 | 两个独立开关（按你的要求） | 保留独立开关，作为有意偏离 |
+
+实机验证（同上一节环境，1440×900，CDP 真实指针事件）：
+
+| 场景 | 结果 |
+|---|---|
+| 角落右键「清除所有参考线」 | 菜单 5 项（清除 / 显示标尺⌃R / 显示参考线 / 锁定标尺原点 / 重置标尺原点），清空后计数 0 |
+| 单击顶部标尺 | 新增 1 条垂直参考线，位置与点击处一致（`pos: 300`） |
+| 单击左侧标尺 | 新增 1 条水平参考线（`pos: 300`） |
+| 顶部标尺右键 →「删除所有垂直参考线」 | 只剩水平参考线，按方向删除生效 |
+| 竖线拖出右边界 | 松手后删除 |
+| 横线拖出上边界 | 松手后删除（修复下述裁剪 bug 后） |
+| 沿顶部标尺拖动 100px | 刻度从 `0,200,400…` 变为 `200,400,600…`（缩放 50%，原点半移 200） |
+| 锁定原点后重复拖动 | 刻度不变 |
+| 选中画框 | 两条标尺各出现一条区间色带（`rea-range-x` / `rea-range-y`） |
+
+### 本轮修复的缺陷：视口裁剪中断拖拽
+
+`CanvasGuides` 原本会卸载屏幕坐标超出视口的参考线（`screen < -2 || screen > extent + 2`），而 `extent` 还取错了轴：竖线用高度、横线用宽度。结果把**水平参考线向上拖出画布**（正是 Sketch 的删除手势）时，线一越过视口上沿就被卸载，节点移除同时丢掉指针捕获，`lostpointercapture` 把整个手势取消——表现为「拖到顶就弹回原位、删不掉」。修复为：正在拖拽的参考线不参与裁剪，`extent` 按轴取宽度 / 高度。该缺陷无法被 node 环境的单元测试发现，只能靠真机手势复现，已在 `CanvasGuides.tsx` 注释中说明原因。
+
+本轮新增测试 13 项：`components/rulerGesture.test.ts`（单击 / 沿轴 / 垂直分流、原点位移方向、出界判定、法线方向不互删）6 项、`session/ruler.test.ts` 原点标签 2 项、`components/guidesMenu.test.ts` 标尺菜单 5 项。全量 `pnpm test` 47 文件 / 373 项（371 通过、2 跳过），`pnpm typecheck` 通过，`openspec validate --strict` 通过。
+
+---
+
 # M3 编辑核心验证记录
 
 实施日期：2026-11-03。对应 OpenSpec `add-editing-core`。实现任务 1–7 已完成，8.1 完整人工验收保持未勾选。

@@ -1,6 +1,6 @@
 import { strToU8, zipSync, unzipSync } from 'fflate';
 import type { Zippable } from 'fflate';
-import { DocumentSession, AGENT_SESSIONS_FILE, COMPONENT_FILE } from '@rea/document';
+import { DocumentSession, AGENT_SESSIONS_FILE, EDITOR_GUIDES_FILE, COMPONENT_FILE } from '@rea/document';
 import { isAssetPath } from '@rea/design';
 import { recordFromFiles } from './idb';
 import type { AssetRecord, DocumentRecord, StorageService } from './idb';
@@ -48,6 +48,7 @@ export async function exportReaui(doc: Pick<DocumentRecord, 'files'>, assets: re
   for (const { file } of session.manifest.pages) content[file] = strToU8(doc.files[file]);
   if(doc.files[COMPONENT_FILE])content[COMPONENT_FILE]=strToU8(doc.files[COMPONENT_FILE]);
   if(doc.files[AGENT_SESSIONS_FILE])content[AGENT_SESSIONS_FILE]=strToU8(doc.files[AGENT_SESSIONS_FILE]);
+  if(doc.files[EDITOR_GUIDES_FILE])content[EDITOR_GUIDES_FILE]=strToU8(doc.files[EDITOR_GUIDES_FILE]);
   for (const asset of assets) {
     if (!isAssetPath(asset.path)) throw new Error('资源路径不合法。');
     content[asset.path] = new Uint8Array(await asset.blob.arrayBuffer());
@@ -71,18 +72,18 @@ export function decodeReaui(bytes: Uint8Array, existingNames: readonly string[] 
   const names = inspectZip(bytes), warnings: string[] = [];
   if (!names.has('rea.json')) throw new Error('ZIP 缺少 rea.json。');
   const entries = unzipSync(bytes, { filter: entry => {
-    const allowed = entry.name === 'rea.json' || entry.name===COMPONENT_FILE || entry.name===AGENT_SESSIONS_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
+    const allowed = entry.name === 'rea.json' || entry.name===COMPONENT_FILE || entry.name===AGENT_SESSIONS_FILE || entry.name===EDITOR_GUIDES_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
     if (!allowed) warnings.push(`已忽略未知条目：${entry.name}`);
     return allowed;
   } });
   for (const [path, data] of Object.entries(entries)) if (crc32(data) !== names.get(path)) throw new Error(`ZIP 校验和错误：${path}`);
   const files: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [path, data] of Object.entries(entries)) {
-    if (path === 'rea.json' || path===COMPONENT_FILE || path===AGENT_SESSIONS_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
+    if (path === 'rea.json' || path===COMPONENT_FILE || path===AGENT_SESSIONS_FILE || path===EDITOR_GUIDES_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
   }
   const session = new DocumentSession(files);
   // Validate every page, including unreferenced files, then discard extras.
-  for (const path of Object.keys(files)) if (path !== 'rea.json' && path!==COMPONENT_FILE && path!==AGENT_SESSIONS_FILE && !session.manifest.pages.some(p => p.file === path)) {
+  for (const path of Object.keys(files)) if (path !== 'rea.json' && path!==COMPONENT_FILE && path!==AGENT_SESSIONS_FILE && path!==EDITOR_GUIDES_FILE && !session.manifest.pages.some(p => p.file === path)) {
     throw new Error(`清单未引用页面：${path}`);
   }
   if (files[AGENT_SESSIONS_FILE] !== undefined) {
@@ -92,6 +93,15 @@ export function decodeReaui(bytes: Uint8Array, existingNames: readonly string[] 
       try { const value: unknown = JSON.parse(source); if (!value || typeof value !== 'object') throw new Error('格式不合法'); }
       catch { warnings.push('已忽略损坏的 AI 会话记录。'); delete files[AGENT_SESSIONS_FILE]; }
     }
+  }
+  if (files[EDITOR_GUIDES_FILE] !== undefined) {
+    const source = files[EDITOR_GUIDES_FILE];
+    let damaged = source.length > 64 * 1024;
+    if (!damaged) {
+      try { const value: unknown = JSON.parse(source); if (!value || typeof value !== 'object' || Array.isArray(value)) damaged = true; }
+      catch { damaged = true; }
+    }
+    if (damaged) { warnings.push('已忽略损坏或过大的参考线文件。'); delete files[EDITOR_GUIDES_FILE]; }
   }
   let name = session.manifest.name, suffix = 2;
   while (existingNames.includes(name)) name = `${session.manifest.name} (${suffix++})`;

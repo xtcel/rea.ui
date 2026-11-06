@@ -68,3 +68,48 @@ it('fits sampled pencil strokes in WASM and releases buffers across repeated edi
   for(let i=0;i<10;i++)fitPencil(points);const bytes=geometryMemoryBytes();for(let i=0;i<100;i++)fitPencil(points);expect(geometryMemoryBytes()).toBe(bytes);
   expect(()=>fitPencil([{x:0,y:0},{x:1,y:1}],NaN)).toThrow();expect(geometryMemoryBytes()).toBe(bytes);
 });
+it('snaps to a manual guide and reports it, while zero-size guides never enter marks',()=>{
+  const guides=[{x:100,y:-1000,width:0,height:3000}];
+  const s=new SnapSession([],1,guides);
+  try {
+    const r=s.snap([{x:97,y:0,width:20,height:20}],6);
+    expect(r.dx).toBe(3);
+    expect(r.guides).toContainEqual({axis:0,coordinate:100,start:-1000,end:2000});
+    expect(r.marks).toEqual([]);
+  }finally{s.dispose();}
+});
+it('keeps marks identical with and without guides via double-buffer isolation',()=>{
+  const candidates=[{x:0,y:0,width:20,height:20},{x:80,y:0,width:20,height:20}];
+  const guides=[{x:0,y:100,width:200,height:0}];
+  const moving=[{x:43,y:0,width:20,height:20}];
+  const plain=new SnapSession(candidates),withGuides=new SnapSession(candidates,1,guides);
+  try {
+    const a=plain.snap(moving,6),b=withGuides.snap(moving,6);
+    expect(a.marks.length).toBeGreaterThan(0);
+    expect(b.marks).toEqual(a.marks);
+  }finally{plain.dispose();withGuides.dispose();}
+});
+it('prefers object candidates over guides when distances tie',()=>{
+  const candidates=[{x:100,y:0,width:20,height:20}],guides=[{x:100,y:-1000,width:0,height:3000}];
+  const s=new SnapSession(candidates,1,guides);
+  try {
+    const r=s.snap([{x:97,y:0,width:20,height:20}],6);
+    expect(r.dx).toBe(3);
+    expect(r.guides.find(g=>g.axis===0)).toEqual({axis:0,coordinate:100,start:0,end:20});
+  }finally{s.dispose();}
+});
+it('frees all four buffers across repeated snap+dispose gestures with guides',()=>{
+  const candidates=[{x:0,y:0,width:20,height:20}],guides=[{x:100,y:-1000,width:0,height:3000}];
+  const run=()=>{const s=new SnapSession(candidates,1,guides);try{s.snap([{x:97,y:0,width:20,height:20}],6);}finally{s.dispose();}};
+  for(let i=0;i<10;i++)run();const before=geometryMemoryBytes();for(let i=0;i<1000;i++)run();expect(geometryMemoryBytes()).toBe(before);
+});
+it('validates guides and keeps legacy one/two-argument signatures unchanged',()=>{
+  const bytes=geometryMemoryBytes();
+  expect(()=>new SnapSession([],1,[{x:NaN,y:0,width:0,height:10}])).toThrow();
+  expect(geometryMemoryBytes()).toBe(bytes);
+  const one=new SnapSession([{x:100,y:0,width:20,height:20}]),two=new SnapSession([{x:100,y:0,width:20,height:20}],2);
+  try {
+    expect(one.snap([{x:97,y:0,width:20,height:20}],6).dx).toBe(3);
+    expect(two.snap([{x:97,y:0,width:20,height:20}],6).dx).toBe(3);
+  }finally{one.dispose();two.dispose();}
+});

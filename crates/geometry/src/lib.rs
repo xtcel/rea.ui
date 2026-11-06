@@ -1,6 +1,6 @@
 //! Stateless geometry. TSX remains the document; this crate stores no scene graph.
-mod snapping;
 mod pencil;
+mod snapping;
 
 #[no_mangle]
 pub extern "C" fn geometry_version() -> u32 {

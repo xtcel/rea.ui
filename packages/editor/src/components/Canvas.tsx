@@ -22,6 +22,14 @@ import type { GesturePhase } from '../session/gestures';
 import { descendants, intersects, isContainer, marqueeIds, pointerSelectionHit, resolveHit, selectionRoots, toggleSelection } from '../session/selection';
 import type { SelectionMode, SelectionState } from '../session/selection';
 import { TextEditor } from './TextEditor';
+import { DRAFT_GUIDE_ID, MAX_GUIDES_PER_PAGE, guideSnapRects } from '../session/guides';
+import type { GuideAxis, ManualGuide } from '../session/guides';
+import { isOutsideCanvas } from './rulerGesture';
+import type { RulerZone } from './rulerGesture';
+import { CanvasRulers } from './CanvasRulers';
+import { CanvasGuides } from './CanvasGuides';
+import type { GuideView } from './CanvasGuides';
+import { bindGuideGesture } from './guideGesture';
 export type ViewCommand = 'fit' | 'selection' | 'actual' | 'in' | 'out';
 /** A right-click on the canvas, already resolved against the current selection. */
 export interface CanvasMenuRequest {
@@ -36,6 +44,10 @@ export interface CanvasMenuRequest {
     parentId: string;
     /** Every designId stacked under the pointer, topmost first. */
     hits: readonly string[];
+    /** Set when the right-click landed on a manual guide. */
+    guideId?: string;
+    /** Set when the right-click landed on a ruler: top, left, or the corner block. */
+    rulerZone?: RulerZone;
 }
 export interface CanvasApi {
     box: (id: string) => Rect | undefined;
@@ -85,7 +97,8 @@ interface Gesture {
 const handles = [['nw', 3], ['n', 2], ['ne', 6], ['e', 4], ['se', 12], ['s', 8], ['sw', 9], ['w', 1]] as const;
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu }: {
+export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides,
+    rulerOrigin = { x: 0, y: 0 }, rulerLocked = false, onRulerOriginChange, onRulerContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
     selectionMode?: SelectionMode;
@@ -116,6 +129,18 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     agentRefs?: readonly string[];
     onAgentRefs?: (ids: readonly string[]) => void;
     onContextMenu?: (request: CanvasMenuRequest) => void;
+    showRulers?: boolean;
+    showGuides?: boolean;
+    guides?: readonly ManualGuide[];
+    onGuidesChange?: (guides: ManualGuide[]) => void;
+    onGuideContextMenu?: (id: string, x: number, y: number) => void;
+    /** Called when the user starts dragging a guide out of a ruler while guides are hidden. */
+    onRevealGuides?: () => void;
+    /** World value that reads as 0 on the rulers. */
+    rulerOrigin?: { x: number; y: number };
+    rulerLocked?: boolean;
+    onRulerOriginChange?: (origin: { x: number; y: number }) => void;
+    onRulerContextMenu?: (zone: RulerZone, x: number, y: number) => void;
 }) {
     const container = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
@@ -127,7 +152,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     const [drawing, setDrawing] = useState<Rect | null>(null), [marquee, setMarquee] = useState<Rect | null>(null);
     const [vectorEditingId,setVectorEditingId]=useState<string|null>(null);
     const [pathDraft,setPathDraft]=useState<PathData|null>(null);
-    const [boxes, setBoxes] = useState<Map<string, Rect>>(new Map()), [guides, setGuides] = useState<Guide[]>([]), [marks, setMarks] = useState<DistanceMark[]>([]), [dropTarget, setDropTarget] = useState<string | null>(null);
+    const [boxes, setBoxes] = useState<Map<string, Rect>>(new Map()), [snapGuides, setSnapGuides] = useState<Guide[]>([]), [marks, setMarks] = useState<DistanceMark[]>([]), [dropTarget, setDropTarget] = useState<string | null>(null);
     const [touchedBoxes, setTouchedBoxes] = useState<{ id: string; box: Rect }[]>([]);
     const gesture = useRef<Gesture | null>(null);
     const ready = useCallback(() => { setMeasurement(value => value + 1); const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]'); if (root)
@@ -192,6 +217,89 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
             return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) }; })()
         : null;
     const aiLinked = selectedIds.length > 0 && selectedIds.every(id => agentRefs.includes(id));
+    type GuideDragState = { pointerId: number; axis: GuideAxis; mode: 'creating' | 'moving'; id?: string; position: number; deleting: boolean; element: HTMLElement };
+    const guideDrag = useRef<GuideDragState | null>(null);
+    const [guideView, setGuideView] = useState<GuideView | null>(null);
+    const snapGuidePosition = (value: number, shift: boolean) => { const grid = shift ? 8 : 1; return Math.round(value / grid) * grid; };
+    function guideDeleteZone(axis: GuideAxis, clientX: number, clientY: number) {
+        const bounds = container.current?.getBoundingClientRect();
+        if (!bounds) return false;
+        // Sketch deletes by throwing the guide out of the canvas along its normal. Any
+        // release inside keeps it, so the old hardcoded top/left 28px band is gone.
+        return isOutsideCanvas(axis, { clientX, clientY }, bounds);
+    }
+    function cancelGuideDrag() {
+        const drag = guideDrag.current;
+        if (!drag) return;
+        guideDrag.current = null;
+        if (drag.element.hasPointerCapture?.(drag.pointerId)) drag.element.releasePointerCapture(drag.pointerId);
+        setGuideView(null);
+    }
+    function startRulerDrag(axis: GuideAxis, pointerId: number, clientX: number, clientY: number, element: HTMLElement) {
+        if (guideDrag.current || !onGuidesChange) return;
+        // Dragging out of a ruler is an explicit "I want a guide" action, so reveal
+        // them instead of silently ignoring the gesture when they are hidden.
+        if (!showGuides) onRevealGuides?.();
+        const point = worldPoint(clientX, clientY);
+        const position = snapGuidePosition(axis === 'x' ? point.x : point.y, false);
+        guideDrag.current = { pointerId, axis, mode: 'creating', position, deleting: false, element };
+        setGuideView({ axis, position, deleting: false, draft: true });
+    }
+    /** A click on a ruler adds the perpendicular guide immediately — Sketch's primary path. */
+    function createGuideFromRuler(zone: 'top' | 'left', clientX: number, clientY: number) {
+        if (!onGuidesChange) return;
+        if (!showGuides) onRevealGuides?.();
+        if (guides.length >= MAX_GUIDES_PER_PAGE) { onNotice(`每页最多 ${MAX_GUIDES_PER_PAGE} 条参考线。`); return; }
+        const point = worldPoint(clientX, clientY);
+        const axis: GuideAxis = zone === 'top' ? 'x' : 'y';
+        onGuidesChange([...guides, { id: `g-${crypto.randomUUID().replaceAll('-', '')}`, axis, position: snapGuidePosition(axis === 'x' ? point.x : point.y, false) }]);
+    }
+    function startGuideDrag(id: string, axis: GuideAxis, position: number, pointerId: number, clientX: number, clientY: number, element: HTMLElement) {
+        if (!showGuides || guideDrag.current || !onGuidesChange) return;
+        void clientX; void clientY;
+        guideDrag.current = { pointerId, axis, mode: 'moving', id, position, deleting: false, element };
+        setGuideView({ id, axis, position, deleting: false, draft: false });
+    }
+    function updateGuideDrag(event: { pointerId: number; clientX: number; clientY: number; shiftKey: boolean }) {
+        const drag = guideDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const point = worldPoint(event.clientX, event.clientY);
+        drag.position = snapGuidePosition(drag.axis === 'x' ? point.x : point.y, event.shiftKey);
+        drag.deleting = guideDeleteZone(drag.axis, event.clientX, event.clientY);
+        setGuideView({ id: drag.id, axis: drag.axis, position: drag.position, deleting: drag.deleting, draft: drag.mode === 'creating' });
+    }
+    function finishGuideDrag(event: { pointerId: number; clientX: number; clientY: number }, cancelled: boolean) {
+        const drag = guideDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const inZone = guideDeleteZone(drag.axis, event.clientX, event.clientY);
+        cancelGuideDrag();
+        if (cancelled || !onGuidesChange) return;
+        if (drag.mode === 'creating') {
+            if (inZone) return;
+            if (guides.length >= MAX_GUIDES_PER_PAGE) { onNotice(`每页最多 ${MAX_GUIDES_PER_PAGE} 条参考线。`); return; }
+            onGuidesChange([...guides, { id: `g-${crypto.randomUUID().replaceAll('-', '')}`, axis: drag.axis, position: drag.position }]);
+            return;
+        }
+        if (inZone || drag.deleting) { onGuidesChange(guides.filter(guide => guide.id !== drag.id)); return; }
+        onGuidesChange(guides.map(guide => guide.id === drag.id ? { ...guide, position: drag.position } : guide));
+    }
+    const displayGuides: ManualGuide[] = guideView
+        ? guideView.draft
+            ? [...guides, { id: DRAFT_GUIDE_ID, axis: guideView.axis, position: guideView.position }]
+            : guides.map(guide => guide.id === guideView.id ? { ...guide, position: guideView.position } : guide)
+        : [...guides];
+    // Overlay pointer capture never bubbles through .rea-canvas, so bind once on window.
+    // The ref keeps the handlers fresh without rebinding on every pointermove.
+    const guideHandlers = useRef({ update: updateGuideDrag, finish: finishGuideDrag, cancel: cancelGuideDrag });
+    guideHandlers.current = { update: updateGuideDrag, finish: finishGuideDrag, cancel: cancelGuideDrag };
+    useEffect(() => bindGuideGesture(window, {
+        active: () => !!guideDrag.current,
+        pointerId: () => guideDrag.current?.pointerId,
+        move: event => guideHandlers.current.update(event),
+        up: event => guideHandlers.current.finish(event, false),
+        abort: () => guideHandlers.current.cancel(),
+        lost: () => guideHandlers.current.cancel(),
+    }), []);
     function cancel(restoreSelection = false) {
         const g = gesture.current;
         gesture.current = null;
@@ -202,7 +310,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         setPreview(new Map());
         setDrawing(null);
         setMarquee(null);
-        setGuides([]);
+        setSnapGuides([]);
         setMarks([]);
         setDropTarget(null);
         if (g && container.current?.hasPointerCapture(g.pointerId))
@@ -250,6 +358,12 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         function down(e: KeyboardEvent) {
             if (e.defaultPrevented || editable(e.target) || document.querySelector('[role="menu"],dialog[open]'))
                 return;
+            if (e.key === 'Escape' && guideDrag.current) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                cancelGuideDrag();
+                return;
+            }
             if (e.key === 'Escape' && gesture.current) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -286,7 +400,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         function up(e: KeyboardEvent) { if (e.code === 'Space')
             setSpaceHeld(false); if (e.key === 'Alt' && !gesture.current)
             setMarks([]); }
-        function blur() { setSpaceHeld(false); cancel(true); }
+        function blur() { setSpaceHeld(false); cancel(true); cancelGuideDrag(); }
         window.addEventListener('keydown', down, true);
         window.addEventListener('keyup', up);
         window.addEventListener('blur', blur);
@@ -385,6 +499,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         return {x:center.x+offset.x,y:center.y+offset.y,width:0,height:0};
     }
     function pointerMove(event: PointerEvent<HTMLDivElement>) {
+        if (guideDrag.current) { updateGuideDrag(event); return; }
         const g = gesture.current;
         if (!g) {
             if (event.altKey && selectionBox) {
@@ -438,7 +553,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         try {
             const currentParent = g.members[0] ? page.nodes.get(g.members[0].id)!.parentId! : g.parentId;
             if (!g.snap)
-                g.snap = new SnapSession(candidates(g.members.map(m => m.id), currentParent));
+                g.snap = new SnapSession(candidates(g.members.map(m => m.id), currentParent), 1, showGuides ? guideSnapRects(guides, camera, size) : []);
             let raw: Rect;
             if (mode === 'drawing')
                 raw = shapeDrag(worldPoint(g.start.x,g.start.y),worldPoint(event.clientX,event.clientY),tool==='line'||tool==='arrow',event.shiftKey,event.altKey).rect;
@@ -451,7 +566,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
             }
             const probe = mode === 'moving' ? raw : mode === 'drawing' ? { x: event.clientX >= g.start.x ? raw.x + raw.width : raw.x, y: event.clientY >= g.start.y ? raw.y + raw.height : raw.y, width: 0, height: 0 } : resizePoint(g,raw);
             const snapped = event.metaKey || event.ctrlKey ? { dx: 0, dy: 0, guides: [], marks: [] } : g.snap.snap([probe], 6 / camera.zoom);
-            setGuides(snapped.guides);
+            setSnapGuides(snapped.guides);
             setMarks(mode === 'moving' ? snapped.marks : []);
             const grid = event.shiftKey && mode !== 'resizing' ? 8 : 1;
             const dx = snapped.guides.some(g => g.axis === 0) || snapped.dx ? snapped.dx : Math.round(probe.x / grid) * grid - probe.x;
@@ -472,7 +587,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
                 }
                 raw = resizeSelection(g.bounds!, { x: localDelta.x + (g.edges! & 5 ? correction.x : 0), y: localDelta.y + (g.edges! & 10 ? correction.y : 0) }, g.edges!, event.shiftKey, event.altKey, { width: Math.max(...g.members.map(m => 4 * g.bounds!.width / m.world.width)), height: Math.max(...g.members.map(m => 4 * g.bounds!.height / m.world.height)) });
                 const point=resizePoint(g,raw);
-                setGuides(snapped.guides.filter(guide=>Math.abs((guide.axis===0?point.x:point.y)-guide.coordinate)<.05/camera.zoom));
+                setSnapGuides(snapped.guides.filter(guide=>Math.abs((guide.axis===0?point.x:point.y)-guide.coordinate)<.05/camera.zoom));
             }
             g.last = raw;
             if (mode === 'drawing') {
@@ -503,6 +618,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         }
     }
     function pointerEnd(event: PointerEvent<HTMLDivElement>, cancelled = false) {
+        if (guideDrag.current) { finishGuideDrag(event, cancelled); return; }
         const g = gesture.current;
         if (!g || g.pointerId !== event.pointerId)
             return;
@@ -548,7 +664,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     }
     const editedElement = editingId ? find(editingId) : undefined, editedBox = editingId ? box(editingId) : undefined;
     const editedText = editingId === draft?.element.props.designId ? textContent(draft.element.props.children) : editingId ? textContent(page.nodes.get(editingId)?.element.props.children) : '';
-    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onLostPointerCapture={() => { if (gesture.current)
+    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onLostPointerCapture={() => { if (guideDrag.current) cancelGuideDrag(); if (gesture.current)
         cancel(true); }} onDoubleClick={event => { if (tool !== 'select' || panMode || editingId)
         return; const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, true); if (!hit)
         return; const node = page.nodes.get(hit)!; if (node.kind === 'Text') {
@@ -578,8 +694,15 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         {canTransform && selectedId && ['nw', 'ne', 'sw', 'se'].map(name => <button key={name} type="button" className={`rea-rotate-handle rea-handle-${name}`} data-rotate-handle="" aria-label={`旋转手柄 ${name}`} style={{ width: 16 / camera.zoom, height: 16 / camera.zoom, marginLeft: (name.endsWith('w') ? -12 : 12) / camera.zoom, marginTop: (name.startsWith('n') ? -12 : 12) / camera.zoom }}/>)}
         <span className="rea-selection-size" style={{ transform: `translateX(-50%) scale(${1 / camera.zoom})` }}>{Math.round(selectionBox.width)} × {Math.round(selectionBox.height)}</span>
       </div>}
-      <svg className="rea-guides" aria-hidden="true">{guides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
+      <svg className="rea-guides" aria-hidden="true">{snapGuides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
     </div>
+    <CanvasRulers camera={camera} size={size} visible={showRulers} containerRef={container}
+      origin={rulerOrigin} locked={rulerLocked} range={selectionBox ?? null}
+      onRulerPointerDown={startRulerDrag}
+      onRulerClick={createGuideFromRuler}
+      onOriginChange={next => onRulerOriginChange?.(next)}
+      onRulerContextMenu={(zone, x, y) => onRulerContextMenu?.(zone, x, y)} />
+    <CanvasGuides guides={displayGuides} camera={camera} size={size} visible={showGuides} view={guideView} onGuidePointerDown={startGuideDrag} onGuideContextMenu={(id, x, y) => onGuideContextMenu?.(id, x, y)} />
     {aiCorner && <button type="button" className={`rea-ai-ref ${aiLinked ? 'is-linked' : ''}`} style={{ left: camera.x + aiCorner.x * camera.zoom, top: camera.y + aiCorner.y * camera.zoom }} aria-pressed={aiLinked} title={`${aiLinked ? '取消引用' : '引用'}${selectedIds.length > 1 ? `选中的 ${selectedIds.length} 个图层` : '选中图层'}给 AI`} onPointerDown={event => event.stopPropagation()} onClick={() => onAgentRefs?.(selectedIds)}><Sparkles size={14} />{selectedIds.length > 1 && <span>{selectedIds.length}</span>}</button>}
     <VectorTools tool={tool} node={vectorEditingId?page.nodes.get(vectorEditingId):undefined} camera={camera} pan={panMode} world={worldPoint} local={vectorLocal} project={vectorWorld} parentAt={containerAt} onCreate={createPath} onPreview={setPathDraft} onChange={path=>{if(vectorEditingId)onCommit({label:'编辑路径',ops:[{type:'set',pageId:page.id,id:vectorEditingId,props:{path,d:undefined}}]});}} onEnd={()=>{setVectorEditingId(null);setPathDraft(null);if(tool==='pen'||tool==='pencil')onToolChange?.('select');}} onNotice={onNotice}/>
     </div>

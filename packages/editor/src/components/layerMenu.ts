@@ -1,5 +1,6 @@
 import type { IndexedNode, InspectedPage } from '@rea/design';
 import type { ContextMenuEntry } from '../ui';
+import type { RulerZone } from './rulerGesture';
 import { selectionRoots } from '../session/selection';
 
 export interface LayerMenuActions {
@@ -21,25 +22,118 @@ export interface LayerMenuActions {
   remove: () => void;
 }
 
-export interface CanvasMenuActions {
+export interface ViewMenuActions {
+  showRulers?: boolean;
+  showGuides?: boolean;
+  guideCount?: number;
+  toggleRulers?: () => void;
+  toggleGuides?: () => void;
+  clearGuides?: () => void;
+  /** Add a guide at the current pointer (canvas menu) or viewport centre (view menu). */
+  addGuide?: (axis: 'x' | 'y') => void;
+}
+export interface CanvasMenuActions extends ViewMenuActions {
   pasteHere: () => void;
   selectAll: () => void;
   fit: () => void;
   actual: () => void;
 }
+export interface GuideMenuActions {
+  showGuides: boolean;
+  guideCount: number;
+  deleteGuide: () => void;
+  toggleGuides: () => void;
+  clearGuides: () => void;
+}
+export interface RulerMenuActions {
+  showRulers: boolean;
+  showGuides: boolean;
+  guideCount: number;
+  verticalCount: number;
+  horizontalCount: number;
+  locked: boolean;
+  toggleRulers: () => void;
+  toggleGuides: () => void;
+  toggleLock: () => void;
+  resetOrigin: () => void;
+  clearGuides: (axis?: 'x' | 'y') => void;
+}
 
-/** Right-click on empty canvas: only the commands that do not need a layer. */
-export function canvasMenu(actions: CanvasMenuActions): ContextMenuEntry[] {
+/**
+ * Right-clicking a ruler keeps the per-axis clean-up that Sketch puts there: the top
+ * ruler owns vertical guides, the left ruler horizontal ones, and the corner block
+ * clears both axes at once.
+ */
+export function rulerMenu(zone: RulerZone, actions: RulerMenuActions): ContextMenuEntry[] {
+  const axis = zone === 'top' ? 'x' : zone === 'left' ? 'y' : null;
+  const count = axis === 'x' ? actions.verticalCount : actions.horizontalCount;
+  const remove: ContextMenuEntry = axis
+    ? {
+      label: axis === 'x' ? '删除所有垂直参考线' : '删除所有水平参考线',
+      disabled: !count,
+      hint: count ? undefined : '当前页面没有参考线',
+      action: () => actions.clearGuides(axis),
+    }
+    : {
+      label: '清除所有参考线',
+      disabled: !actions.guideCount,
+      hint: actions.guideCount ? undefined : '当前页面没有参考线',
+      action: () => actions.clearGuides(),
+    };
   return [
+    remove,
+    'separator',
+    { label: '显示标尺', shortcut: '⌃R', checked: actions.showRulers, action: actions.toggleRulers },
+    { label: '显示参考线', checked: actions.showGuides, action: actions.toggleGuides },
+    'separator',
+    { label: '锁定标尺原点', checked: actions.locked, action: actions.toggleLock },
+    { label: '重置标尺原点', disabled: actions.locked, hint: actions.locked ? '标尺原点已锁定' : undefined, action: actions.resetOrigin },
+  ];
+}
+
+function clearGuidesEntry(count: number, action: () => void): ContextMenuEntry {
+  return { label: '清除当前页面参考线', disabled: !count, hint: count ? undefined : '当前页面没有参考线', action };
+}
+
+/** Guide commands shared by the canvas context menu and the top-bar view menu. */
+export function guideEntries(actions: ViewMenuActions): ContextMenuEntry[] {
+  if (!actions.toggleRulers || !actions.toggleGuides || !actions.clearGuides) return [];
+  const entries: ContextMenuEntry[] = ['separator'];
+  if (actions.addGuide) entries.push(
+    { label: '添加垂直参考线', action: () => actions.addGuide!('x') },
+    { label: '添加水平参考线', action: () => actions.addGuide!('y') },
+    'separator');
+  entries.push(
+    { label: '显示标尺', checked: actions.showRulers ?? false, action: actions.toggleRulers },
+    { label: '显示参考线', checked: actions.showGuides ?? false, action: actions.toggleGuides },
+    clearGuidesEntry(actions.guideCount ?? 0, actions.clearGuides));
+  return entries;
+}
+
+/** Right-click on empty canvas: canvas-level commands only, never layer commands. */
+export function canvasMenu(actions: CanvasMenuActions): ContextMenuEntry[] {
+  const entries: ContextMenuEntry[] = [
     { label: '粘贴到此处', shortcut: 'Mod+V', action: actions.pasteHere },
     { label: '全选', shortcut: 'Mod+A', action: actions.selectAll },
     'separator',
     { label: '适应全部', shortcut: 'Shift+1', action: actions.fit },
     { label: '缩放到 100%', shortcut: 'Shift+0', action: actions.actual },
   ];
+  entries.push(...guideEntries(actions));
+  return entries;
 }
 
-/** The canvas/layer context menu: same order as the reference design, limited to commands this editor owns. */
+/** Right-click on a manual guide: its own menu, distinct from canvas and layer menus. */
+export function guideMenu(actions: GuideMenuActions): ContextMenuEntry[] {
+  return [
+    { label: '删除此参考线', danger: true, action: actions.deleteGuide },
+    'separator',
+    { label: '显示参考线', checked: actions.showGuides, action: actions.toggleGuides },
+    clearGuidesEntry(actions.guideCount, actions.clearGuides),
+  ];
+}
+
+/** The layer context menu: same order as the reference design, limited to commands this editor owns. */
 export function layerMenu(page: InspectedPage, selectedIds: readonly string[], hits: readonly string[], actions: LayerMenuActions): ContextMenuEntry[] {
   const roots = selectionRoots(page, selectedIds).map(id => page.nodes.get(id)!).filter(Boolean);
   const editable = roots.filter(node => !node.locked);

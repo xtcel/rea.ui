@@ -41,13 +41,20 @@ function validate(rects: readonly Rect[]) {
 export class SnapSession {
   private kernel = core();
   private allocations: [number, number][] = [];
-  private moving = 0; private others = 0; private output = 0; private disposed = false;
-  constructor(private candidates: readonly Rect[], private capacity = 1) {
+  private moving = 0; private others = 0; private othersMarks = 0; private output = 0; private disposed = false;
+  constructor(private candidates: readonly Rect[], private capacity = 1, private guides: readonly Rect[] = []) {
     validate(candidates);
+    validate(guides);
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 100_000) throw new Error('吸附容量无效。');
     try {
-      this.moving = this.allocate(capacity * 4); this.others = this.allocate(Math.max(4, candidates.length * 4)); this.output = this.allocate(18);
-      this.write(this.others, candidates);
+      this.moving = this.allocate(capacity * 4);
+      this.others = this.allocate(Math.max(4, (candidates.length + guides.length) * 4));
+      this.othersMarks = this.allocate(Math.max(4, candidates.length * 4));
+      this.output = this.allocate(18);
+      // others 供 snap_rects 吸附使用，对象在前、参考线在后（Rust 用严格小于比较，等距时对象优先）。
+      // othersMarks 只含对象，供两次 distribute_marks 使用，零宽/零高参考线不会污染间距与等距计算。
+      this.write(this.others, [...candidates, ...guides]);
+      this.write(this.othersMarks, candidates);
     } catch (error) { this.dispose(); throw error; }
   }
   private allocate(len: number) { const ptr = this.kernel.alloc(len); if (!ptr) throw new Error('几何内存分配失败。'); this.allocations.push([ptr, len]); return ptr; }
@@ -57,15 +64,15 @@ export class SnapSession {
     try {
       validate(rects); if (rects.length > this.capacity || !Number.isFinite(threshold) || threshold < 0) throw new Error('吸附参数无效。');
       this.write(this.moving, rects);
-      const n = this.kernel.snap_rects(this.moving, rects.length, this.others, this.candidates.length, threshold, this.output);
+      const n = this.kernel.snap_rects(this.moving, rects.length, this.others, this.candidates.length + this.guides.length, threshold, this.output);
       const values = new Float64Array(this.kernel.memory.buffer, this.output, 10).slice();
       const guides = Array.from({ length: n }, (_, i) => ({ axis: values[2+i*4], coordinate: values[3+i*4], start: values[4+i*4], end: values[5+i*4] }));
-      this.kernel.distribute_marks(this.moving, rects.length, this.others, this.candidates.length, threshold, this.output);
+      this.kernel.distribute_marks(this.moving, rects.length, this.othersMarks, this.candidates.length, threshold, this.output);
       const distances = new Float64Array(this.kernel.memory.buffer, this.output, 18).slice();
       const dx = guides.some(g => g.axis === 0) ? values[0] : distances[0], dy = guides.some(g => g.axis === 1) ? values[1] : distances[1];
       // Measurements describe the final snapped position, including object snapping priority.
       this.write(this.moving, rects.map(r => ({ ...r, x: r.x + dx, y: r.y + dy })));
-      const m = this.kernel.distribute_marks(this.moving, rects.length, this.others, this.candidates.length, 0, this.output);
+      const m = this.kernel.distribute_marks(this.moving, rects.length, this.othersMarks, this.candidates.length, 0, this.output);
       const marks = new Float64Array(this.kernel.memory.buffer, this.output, 18).slice();
       return { dx, dy, guides, marks: Array.from({ length: m }, (_, i) => ({ axis: marks[2+i*4], start: marks[3+i*4], end: marks[4+i*4], cross: marks[5+i*4] })) };
     } catch (error) { this.dispose(); throw error; }

@@ -31,7 +31,7 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 | `document` | 静态 TSX 解析、清单、跨页操作和原子事务、文件差异历史 |
 | `storage` | IndexedDB、多文档、版本冲突、自动保存、ZIP 安全校验、迁移和示例 |
 | `renderer-dom` | 原语渲染、class 预览修补、Shadow DOM、blob URL、composedPath 命中 |
-| `editor` | 选区、工具、相机、文档管理、页面/图层导航、Design/Inspect 外壳与共享 UI 控件 |
+| `editor` | 选区、工具、相机、文档管理、页面/图层导航、Design/Inspect 外壳与共享 UI 控件；标尺 / 手动参考线屏幕覆盖层与视图偏好 |
 | `geometry` / `crates/geometry` | 加载真实 WASM；Rust 计算矩形归一化、吸附和缩放边界，不保存文档或场景 |
 | `apps/web` | 初始化 WASM 并装配编辑器 |
 
@@ -108,3 +108,21 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 `DocumentSession.components` 保存解析定义，`pages` 和 `componentPages` 是派生展开页；每个虚拟节点保存源实例地址，用于将编辑路由至 values 或属性覆盖。组件编辑入口将视觉根包装为临时工作面，事务只写回实际组件内容。所有基础定义和变体均校验，包括未被页面使用的定义。
 
 `storage/libraries.ts` 原子发布不可变版本与资源 hash；引用文档持有依赖快照，固定版本、显式预览升级、冲突阻断与撤销共同避免源文件修改影响其他文档。剪贴板收集组件依赖和本地资源，跨文档粘贴时带入闭包；派生图层单独复制时物化为独立内容。
+
+## 标尺与手动参考线
+
+`add-canvas-rulers-and-guides` 的标尺、手动参考线都是 `.rea-canvas-wrap` 内的**固定屏幕空间覆盖层**，不写入Shadow DOM 内容层，也不改变 `.rea-canvas` 尺寸、`screenToWorld()` / `worldPoint()` 的相机坐标契约。刻度用 `screen = world * zoom + camera.x|camera.y` 换算，0 点是**标尺原点**（默认页面世界坐标 (0,0)，可拖动、可锁定、可重置），标签值是 `world - origin`，因此移动原点只改变读数，不改参考线与图层的坐标；`ruler.ts` 的 `niceStep(zoom)` 从 1/2/5×10ⁿ 中选出满足 `step * zoom >= 8px` 的最小步长，主刻度为次刻度 10 倍，刻度文字保持屏幕字号不随缩放变化。指针位置指示通过 DOM ref 直接写入，避免 `pointermove` 触发 `Canvas` 重渲染；有选区时标尺再用半透明色带标出选区跨度。
+
+**两种参考线相互独立**：手势期间由 Rust/WASM `SnapSession` 返回的智能参考线是临时粉色 `#c52b76` 线，不持久化；手动参考线是 `--rea-manual-guide`（`#7c3aed` 紫）的 1px 线，按页面保存在 `editor/guides.json`，随 `.reaui` 交换，经 `DocumentSession.withMetadata()` 写入，递增 revision 但不进入撤销历史，也不进入 TSX 或代码导出（格式见 [文件格式](file-format.md)）。`guides.ts` 解析时对损坏数据、未知页面、非法坐标容错丢弃，上限 200 条 / 64KB；`appendGuide()` 负责取整与上限判断。
+
+添加参考线有四条路径，**都不要求标尺开启**：在标尺上**单击**（顶部 → 垂直参考线、左侧 → 水平参考线，与 Sketch 一致）、从标尺向画布拖出、顶栏「视图」菜单的两项（视口中心）、画布空白处右键菜单的两项（右键落点的世界坐标）。任何添加动作在 `showGuides=false` 时都会先自动开启「显示参考线」，避免出现「添加成功但看不见」；从标尺创建同样不会被静默忽略。
+
+拖拽使用与图层 `gesture` **并列的 `guideDrag` ref 状态机**（`creating` / `moving`），标尺和参考线的 `pointerdown` 拦截冒泡并使用自身 pointer capture。由于覆盖层是 `.rea-canvas` 的**兄弟节点**，被 capture 的 `pointermove` / `pointerup` 不会冒泡经过画布 handler，因此 `guideGesture.ts` 的 `bindGuideGesture()` 在 `window` **捕获阶段**统一绑定四种事件（`pointermove` / `pointerup` / `pointercancel` / `lostpointercapture`），并通过 ref 保持 handler 为最新状态；画布上原有的参考线分支退化为兜底，不会重复消费。CSS 侧覆盖层容器是 `pointer-events:none`，标尺条带与 8px 命中带必须显式 `pointer-events:auto` 才能接收手势，两者由 `guidesOverlay.test.ts` 守卫。
+
+**删除沿用 Sketch 的「扔出画布」模型**：垂直参考线拖出画布左右边界、水平参考线拖出上下边界即进入删除区（`rulerGesture.ts` 的 `isOutsideCanvas()`，按参考线法线方向判定），松手删除；在画布内松手只改位置，不再有写死在左上角的 28px 热区。这里有一个必须守住的实现约束：`CanvasGuides` 会卸载视口外的参考线以保持覆盖层轻量，但**正在拖拽的那条必须保持挂载**——节点一旦卸载，指针捕获随之丢失，手势会被 `lostpointercapture` 取消，而这正好发生在「把参考线拖到画布外」的路径上。`Esc`、`pointercancel`、`lostpointercapture` 和窗口失焦统一清理预览，不影响图层选区。
+
+标尺手势同样按方向分流（`rulerGesture.ts` 的 `classifyRulerDrag()`）：位移小于 4px 视为单击创建，沿标尺轴向拖动移动原点，向画布方向拖动创建参考线；原点锁定时沿轴拖动无效，双击角块或菜单项重置原点。右键分流到 `rulerMenu()`：顶部标尺删所有垂直参考线、左侧标尺删所有水平参考线、角块清除全部，另外三处都提供两个显示开关与原点锁定 / 重置。
+
+吸附接入不改 Rust ABI：`SnapSession` 增加可选第三参数 `guides`，`snap_rects` 使用「对象候选 + 参考线候选」合并缓冲区，而 `distribute_marks` 使用**只含对象候选的独立缓冲区**，避免零宽 / 零高参考线产生虚假间距标注；旧的两参数调用保持原行为。`guideSnapRects()` 把可见参考线转成 `{width:0}` / `{height:0}` 的矩形并按 6px 屏幕阈值（除以 zoom）裁剪视口外条目。
+
+`showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、指针指示与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺原点与锁定状态是**视图态**，存在编辑器内存里，不写入文档也不跨会话保留。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。

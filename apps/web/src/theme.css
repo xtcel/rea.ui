@@ -272,6 +272,33 @@
 .rea-guides line { stroke:#c52b76; }
 .rea-guides .rea-distance-line { stroke:#b43b12; }
 .rea-guides text { fill:#b43b12; font-family:ui-monospace,monospace; }
+/* Canvas rulers and user-authored guides (screen-space overlays, outside the Shadow DOM). */
+.rea-canvas-wrap { --rea-manual-guide:#7c3aed; }
+.rea-rulers { position:absolute; inset:0; z-index:26; overflow:hidden; pointer-events:none; }
+.rea-ruler { position:absolute; background:var(--rea-chrome,#fafbfc); color:var(--rea-muted,#656d79); pointer-events:auto; touch-action:none; user-select:none; }
+.rea-ruler-x { left:0; right:0; top:0; border-bottom:1px solid var(--rea-border); cursor:ew-resize; }
+.rea-ruler-y { left:0; top:0; bottom:0; border-right:1px solid var(--rea-border); cursor:ns-resize; }
+/* The corner block must opt back into pointer events to own its own context menu. */
+.rea-ruler-corner { position:absolute; left:0; top:0; display:flex; align-items:center; justify-content:center; color:var(--rea-muted,#656d79); pointer-events:auto; cursor:default; background:var(--rea-chrome,#fafbfc); border-right:1px solid var(--rea-border); border-bottom:1px solid var(--rea-border); }
+.rea-ruler-corner.is-locked { color:var(--rea-accent); }
+.rea-ruler-range { position:absolute; background:var(--rea-accent); opacity:.16; pointer-events:none; }
+.rea-range-x { top:0; bottom:0; }
+.rea-range-y { left:0; right:0; }
+.rea-ruler-ticks { position:absolute; inset:0; width:100%; height:100%; overflow:hidden; }
+.rea-ruler-ticks line { stroke:currentColor; stroke-width:.5; opacity:.55; }
+.rea-ruler-ticks text { fill:currentColor; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; }
+.rea-ruler-indicator { position:absolute; background:var(--rea-accent); opacity:.65; pointer-events:none; }
+.rea-indicator-x { left:0; top:0; bottom:0; width:1px; }
+.rea-indicator-y { left:0; top:0; right:0; height:1px; }
+.rea-manual-guides { position:absolute; inset:0; z-index:24; overflow:hidden; pointer-events:none; }
+.rea-manual-guide { position:absolute; background:var(--rea-manual-guide); }
+.rea-manual-guide.is-active { box-shadow:0 0 0 1px var(--rea-accent); }
+.rea-manual-guide.is-draft, .rea-manual-guide.is-deleting { opacity:.55; }
+.rea-manual-guide-hit { position:absolute; pointer-events:auto; touch-action:none; }
+/* Hover feedback lives on the hit strip because the 1px line itself is not hit-testable. */
+.rea-manual-guide:has(.rea-manual-guide-hit:hover) { box-shadow:0 0 0 1px var(--rea-manual-guide); }
+.rea-guide-badge { position:absolute; z-index:1; padding:2px 6px; border:1px solid var(--rea-border); border-radius:3px; background:var(--rea-surface,#fff); color:var(--rea-text); font:10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; pointer-events:none; }
+.rea-guide-badge.is-deleting { color:#b42318; border-color:#f09595; }
 .rea-text-editor { z-index:30; outline:1px solid var(--rea-accent); border:0; margin:0; background:transparent; cursor:text; caret-color:var(--rea-accent); }
 .rea-layer-row[data-drop] { position:relative; }
 .rea-layer-row[data-drop=inside] { outline:1px solid var(--rea-accent); outline-offset:-1px; background:var(--rea-selected); }

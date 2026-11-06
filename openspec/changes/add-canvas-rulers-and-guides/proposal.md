@@ -1,0 +1,62 @@
+## Why
+
+当前画布只有「拖拽过程中出现、松手即消失」的智能参考线（`packages/editor/src/components/Canvas.tsx` 的 `guides` / `marks`，由 Rust/WASM 计算）。在单页多画框的无限画布上做重复排版时——统一留白、栅格边界、跨画框对齐——设计师缺少能固定下来、跨会话复用的位置基准，只能每次靠临时吸附重新找位置。`openspec/changes/add-editing-core/design.md` 已把「画布上的标尺与自定义参考线」明确列为 Non-Goals，本提案补齐这一环。
+
+本次交付 Sketch 式闭环：**看得见坐标（标尺）→ 固定坐标（从标尺拖出参考线）→ 调整与删除（拖动 / 拖回标尺）→ 真正用于对齐（参与吸附）→ 可随时关闭（设置 / 独立「视图」菜单 / 画布菜单）→ 随文档保存（`.reaui` 元数据，不写入设计 TSX）**。
+
+2026-11-06 已与需求方确认：参考线随文档保存；开关同时提供首页设置页、编辑器独立「视图」菜单、画布独立右键菜单三个入口；标尺 0 点为页面世界坐标 (0,0)；手动参考线参与吸附（不额外提供独立的「吸附到参考线」开关）。
+
+**2026-11-06 二次确认（本版修订）**：①「显示标尺」**默认关闭**；② 拆成「显示标尺」与「显示参考线」**两个独立开关**，互不强制联动；③ 不新增快捷键；④ 参考线色值取 `#7c3aed`；⑤ 删除热区为「来源标尺 + 8px 容差」；⑥ 画布菜单必须独立——画布空白处右键是画布菜单、图层 / 元素右键是元素菜单、参考线右键是参考线菜单，编辑器顶栏另设独立的「视图」下拉菜单，不与主菜单混排。
+
+## What Changes
+
+- 画布顶部与左侧新增 20px 标尺：刻度为设计 px，以页面世界原点 (0,0) 为 0；随缩放 / 平移实时变化，缩小时自动降采样刻度密度并保留负刻度读数；指针在画布上移动时两条标尺显示位置指示。
+- 从顶部标尺向下拖出水平参考线、从左侧标尺向右拖出垂直参考线；拖拽过程中显示坐标标签，松手落在画布内即创建。
+- 已有参考线可直接拖动改位置（8px 命中带，屏幕宽度恒定）；拖回来源标尺时显示「松开删除」提示，松手即删除；`Esc`、指针取消、窗口失焦均取消本次拖拽且不留痕迹。
+- 参考线作为吸附候选接入现有 `SnapSession`，沿用 `6 / zoom` 阈值与 `⌘/Ctrl` 临时暂停；TS 侧使用双候选缓冲，使参考线参与对齐吸附但不产生间距标注噪声，**不修改 Rust ABI**。
+- 参考线按页面存为文档元数据 `editor/guides.json`（仿 `agent/sessions.json`）：随 `.reaui` 导入导出、跨刷新保留、不进设计 TSX、不进撤销历史；损坏或超大的文件在导入时容错丢弃并给出警告。
+- 新增**两个独立偏好**：`showRulers`（**默认关闭**）与 `showGuides`（默认开启），首页「设置 → 创作偏好」、顶栏独立「视图」菜单、画布右键菜单三处共用。`showRulers` 只管标尺条带、指针指示与「从标尺拖出创建」；`showGuides` 只管参考线渲染、拖拽、右键操作与吸附候选；两者都不改动已保存的数据。
+- **菜单分层**：画布空白处右键 = 独立「画布菜单」（两个勾选项 + 清除参考线）；图层 / 元素右键 = 现有元素菜单，不混入视图项；参考线右键 = 独立「参考线菜单」；顶栏另设独立「视图」下拉菜单，不与主菜单混排。
+- 标尺关闭时仍可用「拖到画布对应边缘 8px 内」删除参考线，或走参考线右键菜单，保证删除闭环不依赖标尺可见性。
+
+### 非目标（Non-Goals）
+
+- 不做可见网格、栅格布局、像素网格叠加；不做单位切换（仅设计 px）与刻度密度自定义。
+- 不做参考线锁定 / 命名 / 编组 / 列表面板 / 数值输入定位；不做参考线相对画框的局部坐标系，也不随画框旋转或缩放。
+- 参考线增删改不进入撤销 / 重做历史（沿用 `withMetadata` 语义），也不提供跨文档复制。
+- 不把参考线写进页面 TSX；代码导出与 `.design.tsx` 中不会出现任何参考线信息。
+- 不新增快捷键（浏览器 `⌘/Ctrl+R` 与刷新冲突、`Shift+R` 与矩形工具冲突、`⇧⌘R` 已被「粘贴并替换」占用）；不专门适配多指手势、压感笔、协作同步与多窗口参考线实时同步。
+- 不改动画布相机的世界↔屏幕坐标契约，不引入新的状态管理库、渲染引擎或 WASM 接口。
+
+## Capabilities
+
+### New Capabilities
+
+- `canvas-rulers`: 标尺显示、刻度算法、指针位置指示、与相机 / 交互层的隔离。
+- `manual-guides`: 参考线数据模型与文档持久化、创建 / 拖动 / 删除交互、渲染与右键操作。
+- `view-preferences`: 两个独立显示偏好，设置页 / 独立「视图」菜单 / 独立画布菜单三入口，以及画布 / 元素 / 参考线三类菜单的分层。
+
+### Modified Capabilities
+
+- `transform-and-snapping`: 吸附候选集合扩展为「对象 + 手动参考线」，并约束间距标注只使用对象候选。
+- `document-storage`: `.reaui` 容器新增 `editor/guides.json`，扩展文档元数据路径白名单与导入容错。
+
+## Impact
+
+| 包 / 文件 | 改动 |
+| --- | --- |
+| `packages/document` | `manifest.ts` 新增 `EDITOR_GUIDES_FILE`；`session.ts` 的 `withMetadata` 白名单支持 `editor/*.json`；导出新常量 |
+| `packages/storage` | `reaui.ts` 导出 / 导入白名单加入 `editor/guides.json`，加入大小与结构容错；`test/` 补往返用例 |
+| `packages/geometry` | `SnapSession` 增加参考线候选参数与双候选缓冲（仅 TS 封装，Rust ABI 不变） |
+| `packages/editor` | 新增 `session/ruler.ts`、`session/guides.ts`、`session/viewPreferences.ts` 及对应 `*.test.ts`；新增 `components/CanvasRulers.tsx`、`components/CanvasGuides.tsx`；改 `components/Canvas.tsx`、`components/layerMenu.ts`、`EditorApp.tsx`、`home/HomeApp.tsx`、`home/data.ts`、`ui/index.tsx` |
+| `apps/web` | `theme.css` 增加标尺 / 参考线样式与 `--rea-manual-guide: #7c3aed` 令牌 |
+| 文档 | `docs/file-format.md`、`docs/architecture.md`、`docs/verification.md`、`DESIGN.md`、`README.md` |
+
+**兼容性**：`rea.json` 字段、页面 TSX 解析器、相机与手势状态机都不变；旧 `.reaui` 文件不含 `editor/guides.json` 时按「无参考线」处理，导入不失败；旧 `Preferences` 记录缺 `showRulers` / `showGuides` 时取各自默认值。
+
+## Success Criteria
+
+- `pnpm test` 与 `pnpm test:rust` 全绿；新增纯函数测试覆盖 10% / 50% / 100% / 300% 刻度、世界↔屏幕换算、参考线序列化与校验、`.reaui` 往返与损坏容错。
+- 人工验收：三档缩放下，标尺读数与参考线、选框、命中位置一致；创建 → 拖动 → 拖回删除 → `Esc` 取消全流程可用，无残留预览。
+- 两个开关互不联动：关闭标尺后参考线仍可显示、拖动与删除；关闭参考线后标尺仍可用且参考线不参与吸附；重新打开后参考线位置不变。
+- 三类右键菜单按命中目标正确分流，元素菜单不出现视图项；导出再导入 `.reaui` 后参考线按页面完整恢复。

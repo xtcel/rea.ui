@@ -1,6 +1,6 @@
 # REA UI v2 / v3 文件格式
 
-一个文档是内存中的虚拟目录。唯一可编辑设计源是清单、页面与组件目录 TSX 文本；AST、索引、React 元素和 DOM 均可重建。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
+一个文档是内存中的虚拟目录。唯一可编辑设计源是清单、页面与组件目录 TSX 文本；AST、索引、React 元素和 DOM 均可重建。`agent/sessions.json` 与 `editor/guides.json` 是随文档保存的编辑器元数据，不参与设计解析。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
 
 ## 目录和清单
 
@@ -8,7 +8,10 @@
 rea.json
 pages/main.page.tsx
 pages/settings.page.tsx
+components/main.components.tsx?  (v3 可选)
 assets/photo.png
+agent/sessions.json?            (AI 会话，可选)
+editor/guides.json?             (手动参考线，可选)
 ```
 
 ```json
@@ -76,9 +79,9 @@ export default (
 
 MIME：`application/vnd.reaui+zip`，文件名来自文档名称。
 
-ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、`agent/sessions.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
+ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、可选的组件目录、`agent/sessions.json`（存在时）、`editor/guides.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
 
-`.reaui` 会携带文档内的 AI 会话记录，换机或转交他人打开后仍可在左栏「AI」中看到历史会话。会话不是设计源，不参与静态解析，也不会被注入 Agent 的临时工作区。
+`.reaui` 会携带文档内的 AI 会话记录与手动参考线，换机或转交他人打开后仍可看到历史会话并恢复参考线。两者都不是设计源，不参与静态解析，也不会被注入 Agent 的临时工作区；参考线同样不进入页面 TSX 或代码导出。
 
 导入在持久化之前完成以下校验：
 
@@ -86,7 +89,7 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 2. 路径必须相对、安全且使用 `/`。拒绝绝对路径、盘符、反斜杠、空路径段、`.`、`..`、控制字符、目录条目（结尾 `/`）。
 3. 最多 5000 条目，解压后合计最多 256MiB，任一条目压缩比不得超过 200。超限在分配解压缓冲区前拒绝。
 4. 必须有 UTF-8 `rea.json`，所有清单页面必须存在并通过静态解析，id 必须一致。拒绝清单未引用的页面文件。
-5. `assets/` 路径同时遵守 Image 的资源路径限制。根目录清单、固定组件目录 `components/main.components.tsx`、`agent/sessions.json` 及 `pages/`、`assets/` 之外的文件忽略并给出警告。会话文件超过 512KB 或不是合法 JSON 时丢弃并给出警告，不阻断导入。
+5. `assets/` 路径同时遵守 Image 的资源路径限制。允许的固定元数据路径为 `agent/sessions.json` 与 `editor/guides.json`；根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的其他文件忽略并给出警告。会话文件超过 512KB、参考线文件超过 64KB，或两者不是合法 JSON / 顶层不是对象时丢弃并给出警告，不阻断导入。
 6. 所有校验通过后，在一个 IndexedDB 事务中写入新文档和资源，失败时无残留。
 
 压缩比限制也适用于高度重复的正常文件；若其超过阈值，导入会按同样规则拒绝。
@@ -103,6 +106,29 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 - 写入使用 `DocumentSession.withMetadata`：照常校验设计源并递增 revision，但不进入撤销历史；撤销设计不会回滚对话。
 - 页面、组件目录与资源的变化不影响该文件；导出、导入和「复制文档」都会原样保留。
 - 旧版本把会话存在 IndexedDB `meta` 的 `agent-conversation:<docId>`；打开文档时自动迁移为一条会话并写回文件，随后删除旧键。
+
+## 编辑器参考线文件
+
+`editor/guides.json` 保存用户在画布上手动拖出的参考线，属于文档元数据而非设计源：
+
+```json
+{
+  "version": 1,
+  "pages": {
+    "main": [
+      { "id": "g_x120", "axis": "x", "position": 120 },
+      { "id": "g_y64", "axis": "y", "position": 64 }
+    ]
+  }
+}
+```
+
+- `axis: "x"` 是垂直线（横坐标为 `position`），`axis: "y"` 是水平线；`position` 是页面世界坐标下的设计 px，取整存储，0 点为页面 (0,0)。
+- 按页面 id 分组，只保留清单中存在的页面。每页最多 200 条，序列化后按页面 id、轴向、位置、id 排序，保证相同内容生成相同字节；任何页面都没有参考线时删除该文件。
+- 写入使用 `DocumentSession.withMetadata`：照常校验设计源并递增 revision，但**不进入撤销历史**；撤销设计不会删掉刚拖出的参考线。页面 TSX、组件目录和资源变化不影响该文件。
+- 不进入 AST、React 元素、页面代码导出或「复制源码」；`showGuides=false` 只隐藏显示与吸附，不删除数据。
+- 导入时超过 64KB、非法 JSON、顶层非对象、未知页面或坐标非有限值的条目会被容错丢弃并给出警告，不阻断导入。缺少该文件的旧容器正常打开，视为没有任何手动参考线。
+- 导出、导入和「复制文档」都会原样保留；`.reaui` 的确定性字节仍成立。
 
 ## 迁移及代码导出
 

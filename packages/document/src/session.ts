@@ -4,7 +4,7 @@ import { patchClassNames } from '@rea/tailwind';
 import type { PropertyGroupKey, PropertyInput } from '@rea/tailwind';
 import { parsePage } from './parsePage';
 import type { ParsedPage } from './parsePage';
-import { parseManifest, newPageSource } from './manifest';
+import { parseManifest, newPageSource, EDITOR_GUIDES_FILE } from './manifest';
 import type { DocumentManifest } from './manifest';
 import { applyStructure } from './structure';
 import type { NodeRect } from './structure';
@@ -296,14 +296,14 @@ export class DocumentSession {
     return this.restore(entry, 'after', [...this.past, entry], this.future.slice(1));
   }
   /**
-   * Write document-owned metadata (AI sessions) without touching undo history.
+   * Write document-owned metadata (AI sessions, editor guides) without touching undo history.
    * Design sources are validated as usual; the metadata file itself is opaque to the parser.
    */
   withMetadata(path: string, content: string | null, limit = 512 * 1024): DocumentSession {
-    if (!/^agent\/[a-z0-9-]+\.json$/.test(path)) throw new Error(`不支持的元数据路径：${path}`);
+    if (path !== EDITOR_GUIDES_FILE && !/^agent\/[a-z0-9-]+\.json$/.test(path)) throw new Error(`不支持的元数据路径：${path}`);
     const files = { ...this.files };
     if (content === null) delete files[path];
-    else { if (content.length > limit) throw new Error('会话记录超过大小限制，请新建会话后重试。'); files[path] = content; }
+    else { if (content.length > limit) throw new Error('元数据超过大小限制。'); files[path] = content; }
     if (files[path] === this.files[path]) return this;
     return new DocumentSession(files, this.rev + 1, this.past, this.future);
   }
