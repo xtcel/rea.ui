@@ -53,6 +53,8 @@ export function changesBetween(before: Readonly<Record<string, string>>, after: 
 }
 
 export function classifyChanges(changes: readonly ScopeChange[], refs: readonly AgentRef[]): { inside: ScopeChange[]; outside: ScopeChange[] } {
+  // 没有引用元素时本轮不限制范围，所有改动都属于本轮。
+  if (!refs.length) return { inside: [...changes], outside: [] };
   const inside: ScopeChange[] = [], outside: ScopeChange[] = [];
   for (const change of changes) {
     const hit = refs.some(ref => ref.pageId === change.pageId && (change.designId === ref.designId || (ref.subtree && change.ancestors.includes(ref.designId))));

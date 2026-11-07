@@ -65,24 +65,19 @@ export function providerTarget(state: ProvidersState): { type: 'cli'; provider: 
   return null;
 }
 
-export function activeProviderName(state: ProvidersState): string {
-  const target = providerTarget(state);
-  return target?.provider.name ?? '未选择';
+/** 本机接口可以不填密钥（例如 Ollama）。 */
+const LOCAL_HOST = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i;
+
+export function isApiTargetReady(target: { baseUrl: string; model: string; apiKey: string }): boolean {
+  return !!(target.baseUrl.trim() && target.model.trim() && (target.apiKey.trim() || LOCAL_HOST.test(target.baseUrl.trim())));
 }
 
-/** 是否具备发起生成的最少信息。Ollama 不需要 API Key。 */
-export function isProviderReady(target: NonNullable<ReturnType<typeof providerTarget>>): boolean {
-  if (target.type === 'cli') return !!(target.provider.executable.trim() || target.provider.command.trim());
-  const provider = target.provider;
-  return !!(provider.baseUrl.trim() && provider.model.trim() && (provider.apiKey.trim() || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(provider.baseUrl.trim())));
+export function isCliReady(provider: CliProvider): boolean {
+  return !!(provider.executable.trim() || provider.command.trim());
 }
 
-/** 提供给列表的简短说明：端点或可执行文件。 */
-export function providerDetail(target: NonNullable<ReturnType<typeof providerTarget>>): string {
-  if (target.type === 'cli') return target.provider.executable || target.provider.command || '未配置命令';
-  const provider = target.provider;
-  if (!provider.baseUrl) return '未配置接口地址';
-  return provider.model ? `${provider.model} · ${provider.baseUrl.replace(/^https?:\/\//, '')}` : provider.baseUrl.replace(/^https?:\/\//, '');
+export function isApiReady(provider: ApiProvider): boolean {
+  return isApiTargetReady(provider);
 }
 
 /** 把配置解析为生成请求使用的 Agent 配置。 */

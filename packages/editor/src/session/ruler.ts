@@ -21,21 +21,19 @@ export function worldToScreen(world: number, offset: number, zoom: number): numb
 
 /**
  * Visible ticks for one axis. `offset` is camera.x / camera.y, `viewport` is width / height.
- * `origin` is the world value that reads as 0 on the ruler; it never moves the tick grid
- * off the origin, only shifts the labels.
+ * The zero point is fixed at the page's world origin (0,0): readings are always world
+ * coordinates, so panning/zooming moves the ticks but never renumbers them.
  */
-export function rulerTicks(offset: number, zoom: number, viewport: number, origin = 0): RulerTick[] {
+export function rulerTicks(offset: number, zoom: number, viewport: number): RulerTick[] {
     const z = zoom > 0 ? zoom : 1;
     const step = niceStep(z), major = step * 10;
     const start = -offset / z, end = (viewport - offset) / z;
-    const base = Number.isFinite(origin) ? origin : 0;
     const ticks: RulerTick[] = [];
-    const first = Math.floor((start - base) / step) * step + base;
+    const first = Math.floor(start / step) * step;
     for (let p = first; p <= end + step * 0.5 && ticks.length < 2000; p += step) {
-        const relative = p - base;
-        const isMajor = Math.abs(relative / major - Math.round(relative / major)) < 1e-6;
+        const isMajor = Math.abs(p / major - Math.round(p / major)) < 1e-6;
         const position = Math.round(p * 1000) / 1000 || 0;
-        ticks.push({ position, major: isMajor, label: isMajor ? String(Math.round(relative) || 0) : undefined });
+        ticks.push({ position, major: isMajor, label: isMajor ? String(Math.round(p) || 0) : undefined });
     }
     return ticks;
 }

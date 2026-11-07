@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyRulerDrag, clickGuideAxis, isOutsideCanvas, shiftOrigin } from './rulerGesture';
+import { classifyRulerDrag, clickGuideAxis, isOutsideCanvas } from './rulerGesture';
 
 describe('ruler gestures', () => {
     it('treats a press that never moves as a click', () => {
@@ -7,16 +7,16 @@ describe('ruler gestures', () => {
         expect(classifyRulerDrag(3, -2, 'top')).toBe('pending');
         expect(classifyRulerDrag(1, 1, 'left')).toBe('pending');
     });
-    it('splits along-the-ruler drags from perpendicular ones', () => {
-        expect(classifyRulerDrag(30, 2, 'top')).toBe('origin');
+    it('ignores along-the-ruler slides and hands perpendicular drags to guides', () => {
+        // A slide along a ruler must never move the zero point: 0 stays at page (0,0).
+        expect(classifyRulerDrag(30, 2, 'top')).toBe('ignored');
+        expect(classifyRulerDrag(2, 30, 'left')).toBe('ignored');
         expect(classifyRulerDrag(2, 30, 'top')).toBe('guide');
-        expect(classifyRulerDrag(2, 30, 'left')).toBe('origin');
         expect(classifyRulerDrag(30, 2, 'left')).toBe('guide');
     });
-    it('moves the zero origin opposite the drag so it follows the pointer', () => {
-        expect(shiftOrigin({ x: 10, y: 20 }, 'top', -50, 0, 2)).toEqual({ x: 35, y: 20 });
-        expect(shiftOrigin({ x: 10, y: 20 }, 'left', 0, 40, 1)).toEqual({ x: 10, y: -20 });
-        expect(shiftOrigin({ x: 0, y: 0 }, 'top', 10, 0, 0)).toEqual({ x: -10, y: 0 });
+    it('keeps a long along-axis slide inert (no -9000 style offset)', () => {
+        expect(classifyRulerDrag(-900, 0, 'top')).toBe('ignored');
+        expect(classifyRulerDrag(0, 900, 'left')).toBe('ignored');
     });
     it('creates the guide perpendicular to the clicked ruler', () => {
         expect(clickGuideAxis('top')).toBe('x');

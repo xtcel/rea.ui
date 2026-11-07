@@ -15,6 +15,12 @@ describe('className rendering', () => {
     expect(html).toContain('w-[317px] bg-red-500 hover:bg-red-600 custom');
     expect(renderToStaticMarkup(<PageRenderer page={page} />)).toContain('w-20');
   });
+  it('bakes preview geometry into inline style so a drag cannot flash at the page origin', () => {
+    const html = renderToStaticMarkup(<PageRenderer page={page} preview={{ id: 'rect-main', styles: { left: 695, top: 430, rotate: 12 } }} />);
+    expect(html).toContain('left-[695px]');
+    expect(html).toContain('style="left:695px;top:430px;rotate:12deg"');
+    expect(renderToStaticMarkup(<PageRenderer page={page} />)).not.toContain('style=');
+  });
   it('uses path geometry instead of a transparent viewBox rectangle and respects inherited locks', () => {
     const vector=<Vector designId="vector-icon" d="M0 0 L4 4" viewBox="-2 -3 24 20" />;
     const html=renderToStaticMarkup(<PageRenderer page={<Page id="home" designId="page-home">{vector}</Page>}/>);

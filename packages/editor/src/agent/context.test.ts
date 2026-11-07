@@ -56,4 +56,10 @@ describe('scope diff', () => {
   it('returns nothing when either snapshot is invalid', () => {
     expect(changesBetween(files('<oops />'), files(source('a')))).toEqual([]);
   });
+  it('treats every change as in scope when nothing is referenced', () => {
+    const changes = changesBetween(files(source('欢迎使用')), files(source('欢迎回来')));
+    const { inside, outside } = classifyChanges(changes, []);
+    expect(inside.map(change => change.designId)).toEqual(['hero-title']);
+    expect(outside).toHaveLength(0);
+  });
 });

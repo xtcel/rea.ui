@@ -1,10 +1,9 @@
 import { useMemo, useRef } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { Lock } from 'lucide-react';
 import type { Camera } from '../session/camera';
 import { RULER_THICKNESS, rulerTicks, worldToScreen } from '../session/ruler';
 import type { GuideAxis } from '../session/guides';
-import { classifyRulerDrag, shiftOrigin } from './rulerGesture';
+import { classifyRulerDrag } from './rulerGesture';
 import type { RulerDragIntent, RulerZone } from './rulerGesture';
 
 export interface RulerDragStart {
@@ -23,18 +22,21 @@ interface DragState {
     zone: 'top' | 'left';
     startX: number;
     startY: number;
-    startOrigin: { x: number; y: number };
     intent: RulerDragIntent;
     element: HTMLElement;
 }
 
-/** Fixed screen-space rulers. They never change the canvas container box or the camera contract. */
-export function CanvasRulers({ camera, size, visible, origin, locked = false, range, activeGuide, onRulerPointerDown, onRulerClick, onRulerHover, onRulerHoverEnd, onOriginChange, onRulerContextMenu }: {
+/** Baseline of the rotated labels in the 20px left band (glyphs occupy roughly x 4–12). */
+const Y_LABEL_BASELINE_X = 8;
+/** Rotate labels counter-clockwise so they read bottom-to-top along the vertical ruler. */
+const Y_LABEL_TRANSFORM = 'rotate(-90)';
+
+/** Fixed screen-space rulers. They never change the canvas container box or the camera contract.
+ *  The zero point is always the page's world origin (0,0); it cannot be dragged. */
+export function CanvasRulers({ camera, size, visible, range, activeGuide, onRulerPointerDown, onRulerClick, onRulerHover, onRulerHoverEnd, onRulerContextMenu }: {
     camera: Camera;
     size: { width: number; height: number };
     visible: boolean;
-    origin: { x: number; y: number };
-    locked?: boolean;
     range?: RulerRange | null;
     /** Position of the guide being dragged, marked in the band so its value stays readable. */
     activeGuide?: { axis: GuideAxis; position: number } | null;
@@ -42,15 +44,14 @@ export function CanvasRulers({ camera, size, visible, origin, locked = false, ra
     onRulerClick: (zone: 'top' | 'left', clientX: number, clientY: number) => void;
     onRulerHover?: (zone: 'top' | 'left', clientX: number, clientY: number) => void;
     onRulerHoverEnd?: () => void;
-    onOriginChange: (origin: { x: number; y: number }) => void;
     onRulerContextMenu: (zone: RulerZone, clientX: number, clientY: number) => void;
 }) {
-    const xTicks = useMemo(() => rulerTicks(camera.x, camera.zoom, size.width, origin.x), [camera.x, camera.zoom, size.width, origin.x]);
-    const yTicks = useMemo(() => rulerTicks(camera.y, camera.zoom, size.height, origin.y), [camera.y, camera.zoom, size.height, origin.y]);
+    const xTicks = useMemo(() => rulerTicks(camera.x, camera.zoom, size.width), [camera.x, camera.zoom, size.width]);
+    const yTicks = useMemo(() => rulerTicks(camera.y, camera.zoom, size.height), [camera.y, camera.zoom, size.height]);
     const drag = useRef<DragState | null>(null);
     // Handlers are recreated every render, so read the live callbacks through a ref.
-    const live = useRef({ onRulerPointerDown, onOriginChange, onRulerHover });
-    live.current = { onRulerPointerDown, onOriginChange, onRulerHover };
+    const live = useRef({ onRulerPointerDown, onRulerHover });
+    live.current = { onRulerPointerDown, onRulerHover };
     if (!visible) return null;
 
     function down(zone: 'top' | 'left', event: ReactPointerEvent<HTMLDivElement>) {
@@ -58,7 +59,7 @@ export function CanvasRulers({ camera, size, visible, origin, locked = false, ra
         event.preventDefault();
         const element = event.currentTarget;
         element.setPointerCapture(event.pointerId);
-        drag.current = { pointerId: event.pointerId, zone, startX: event.clientX, startY: event.clientY, startOrigin: origin, intent: 'pending', element };
+        drag.current = { pointerId: event.pointerId, zone, startX: event.clientX, startY: event.clientY, intent: 'pending', element };
     }
     function move(zone: 'top' | 'left', event: ReactPointerEvent<HTMLDivElement>) {
         const state = drag.current;
@@ -75,11 +76,10 @@ export function CanvasRulers({ camera, size, visible, origin, locked = false, ra
             if (intent === 'guide') {
                 // Hand the gesture to the canvas: it owns the guide state machine.
                 live.current.onRulerPointerDown(state.zone === 'top' ? 'y' : 'x', event.pointerId, event.clientX, event.clientY, state.element);
-                return;
             }
         }
-        if (state.intent !== 'origin' || locked) return;
-        live.current.onOriginChange(shiftOrigin(state.startOrigin, state.zone, event.clientX - state.startX, event.clientY - state.startY, camera.zoom));
+        // A slide along the ruler ('ignored') and the handed-off guide gesture both
+        // stop here: no ruler drag is allowed to move the zero point.
     }
     function up(event: ReactPointerEvent<HTMLDivElement>) {
         const state = drag.current;
@@ -130,16 +130,18 @@ export function CanvasRulers({ camera, size, visible, origin, locked = false, ra
                     const y = worldToScreen(tick.position, camera.y, camera.zoom);
                     return <g key={tick.position}>
                         <line x1={tick.major ? 12 : 16} x2={RULER_THICKNESS} y1={y} y2={y} />
-                        {tick.label !== undefined && <text x={2} y={y - 3}>{tick.label}</text>}
+                        {/* The band is only 20px wide: a horizontal -1000 would be clipped/wrapped.
+                            Rotating around the tick keeps every digit inside the band, centred on its value. */}
+                        {tick.label !== undefined && <text
+                            transform={`translate(${Y_LABEL_BASELINE_X} ${y}) ${Y_LABEL_TRANSFORM}`}
+                            textAnchor="middle" dy="0.35em">{tick.label}</text>}
                     </g>;
                 })}
             </svg>
             {rangeY && <div className="rea-ruler-range rea-range-y" style={rangeY} />}
             {activeGuide?.axis === 'y' && <div className="rea-ruler-indicator rea-indicator-y" style={{ top: worldToScreen(activeGuide.position, camera.y, camera.zoom) }} />}
         </div>
-        <div className={`rea-ruler-corner${locked ? ' is-locked' : ''}`} style={{ width: RULER_THICKNESS, height: RULER_THICKNESS }}
-            onContextMenu={menu('corner')} onDoubleClick={() => onOriginChange({ x: 0, y: 0 })}>
-            {locked && <Lock size={9} strokeWidth={2} />}
-        </div>
+        <div className="rea-ruler-corner" style={{ width: RULER_THICKNESS, height: RULER_THICKNESS }}
+            onContextMenu={menu('corner')} />
     </div>;
 }

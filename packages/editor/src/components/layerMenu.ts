@@ -51,11 +51,8 @@ export interface RulerMenuActions {
   guideCount: number;
   verticalCount: number;
   horizontalCount: number;
-  locked: boolean;
   toggleRulers: () => void;
   toggleGuides: () => void;
-  toggleLock: () => void;
-  resetOrigin: () => void;
   clearGuides: (axis?: 'x' | 'y') => void;
 }
 
@@ -85,9 +82,6 @@ export function rulerMenu(zone: RulerZone, actions: RulerMenuActions): ContextMe
     'separator',
     { label: '显示标尺', shortcut: '⌃R', checked: actions.showRulers, action: actions.toggleRulers },
     { label: '显示参考线', checked: actions.showGuides, action: actions.toggleGuides },
-    'separator',
-    { label: '锁定标尺原点', checked: actions.locked, action: actions.toggleLock },
-    { label: '重置标尺原点', disabled: actions.locked, hint: actions.locked ? '标尺原点已锁定' : undefined, action: actions.resetOrigin },
   ];
 }
 

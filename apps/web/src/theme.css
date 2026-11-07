@@ -99,7 +99,10 @@
 .rea-mobile-only { display:none; }
 /* Canvas overlays stay outside the document's Shadow DOM. */
 .rea-canvas-wrap,.rea-canvas { width:100%; height:100%; position:relative; overflow:hidden; }
-.rea-canvas { background:var(--rea-canvas); touch-action:none; user-select:none; }
+/* The authored page background (sampled onto --rea-page-bg by Canvas.tsx) paints the
+   pasteboard in light mode only; dark mode always keeps the themed surface. */
+.rea-canvas { background:var(--rea-page-bg, var(--rea-canvas)); touch-action:none; user-select:none; }
+[data-theme="dark"] .rea-canvas { background:var(--rea-canvas); }
 .rea-canvas.rea-is-hand,.rea-canvas.rea-is-hand * { cursor:grab; }
 .rea-canvas.rea-is-dragging,.rea-canvas.rea-is-dragging * { cursor:grabbing; }
 .rea-canvas.rea-is-draw,.rea-canvas.rea-is-draw * { cursor:crosshair; }
@@ -332,7 +335,6 @@
 .rea-ruler-y { left:0; top:0; bottom:0; border-right:1px solid var(--rea-border); cursor:ns-resize; }
 /* The corner block must opt back into pointer events to own its own context menu. */
 .rea-ruler-corner { position:absolute; left:0; top:0; display:flex; align-items:center; justify-content:center; color:var(--rea-muted,#656d79); pointer-events:auto; cursor:default; background:var(--rea-chrome,#fafbfc); border-right:1px solid var(--rea-border); border-bottom:1px solid var(--rea-border); }
-.rea-ruler-corner.is-locked { color:var(--rea-accent); }
 .rea-ruler-range { position:absolute; background:var(--rea-accent); opacity:.16; pointer-events:none; }
 .rea-range-x { top:0; bottom:0; }
 .rea-range-y { left:0; right:0; }

@@ -29,15 +29,16 @@ describe('ruler geometry', () => {
         expect(first.filter(tick => tick.label !== undefined).map(tick => tick.label)).toEqual(['0', '100', '200']);
         expect(rulerTicks(0, 0.1, 400).length).toBeLessThan(2000);
     });
-    it('keeps the tick grid anchored to the origin and shifts only the labels', () => {
-        const ticks = rulerTicks(0, 1, 200, 50);
-        expect(ticks.find(tick => tick.position === 50)).toMatchObject({ major: true, label: '0' });
-        expect(ticks.find(tick => tick.position === 150)).toMatchObject({ major: true, label: '100' });
-        expect(ticks.find(tick => tick.position === 100)).toMatchObject({ major: false, label: undefined });
+    it('always reads 0 at the page world origin, whatever the pan or zoom', () => {
+        // The zero point is fixed: no gesture may renumber the ticks (regression for a
+        // dragged ruler origin that made world 0 read as -9000 on the top ruler).
+        for (const [offset, zoom] of [[0, 1], [200, 1], [40, 2], [48, 0.5]] as const) {
+            expect(rulerTicks(offset, zoom, 800).find(tick => tick.position === 0)).toMatchObject({ major: true, label: '0' });
+        }
     });
-    it('labels negative origins symmetrically', () => {
-        const ticks = rulerTicks(0, 1, 200, -100);
-        expect(ticks.find(tick => tick.position === 0)).toMatchObject({ major: true, label: '100' });
-        expect(ticks.find(tick => tick.position === 100)).toMatchObject({ major: true, label: '200' });
+    it('shifts tick positions with the camera, not their readings', () => {
+        // Panning left exposes positive world values; the numbers stay world coordinates.
+        expect(rulerTicks(-900, 0.1, 800)[0]).toMatchObject({ position: 9000, major: true, label: '9000' });
+        expect(rulerTicks(40, 1, 200)[0]).toMatchObject({ position: -40, label: undefined });
     });
 });

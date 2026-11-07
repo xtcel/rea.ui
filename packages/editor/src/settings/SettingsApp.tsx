@@ -9,7 +9,7 @@ import type { Preferences } from '../home/data';
 import { isDesktop } from '../platform';
 import { useTheme } from '../session/theme';
 import type { ThemePreference } from '../session/theme';
-import { loadProviders, notifyProvidersChanged, saveProviders } from './providers';
+import { isApiReady, isCliReady, loadProviders, notifyProvidersChanged, saveProviders } from './providers';
 import type { ApiProvider, CliProvider, ProvidersState } from './providers';
 
 type Page = 'models' | 'general' | 'about';
@@ -79,9 +79,9 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
     document.querySelector('.rs-body')?.scrollTo(0, 0);
   }
 
-  const ready = useMemo(() => new Map([
-    ...providers.cli.map(provider => [provider.id, !!(provider.executable.trim() || provider.command.trim())] as const),
-    ...providers.api.map(provider => [provider.id, !!(provider.baseUrl.trim() && provider.model.trim())] as const),
+  const ready = useMemo(() => new Map<string, boolean>([
+    ...providers.cli.map(provider => [provider.id, isCliReady(provider)] as const),
+    ...providers.api.map(provider => [provider.id, isApiReady(provider)] as const),
   ]), [providers]);
 
   function commit(next: ProvidersState) {
@@ -186,7 +186,7 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
                 const isOpen = open === provider.id;
                 return <Row key={provider.id} open={isOpen} name={provider.name} badge={providers.activeId === provider.id ? '使用中' : undefined}
                   meta={provider.model ? `${provider.model} · ${provider.baseUrl.replace(/^https?:\/\//, '')}` : provider.baseUrl.replace(/^https?:\/\//, '') || '未配置'}
-                  dot={providers.activeId === provider.id && ready.get(provider.id) && (provider.apiKey || /^http:\/\/(127\.0\.0\.1|localhost)/i.test(provider.baseUrl)) ? 'ready' : check?.state === 'error' ? 'error' : 'idle'}
+                  dot={providers.activeId === provider.id && ready.get(provider.id) ? 'ready' : check?.state === 'error' ? 'error' : 'idle'}
                   onToggle={() => setOpen(isOpen ? '' : provider.id)}>
                   <label>接口地址<input value={provider.baseUrl} maxLength={2000} spellCheck={false} placeholder="例：https://api.openai.com/v1" onChange={event => patchApi(provider.id, { baseUrl: event.currentTarget.value })} /></label>
                   <div className="rs-row-grid">

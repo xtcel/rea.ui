@@ -127,11 +127,11 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 **删除沿用 Sketch 的「扔出画布」模型**：垂直参考线拖出画布左右边界、水平参考线拖出上下边界即进入删除区（`rulerGesture.ts` 的 `isOutsideCanvas()`，按参考线法线方向判定），松手删除；在画布内松手只改位置，不再有写死在左上角的 28px 热区。这里有一个必须守住的实现约束：`CanvasGuides` 会卸载视口外的参考线以保持覆盖层轻量，但**正在拖拽的那条必须保持挂载**——节点一旦卸载，指针捕获随之丢失，手势会被 `lostpointercapture` 取消，而这正好发生在「把参考线拖到画布外」的路径上。`Esc`、`pointercancel`、`lostpointercapture` 和窗口失焦统一清理预览，不影响图层选区。
 
-标尺手势同样按方向分流（`rulerGesture.ts` 的 `classifyRulerDrag()`）：位移小于 4px 视为单击创建，沿标尺轴向拖动移动原点，向画布方向拖动创建参考线；原点锁定时沿轴拖动无效，双击角块或菜单项重置原点。右键分流到 `rulerMenu()`：顶部标尺删所有垂直参考线、左侧标尺删所有水平参考线、角块清除全部，另外三处都提供两个显示开关与原点锁定 / 重置。
+标尺手势按方向分流（`rulerGesture.ts` 的 `classifyRulerDrag()`）：位移小于 4px 视为单击创建，向画布方向的跨轴拖动创建参考线，沿标尺轴向拖动**不产生任何效果**。标尺 0 点固定为页面世界坐标 (0,0)：`session/ruler.ts` 的 `rulerTicks()` 直接把世界坐标作为读数，不接受原点参数，也不提供拖动 / 锁定 / 重置原点的手势或菜单入口（曾实现的「可拖动原点」会让读数被悄悄平移，已撤销）。右键分流到 `rulerMenu()`：顶部标尺删所有垂直参考线、左侧标尺删所有水平参考线、角块清除全部，另外三处都提供两个显示开关。
 
 吸附接入不改 Rust ABI：`SnapSession` 增加可选第三参数 `guides`，`snap_rects` 使用「对象候选 + 参考线候选」合并缓冲区，而 `distribute_marks` 使用**只含对象候选的独立缓冲区**，避免零宽 / 零高参考线产生虚假间距标注；旧的两参数调用保持原行为。`guideSnapRects()` 把可见参考线转成 `{width:0}` / `{height:0}` 的矩形并按 6px 屏幕阈值（除以 zoom）裁剪视口外条目。
 
-`showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、悬停预览与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺原点与锁定状态是**视图态**，存在编辑器内存里，不写入文档也不跨会话保留。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。
+`showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、悬停预览与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺没有可变的原点状态，0 点恒为页面世界坐标 (0,0)，不写入文档也不跨会话变化。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。
 
 ## 外部 Agent 与 reaui CLI
 

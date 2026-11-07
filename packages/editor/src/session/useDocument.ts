@@ -151,7 +151,7 @@ export function useDocument() {
       if (docs[0]) activate(await storage.openDocument(docs[0].id)); else await create();
     }
   }
-  return { current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, applyAgentFiles, writeMetadata, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
+  return { current, latest: () => latest.current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, applyAgentFiles, writeMetadata, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
     undo: () => { if (latest.current) publish(latest.current.undo()); }, redo: () => { if (latest.current) publish(latest.current.redo()); } };
 }
 export type DocumentModel = ReturnType<typeof useDocument>;

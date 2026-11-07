@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { MouseEvent, PointerEvent, RefObject } from 'react';
+import type { CSSProperties, MouseEvent, PointerEvent, RefObject } from 'react';
 import type { InspectedPage } from '@rea/design';
 import { textContent, isVectorKind } from '@rea/design';
 import type { PathData, VectorProps } from '@rea/design';
@@ -106,7 +106,7 @@ const droppedImages = (dataTransfer: DataTransfer | null) => [...(dataTransfer?.
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
 export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
-    rulerOrigin = { x: 0, y: 0 }, rulerLocked = false, onRulerOriginChange, onRulerContextMenu }: {
+    onRulerContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
     selectionMode?: SelectionMode;
@@ -146,10 +146,6 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     onRevealGuides?: () => void;
     /** Image files dropped from the desktop land at the pointer, in artwork coordinates. */
     onDropImages?: (files: readonly File[], point: { x: number; y: number }, parentId: string) => void;
-    /** World value that reads as 0 on the rulers. */
-    rulerOrigin?: { x: number; y: number };
-    rulerLocked?: boolean;
-    onRulerOriginChange?: (origin: { x: number; y: number }) => void;
     onRulerContextMenu?: (zone: RulerZone, x: number, y: number) => void;
 }) {
     const container = useRef<HTMLDivElement>(null);
@@ -689,7 +685,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     }
     const editedElement = editingId ? find(editingId) : undefined, editedBox = editingId ? box(editingId) : undefined;
     const editedText = editingId === draft?.element.props.designId ? textContent(draft.element.props.children) : editingId ? textContent(page.nodes.get(editingId)?.element.props.children) : '';
-    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onDragOver={event => {
+    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? ({ '--rea-page-bg': background } as CSSProperties) : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onDragOver={event => {
         if (!onDropImages || !draggingImages(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -736,13 +732,12 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
       <svg className="rea-guides" aria-hidden="true">{snapGuides.map((g, i) => <line key={`g${i}`} x1={g.axis === 0 ? g.coordinate : g.start} y1={g.axis === 0 ? g.start : g.coordinate} x2={g.axis === 0 ? g.coordinate : g.end} y2={g.axis === 0 ? g.end : g.coordinate} strokeWidth={1 / camera.zoom}/>)}{marks.map((m, i) => <g key={`m${i}`}><line className="rea-distance-line" x1={m.axis === 0 ? m.start : m.cross} y1={m.axis === 0 ? m.cross : m.start} x2={m.axis === 0 ? m.end : m.cross} y2={m.axis === 0 ? m.cross : m.end} strokeWidth={1 / camera.zoom}/><text x={m.axis === 0 ? (m.start + m.end) / 2 : m.cross} y={m.axis === 0 ? m.cross : (m.start + m.end) / 2} fontSize={10 / camera.zoom} dy={-4 / camera.zoom} textAnchor="middle">{Math.round(m.end - m.start)}</text></g>)}</svg>
     </div>
     <CanvasRulers camera={camera} size={size} visible={showRulers}
-      origin={rulerOrigin} locked={rulerLocked} range={selectionBox ?? null}
+      range={selectionBox ?? null}
       activeGuide={guideView ? { axis: guideView.axis, position: guideView.position } : null}
       onRulerPointerDown={startRulerDrag}
       onRulerClick={createGuideFromRuler}
       onRulerHover={previewGuideFromRuler}
       onRulerHoverEnd={() => setGuideHover(null)}
-      onOriginChange={next => onRulerOriginChange?.(next)}
       onRulerContextMenu={(zone, x, y) => onRulerContextMenu?.(zone, x, y)} />
     <CanvasGuides guides={displayGuides} camera={camera} size={size} visible={showGuides} rulerVisible={showRulers} view={guideView} preview={guidePreview} onGuidePointerDown={startGuideDrag} onGuideContextMenu={(id, x, y) => onGuideContextMenu?.(id, x, y)} />
     {aiCorner && <button type="button" className={`rea-ai-ref ${aiLinked ? 'is-linked' : ''}`} style={{ left: camera.x + aiCorner.x * camera.zoom, top: camera.y + aiCorner.y * camera.zoom }} aria-pressed={aiLinked} title={`${aiLinked ? '取消引用' : '引用'}${selectedIds.length > 1 ? `选中的 ${selectedIds.length} 个图层` : '选中图层'}给 AI`} onPointerDown={event => event.stopPropagation()} onClick={() => onAgentRefs?.(selectedIds)}><Sparkles size={14} />{selectedIds.length > 1 && <span>{selectedIds.length}</span>}</button>}

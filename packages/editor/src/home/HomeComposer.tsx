@@ -8,6 +8,7 @@ import { agentRequest } from '../agent/client';
 import type { AgentConfig, AgentInfo, ProjectContext } from '../agent/client';
 import type { DesignSystem } from './data';
 import type { AgentRef } from '../agent/sessions';
+import { isApiTargetReady } from '../settings/providers';
 
 const refContainers = new Set(['Frame', 'Group', 'Instance', 'Slot', 'SlotContent']);
 
@@ -79,8 +80,7 @@ export function HomeComposer(props: ComposerProps) {
     let active = true;
     setConnection('checking'); setConnectionError('');
     if (config.provider) {
-      const provider = config.provider;
-      const ready = !!(provider.baseUrl.trim() && provider.model.trim() && (provider.apiKey.trim() || /^http:\/\/(127\.0\.0\.1|localhost)/i.test(provider.baseUrl.trim())));
+      const ready = isApiTargetReady(config.provider);
       setConnection(ready ? 'connected' : 'signed-out');
       if (!ready) setConnectionError('请在设置中补全接口地址、模型与 API Key。');
       return () => { active = false; };

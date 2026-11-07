@@ -211,7 +211,8 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
       const referenceText = await attachmentContext([...files, ...referenceFiles]);
       const context = selectedProject ? await agentRequest<ProjectContext>('project', { path: selectedProject.path }) : null;
       if (cancelled.current || !alive.current) throw new Error('已停止生成。');
-      const current = latest.current.model.current!;
+      // 元数据写入会立刻递增 rev，React 状态可能还没同步，这里取权威快照。
+      const current = latest.current.model.latest() ?? latest.current.model.current!;
       if (current.manifest.id !== documentId) throw new Error('项目已切换，请重新发送需求。');
       let sources = designSources(current.files), expectedRev = current.rev, feedback = '';
       setPreparing(false);
@@ -225,7 +226,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
           files: sources,
           onStatus(status) {
             if (cancelled.current || !alive.current) throw new Error('已停止生成。');
-            const latestSession = latest.current.model.current;
+            const latestSession = latest.current.model.latest() ?? latest.current.model.current;
             if (latestSession?.manifest.id !== documentId || latestSession.rev !== expectedRev) throw new Error('画布已被编辑或项目已切换，已停止 AI 更新。请基于当前设计重新发送需求。');
             for (const event of status.events) addEvent(event);
             if (status.previewError) { validationError = status.previewError; lastPreview = ''; addEvent('正在等待完整的设计文件…'); return; }
@@ -248,7 +249,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
             }
           },
         });
-        if (!receivedPreview) validationError = apiMode ? '模型没有返回可用的设计文件。' : 'Agent 没有返回设计文件。请直接编辑工作区中的页面。';
+        if (!receivedPreview && !validationError) validationError = apiMode ? '模型没有返回可用的设计文件。' : 'Agent 没有返回设计文件。请直接编辑工作区中的页面。';
         if (!validationError && expectedRev === current.rev && current.pages.values().next().value!.page.nodes.size === 1) validationError = apiMode ? '模型没有返回页面内容，请补充更具体的需求。' : 'Agent 没有创建页面内容，请直接写入有效的设计文件。';
         if (validationError) {
           if (attempt === 1) throw new Error(`设计校验失败：${validationError}。已保留最后一次有效设计，请调整需求后重试。`);

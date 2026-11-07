@@ -82,8 +82,7 @@ describe('independent canvas, layer and guide menus', () => {
 describe('ruler context menus', () => {
     const actions = (over: Partial<RulerMenuActions> = {}): RulerMenuActions => ({
         showRulers: true, showGuides: true, guideCount: 3, verticalCount: 2, horizontalCount: 1,
-        locked: false, toggleRulers: vi.fn(), toggleGuides: vi.fn(), toggleLock: vi.fn(),
-        resetOrigin: vi.fn(), clearGuides: vi.fn(), ...over,
+        toggleRulers: vi.fn(), toggleGuides: vi.fn(), clearGuides: vi.fn(), ...over,
     });
     it('removes only vertical guides from the top ruler', () => {
         const clearGuides = vi.fn();
@@ -113,12 +112,13 @@ describe('ruler context menus', () => {
         expect(entry(rulerMenu('top', actions({ verticalCount: 0 })), '删除所有垂直参考线')).toMatchObject({ disabled: true, hint: '当前页面没有参考线' });
         expect(entry(rulerMenu('corner', actions({ guideCount: 0 })), '清除所有参考线')).toMatchObject({ disabled: true });
     });
-    it('exposes the ruler switches and the origin lock in every zone', () => {
+    it('exposes only the ruler switches in every zone (no draggable zero point)', () => {
         for (const zone of ['top', 'left', 'corner'] as const) {
-            const entries = rulerMenu(zone, actions({ showRulers: false, locked: true }));
+            const entries = rulerMenu(zone, actions({ showRulers: false }));
             expect(entry(entries, '显示标尺')).toMatchObject({ checked: false, shortcut: '⌃R' });
-            expect(entry(entries, '锁定标尺原点')).toMatchObject({ checked: true });
-            expect(entry(entries, '重置标尺原点')).toMatchObject({ disabled: true, hint: '标尺原点已锁定' });
+            expect(entry(entries, '显示参考线')).toMatchObject({ checked: true });
+            expect(labels(entries)).not.toContain('锁定标尺原点');
+            expect(labels(entries)).not.toContain('重置标尺原点');
         }
     });
 });

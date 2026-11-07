@@ -1,8 +1,8 @@
 import { Children, Fragment, isValidElement } from 'react';
-import type { MouseEvent, ReactElement, ReactNode } from 'react';
+import type { MouseEvent, ReactElement, ReactNode, CSSProperties } from 'react';
 import { getNodeKind, isVectorKind, shapePath } from '@rea/design';
 import type { ContainerProps, ImageProps, PageProps, VectorProps, LineProps, PathData } from '@rea/design';
-import { patchClassNames, fixedValue, readProperty } from '@rea/tailwind';
+import { patchClassNames, fixedValue, previewDeclarations, readProperty } from '@rea/tailwind';
 import type { StylePatch } from '@rea/document';
 
 export interface PageRendererProps {
@@ -37,6 +37,10 @@ export function PageRenderer({ page, selectedId, onSelect, interactive = true, p
     const patch = preview && ('get' in preview ? preview.get(props.designId) : preview.id === props.designId ? preview.styles : undefined);
     if (duplicatePreview && patch && allowDuplicate) return <Fragment key={props.designId}>{render(child, true, true, false)}{render(child, inheritedLocked, false, false)}</Fragment>;
     if (patch && !original) className = patchClassNames(className, patch);
+    // Utility classes reach the browser before their CSS does, and a layer without
+    // `left`/`top` paints at the page origin for those frames. Mirror the patched
+    // geometry inline so a drag never flashes back to where the layer started.
+    const style: CSSProperties = { ...(patch && !original ? previewDeclarations(className, patch) : null), ...(editingId === props.designId ? { visibility: 'hidden' as const } : null) };
     const renderId = original ? `original-${props.designId}` : props.designId;
     const common = {
       'data-design-id': renderId,
@@ -45,7 +49,7 @@ export function PageRenderer({ page, selectedId, onSelect, interactive = true, p
       'data-design-selected': selectedId === props.designId ? '' : undefined,
       'data-design-kind': kind,
       className,
-      style: editingId === props.designId ? { visibility: 'hidden' as const } : undefined,
+      style: Object.keys(style).length ? style : undefined,
       onClick: interactive && !locked ? (event: MouseEvent) => { event.stopPropagation(); onSelect?.(props.designId); } : undefined,
     };
     const children = () => <>{Children.map(props.children, c => render(c, locked, original))}{draft?.parentId === props.designId && render(draft.element, locked)}</>;
