@@ -85,15 +85,18 @@ export async function saveFile(blob: Blob, filename: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Install the editable UI example once, without replacing existing projects. */
+/**
+ * Install the editable UI example once, without replacing existing projects.
+ * 桌面版与 Web demo 共用：Web 首次访问也需要一份可编辑设计稿，否则首页是空的。
+ * meta 记录示例文档 id，供 `#demo` 直达编辑器使用；早期版本写入的是 'installed'。
+ */
 export async function installDesktopExample(url: string): Promise<void> {
-  if (!isDesktop()) return;
   const storage = new StorageService();
   try {
     if (await storage.getMeta('desktop:app-design:v1')) return;
     const response = await fetch(url);
     if (!response.ok) throw new Error('无法读取内置 UI 设计示例。');
-    await importReaui(storage, new Uint8Array(await response.arrayBuffer()));
-    await storage.setMeta('desktop:app-design:v1', 'installed');
+    const { document } = await importReaui(storage, new Uint8Array(await response.arrayBuffer()));
+    await storage.setMeta('desktop:app-design:v1', document.id);
   } finally { await storage.close(); }
 }

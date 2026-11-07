@@ -22,7 +22,20 @@
 
 ## 快速开始
 
-### 1. 命令行：零安装，先试一次
+### 1. 在线 demo：浏览器里直接改
+
+不安装任何东西，打开站点访问 `/#demo` 即可进入内置示例设计稿的编辑器：拖动图层、改属性、导出 TSX。首次访问会自动导入示例，编辑结果存在浏览器本地。
+
+本地跑一遍：
+
+```bash
+pnpm build
+pnpm --filter @rea/web preview   # http://127.0.0.1:4173/#demo
+```
+
+在线版只包含编辑器，AI 生成需要桌面版、`pnpm dev` 或自有 API Key。部署方式见 [在线 demo 说明](docs/web-demo.md)。
+
+### 2. 命令行：零安装，先试一次
 
 ```bash
 npx @xtcel/reaui-cli init ./demo --name "我的应用" --page main --page-name 首页
@@ -33,11 +46,11 @@ npx @xtcel/reaui-cli preview ./demo --out preview.html
 
 得到两份产物：`demo.reaui` 双击用 REA UI 打开继续编辑，`preview.html` 是自包含离线预览，可直接发给他人查看。
 
-### 2. 桌面版：双击 .reaui 继续编辑
+### 3. 桌面版：双击 .reaui 继续编辑
 
 macOS 12+、Apple Silicon。下载 `.dmg` 并安装后，在 Finder 中双击 `.reaui` 即可打开；首次启动会导入一份包含 249 个可编辑图层的示例设计稿。
 
-### 3. 从源码运行
+### 4. 从源码运行
 
 要求 Node.js **22.18+**、pnpm **12.4.1** 与 Rust 稳定工具链。
 
@@ -169,13 +182,13 @@ packages/
 
 ## 路线图
 
-**已完成**：M1 文档模型、M2 编辑器外壳、M3 编辑核心、M4 属性面板、reaui CLI、本机与 API 两种 AI 生成方式。
+**已完成**：M1 文档模型、M2 编辑器外壳、M3 编辑核心、M4 属性面板、reaui CLI、在线 demo、本机与 API 两种 AI 生成方式。
 
 **接下来**（按优先级）：
 
 | 阶段 | 内容 |
 |---|---|
-| 开箱即用 | 在线 Web demo、`npx` CLI 发布、Homebrew cask、桌面版签名与公证 |
+| 开箱即用 | `npx` CLI 发布、Homebrew cask、桌面版签名与公证 |
 | 接入面 | MCP server、主流 agent 集成示例、设计系统转换器 |
 | 云端 | 账号、文档同步、版本历史、协作评论 |
 

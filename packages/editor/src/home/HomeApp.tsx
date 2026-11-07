@@ -123,6 +123,20 @@ export function HomeApp() {
     void model.storage.listDocuments().then(items => { if (active) { setDocuments(items); setLoading(false); } }).catch(() => { if (active) { setError('无法读取本地项目，请刷新页面重试。'); setLoading(false); } });
     return () => { active = false; };
   }, [model.storage, model.current, inEditor]);
+  // 在线 demo：#demo 直接打开内置示例，让访客第一眼看到可编辑的设计稿。
+  useEffect(() => {
+    if (!ready || loading || inEditor) return;
+    if (location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] !== 'demo') return;
+    let active = true;
+    void (async () => {
+      const installed = await model.storage.getMeta<string>('desktop:app-design:v1');
+      const target = documents.find(doc => doc.id === installed) ?? documents[0];
+      if (!active || !target) return;
+      history.replaceState(null, '', `${location.pathname}${location.search}`);
+      openProject(target.id);
+    })();
+    return () => { active = false; };
+  }, [ready, loading, inEditor, documents, model.storage]);
   useEffect(() => {
     const dialog = mobileDialog.current;
     if (mobileMenu && dialog && !dialog.open) dialog.showModal();
