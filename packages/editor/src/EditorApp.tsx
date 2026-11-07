@@ -1,5 +1,5 @@
 import { cloneElement, createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X, Minus, MoveUpRight, Triangle, Star, Hexagon, PenTool, Pencil } from 'lucide-react';
+import { ChevronDown, Frame as FrameIcon, Hand, Home, Layers, MousePointer2, PanelRight, Square, Circle, Type, Undo2, Redo2, Menu as MenuIcon, X, Minus, MoveUpRight, Triangle, Star, Hexagon, PenTool, Pencil, ImagePlus } from 'lucide-react';
 import type { Rect } from '@rea/geometry';
 import type { ReactNode } from 'react';
 import { Text } from '@rea/design';
@@ -7,6 +7,7 @@ import { EDITOR_GUIDES_FILE, sourceElement, extractComponent, detachInstance, pl
 import type { SourceOperation, Transaction, StylePatch, DocumentSession } from '@rea/document';
 import type { PathData, LineProps } from '@rea/design';
 import { exportPageCode, libraryVersions } from '@rea/storage';
+import type { AssetRecord } from '@rea/storage';
 import { fixedValue, patchClassNames, writeTextSizing } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
 import { Canvas } from './components/Canvas';
@@ -31,7 +32,9 @@ import { descendants, emptySelection, isContainer, navigateSelection, scopedChil
 import type { SelectionMode, SelectionState } from './session/selection';
 import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard, rewriteClipboardAssets, clipboardAssetPaths } from './session/clipboard';
 import type { ClipboardFragment } from './session/clipboard';
-import { saveFile } from './platform';
+import { fitWithin, imageLayerFragment, layerName, prepareImage } from './session/images';
+import type { PreparedImage } from './session/images';
+import { pickImageFiles, saveFile } from './platform';
 import { ComponentAssets } from './components/ComponentAssets';
 import { ComponentInspector } from './components/ComponentInspector';
 import type { AgentCanvasContext } from './agent/context';
@@ -170,6 +173,13 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     agentTimer.current = window.setTimeout(() => setAgentTouched([]), 2600);
   }
   useEffect(() => () => { if (agentTimer.current) window.clearTimeout(agentTimer.current); }, []);
+  // A file dropped outside the canvas would otherwise navigate the webview to file://.
+  useEffect(() => {
+    const block = (event: DragEvent) => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); };
+    window.addEventListener('dragover', block);
+    window.addEventListener('drop', block);
+    return () => { window.removeEventListener('dragover', block); window.removeEventListener('drop', block); };
+  }, []);
   const agentContext: AgentCanvasContext = {
     page, selectedIds, refs: agentRefs,
     addRefs: addAgentRefs, removeRef: removeAgentRef, toggleSubtree: toggleAgentRefSubtree, clearRefs: () => setAgentRefs([]),
@@ -251,6 +261,66 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     const roots=selectionRoots(page,selectedIds);if(!roots.length)return;
     const target=page.nodes.get(roots[0])!,local=canvas.current?.localBox(roots[0]),parentId=target.parentId??page.source.props.designId;
     run(async()=>{const data=await readPaste();await applyPaste(data,{parentId,center:local?{x:local.x+local.width/2,y:local.y+local.height/2}:undefined,replace:roots});});
+  }
+  /**
+   * Images become ordinary Image layers: bytes first go to the document asset store,
+   * then one transaction inserts every layer so the whole import is a single undo step.
+   */
+  async function insertImages(files: readonly File[], point?: { x: number; y: number }, explicitParent?: string) {
+    if (!files.length) return;
+    const documentId = current.manifest.id;
+    const assets: AssetRecord[] = [], images: PreparedImage[] = [], errors: string[] = [];
+    for (const file of files) {
+      try { const prepared = await prepareImage(documentId, file); assets.push(prepared.asset); images.push(prepared.image); }
+      catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    }
+    if (!images.length) throw new Error(errors.join('\n') || '没有可插入的图片。');
+    await model.addAssets(assets);
+    if (sessionRef.current.manifest.id !== documentId) throw new Error('文档已切换，请重新插入。');
+    const container = (id?: string) => {
+      const node = id ? parsed.page.nodes.get(id) : undefined;
+      return node && ['Frame', 'Group'].includes(node.kind) && !node.locked ? node.id : undefined;
+    };
+    const rootId = parsed.page.source.props.designId;
+    const parentId = container(explicitParent) ?? container(selected?.id) ?? rootId;
+    const frame = parentId === rootId ? undefined : canvas.current?.box(parentId);
+    // Without a pointer (menu, paste) a container centres the image in itself.
+    const anchor = point ?? (frame ? { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 } : canvas.current?.viewportCenter()) ?? { x: 0, y: 0 };
+    const center = parentId === rootId ? anchor : canvas.current?.pointInParent(anchor, parentId) ?? anchor;
+    const visible = canvas.current?.visibleWorld() ?? { width: 960, height: 640 };
+    // Never place an image larger than what the user can see, and never enlarge a small one.
+    const limit = frame ? { width: frame.width, height: frame.height } : { width: visible.width * .8, height: visible.height * .8 };
+    const ids: string[] = [];
+    const ops: SourceOperation[] = images.map((image, index) => {
+      const size = fitWithin(image, limit), offset = index * 24, id = newId('image');
+      ids.push(id);
+      return {
+        type: 'insert', pageId: page.id, parentId,
+        fragment: imageLayerFragment({ id, name: layerName(image.name), src: image.path, frame: { x: center.x - size.width / 2 + offset, y: center.y - size.height / 2 + offset, width: size.width, height: size.height } }),
+      };
+    });
+    if (commit({ label: images.length > 1 ? `插入 ${images.length} 张图片` : '插入图片', ops }, ids))
+      model.setNotice(errors.length ? errors.join('\n') : images.length > 1 ? `已插入 ${images.length} 张图片。` : '');
+  }
+  function chooseImages() {
+    run(async () => {
+      const picked = await pickImageFiles();
+      if (picked.files.length) await insertImages(picked.files);
+      else if (picked.errors.length) throw new Error(picked.errors.join('\n'));
+    });
+  }
+  /** Point an existing Image layer at another asset, keeping its box and name. */
+  function replaceImage(id: string) {
+    run(async () => {
+      const node = parsed.page.nodes.get(id);
+      if (!node || node.kind !== 'Image' || node.locked) throw new Error('请选择未锁定的图片图层。');
+      const picked = await pickImageFiles();
+      if (!picked.files.length) { if (picked.errors.length) throw new Error(picked.errors.join('\n')); return; }
+      const documentId = current.manifest.id, prepared = await prepareImage(documentId, picked.files[0]);
+      await model.addAssets([prepared.asset]);
+      if (sessionRef.current.manifest.id !== documentId) throw new Error('文档已切换，请重新选择。');
+      commit({ label: '替换图片', ops: [{ type: 'set', pageId: page.id, id, props: { src: prepared.image.path } }] }, [id]);
+    });
   }
   function addAutoLayout() {
     const frames=selectionRoots(page,selectedIds).map(id=>page.nodes.get(id)!).filter(node=>!!node&&node.kind==='Frame'&&!node.locked);
@@ -393,7 +463,10 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     }
     function copy(event:ClipboardEvent){if(blocked(event.target)||!selectedIds.length||!event.clipboardData)return;event.preventDefault();try{const data=copyFragment(parsed,selectionRoots(page,selectedIds),current.manifest.id,current.components,Object.fromEntries(selectedIds.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1])));internalClipboard.current=data;event.clipboardData.setData(FRAGMENT_MIME,JSON.stringify(data));event.clipboardData.setData('text/plain',data.source);if(event.type==='cut')remove();}catch(error){model.setNotice(String(error));}}
     function paste(event:ClipboardEvent){
-      if(blocked(event.target)||!event.clipboardData)return;event.preventDefault();
+      if(blocked(event.target)||!event.clipboardData)return;
+      const images=[...event.clipboardData.files].filter(file=>file.type.startsWith('image/'));
+      if(images.length){event.preventDefault();run(()=>insertImages(images));return;}
+      event.preventDefault();
       try{
         const captured=readClipboard(event.clipboardData.getData(FRAGMENT_MIME),event.clipboardData.getData('text/plain'));
         const parentId=isContainer(selected)&&selected!.kind!=='Instance'&&!selected!.locked?selected!.id:page.source.props.designId;
@@ -412,6 +485,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     <Menu label="主菜单" items={[
       { label: '新建文档', action: () => run(() => model.create()) }, { label: '打开文档…', action: () => setShowDocuments(true) },
       { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => input.current?.click() },
+      { label: '插入图片…', action: chooseImages },
       { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
       { label: '撤销', shortcut: '⌘/Ctrl+Z', disabled: !current.past.length, action: model.undo },
       { label: '重做', shortcut: '⌘/Ctrl+Shift+Z', disabled: !current.future.length, action: model.redo },
@@ -434,6 +508,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       <IconButton label="钢笔工具 (P)" active={tool==='pen'} onClick={()=>chooseTool('pen')}><PenTool size={17}/></IconButton>
       <IconButton label="铅笔工具 (Shift+P)" active={tool==='pencil'} onClick={()=>chooseTool('pencil')}><Pencil size={17}/></IconButton>
       <IconButton label="文字工具 (T)" active={tool === 'text'} onClick={() => chooseTool('text')}><Type size={17} /></IconButton>
+      <IconButton label="插入图片…" onClick={chooseImages}><ImagePlus size={17} /></IconButton>
       <IconButton label="抓手工具 (H)" active={tool === 'hand'} onClick={() => chooseTool('hand')}><Hand size={17} /></IconButton>
     </div><span className="rea-divider rea-history" /><div className="rea-history flex"><IconButton label="撤销 (⌘/Ctrl+Z)" disabled={!current.past.length} onClick={model.undo}><Undo2 size={16} /></IconButton><IconButton label="重做 (⌘/Ctrl+Shift+Z)" disabled={!current.future.length} onClick={model.redo}><Redo2 size={16} /></IconButton></div>
     <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-[var(--rea-muted)]">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-[var(--rea-danger)]!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
@@ -451,9 +526,9 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     ]}><span className="text-xs">视图</span><ChevronDown size={12} /></Menu>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
-  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
+  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onReplaceImage={replaceImage} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
     {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
-    <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} showRulers={viewPrefs.showRulers} showGuides={viewPrefs.showGuides} guides={guides} onGuidesChange={setGuides} onGuideContextMenu={openGuideMenu} onRevealGuides={() => { if (!viewPrefs.showGuides) viewPrefs.setShowGuides(true); }} rulerOrigin={rulerOrigin} rulerLocked={rulerLocked} onRulerOriginChange={setRulerOrigin} onRulerContextMenu={openRulerMenu} />
+    <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} onDropImages={(files, point, parentId) => run(() => insertImages(files, point, parentId))} showRulers={viewPrefs.showRulers} showGuides={viewPrefs.showGuides} guides={guides} onGuidesChange={setGuides} onGuideContextMenu={openGuideMenu} onRevealGuides={() => { if (!viewPrefs.showGuides) viewPrefs.setShowGuides(true); }} rulerOrigin={rulerOrigin} rulerLocked={rulerLocked} onRulerOriginChange={setRulerOrigin} onRulerContextMenu={openRulerMenu} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}
   </EditorShell><input ref={input} type="file" accept=".reaui,.design.tsx" hidden aria-label="导入文档" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) run(() => model.importFile(file)); }} />
   {createComponentDialog&&<Dialog title="创建组件" onClose={()=>setCreateComponentDialog(false)}><label className="rea-component-label">组件名称<input className="rea-input" autoFocus value={componentName} onChange={e=>setComponentName(e.target.value)} maxLength={120} onKeyDown={e=>{if(e.key==='Enter')confirmComponent();}}/></label><p className="rea-field-help">选中内容将成为主组件，画布当前位置保留一个关联实例。</p><div className="rea-dialog-actions"><Button onClick={()=>setCreateComponentDialog(false)}>取消</Button><Button disabled={!componentName.trim()} onClick={confirmComponent}>创建组件</Button></div></Dialog>}

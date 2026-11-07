@@ -1,9 +1,11 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { StorageService, importReaui } from '@rea/storage';
+import { IMAGE_ACCEPT, IMAGE_MIME, imageExtension } from './session/images';
 
 export const isDesktop = isTauri;
 
 interface OpenedFile { name: string; bytes: number[] | null; error: string | null }
+export interface PickedImages { files: File[]; errors: string[] }
 
 /** Subscribe before draining so startup and subsequent Finder requests use one queue. */
 export async function listenForOpenedFiles(onFile: (file: File) => Promise<void>, onError: (message: string) => void, signal?: AbortSignal): Promise<() => void> {
@@ -34,6 +36,36 @@ export async function listenForOpenedFiles(onFile: (file: File) => Promise<void>
   signal?.addEventListener('abort', stop, { once: true });
   void drain();
   return stop;
+}
+
+/** Pick image files. The desktop picker runs in Rust, so no path crosses the invoke boundary. */
+export async function pickImageFiles(): Promise<PickedImages> {
+  if (isDesktop()) {
+    const picked = await invoke<OpenedFile[]>('pick_images');
+    const files: File[] = [], errors: string[] = [];
+    for (const item of picked) {
+      if (item.error || !item.bytes) { errors.push(`无法插入「${item.name}」：${item.error ?? '没有读取到文件内容。'}`); continue; }
+      const extension = imageExtension(item.name) ?? 'png';
+      files.push(new File([new Uint8Array(item.bytes)], item.name, { type: IMAGE_MIME[extension] }));
+    }
+    return { files, errors };
+  }
+  return { files: await chooseInBrowser(), errors: [] };
+}
+
+function chooseInBrowser(): Promise<File[]> {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = IMAGE_ACCEPT;
+    input.multiple = true;
+    input.hidden = true;
+    document.body.append(input);
+    const finish = (files: File[]) => { input.remove(); resolve(files); };
+    input.addEventListener('change', () => finish([...(input.files ?? [])]), { once: true });
+    input.addEventListener('cancel', () => finish([]), { once: true });
+    input.click();
+  });
 }
 
 /** The save dialog grants filesystem access to its selected path only. */

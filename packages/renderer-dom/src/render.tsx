@@ -31,6 +31,9 @@ export function PageRenderer({ page, selectedId, onSelect, interactive = true, p
     const locked = inheritedLocked || Boolean(props.locked);
     let className = props.className ?? '';
     if (kind === 'Ellipse' && !/(?:^|\s)(?:!?)rounded(?:-|\s|$)/.test(className)) className = `rounded-full ${className}`;
+    // Preflight caps images at max-width:100%, and the artwork root measures 0 wide,
+    // so an Image layer could only ever render at width 0.
+    if (kind === 'Image' && !/(?:^|\s)(?:!?)max-w-/.test(className)) className = `max-w-none ${className}`.trimEnd();
     const patch = preview && ('get' in preview ? preview.get(props.designId) : preview.id === props.designId ? preview.styles : undefined);
     if (duplicatePreview && patch && allowDuplicate) return <Fragment key={props.designId}>{render(child, true, true, false)}{render(child, inheritedLocked, false, false)}</Fragment>;
     if (patch && !original) className = patchClassNames(className, patch);

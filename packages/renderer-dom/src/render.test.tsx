@@ -11,8 +11,7 @@ describe('className rendering', () => {
     expect(html).toContain('src="blob:test-image"'); expect(html).toContain('<path d="M0 0"');
     expect(html).not.toContain('style='); expect(html).not.toContain('designId=');
   });
-  it('patches preview classes while retaining source and variants', () => {
-    const html = renderToStaticMarkup(<PageRenderer page={page} preview={{ id: 'rect-main', styles: { width: 317 } }} />);
+  it('patches preview classes while retaining source and variants', () => {    const html = renderToStaticMarkup(<PageRenderer page={page} preview={{ id: 'rect-main', styles: { width: 317 } }} />);
     expect(html).toContain('w-[317px] bg-red-500 hover:bg-red-600 custom');
     expect(renderToStaticMarkup(<PageRenderer page={page} />)).toContain('w-20');
   });
@@ -36,6 +35,13 @@ it('previews multiple nodes, shows Alt-drag originals and hides only the text be
   const html=renderToStaticMarkup(<PageRenderer page={page} preview={preview} duplicatePreview editingId="text-main"/>);
   expect(html).toContain('original-rect-main');expect(html).toContain('original-ellipse-main');expect(html).toContain('left-10');expect(html).toContain('style="visibility:hidden"');
   expect(renderToStaticMarkup(<PageRenderer page={page}/>)).not.toContain('original-');
+});
+it('lifts the preflight max-width cap that would collapse an image to zero width',()=>{
+  const render=(className:string)=>renderToStaticMarkup(<PageRenderer page={<Page id="home" designId="page-home"><Image designId="image-fit" src="assets/a.png" className={className}/></Page>}/>);
+  expect(render('absolute w-[600px] h-[300px]')).toContain('class="max-w-none absolute w-[600px] h-[300px]"');
+  // An explicit cap from the source stays authoritative.
+  expect(render('absolute w-[600px] max-w-[320px]')).toContain('class="absolute w-[600px] max-w-[320px]"');
+  expect(render('')).toContain('class="max-w-none"');
 });
 it('renders an uncommitted new text draft inside its container',()=>{
   const html=renderToStaticMarkup(<PageRenderer page={page} draft={{parentId:'group-main',element:<Text designId="draft-text" className="w-fit whitespace-nowrap">draft</Text>}} editingId="draft-text"/>);

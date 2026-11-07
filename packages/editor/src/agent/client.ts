@@ -1,12 +1,24 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isDesktop } from '../platform';
 
-export interface AgentConfig { executable: string; model: string }
-export interface AgentInfo { path: string; version: string; loggedIn: boolean }
+/** API 提供商目标，由本地 Agent 直接发起 HTTP 请求。 */
+export interface ApiTarget { name: string; protocol: 'openai' | 'anthropic' | 'gemini'; baseUrl: string; model: string; apiKey: string }
+export interface AgentConfig { executable: string; model: string; command?: string; name?: string; provider?: ApiTarget }
+export interface AgentInfo { path: string; version: string; loggedIn: boolean | null }
 export interface ProjectContext { path: string; name: string; files: string[]; context: string; truncated: boolean }
 export interface AgentStatus { id: string; state: 'running' | 'completed' | 'cancelled' | 'failed'; events: string[]; result: unknown; error: string | null; preview?: Record<string, string> | null; previewError?: string | null }
 export const defaultAgentConfig: AgentConfig = { executable: '', model: '' };
-export function isAgentConfig(v: unknown): v is AgentConfig { return !!v && typeof v === 'object' && 'executable' in v && typeof v.executable === 'string' && 'model' in v && typeof v.model === 'string'; }
+export function isAgentConfig(v: unknown): v is AgentConfig {
+  if (!v || typeof v !== 'object') return false;
+  const config = v as Partial<AgentConfig>;
+  if (typeof config.executable !== 'string' || typeof config.model !== 'string') return false;
+  if (config.command !== undefined && typeof config.command !== 'string') return false;
+  if (config.name !== undefined && typeof config.name !== 'string') return false;
+  if (config.provider === undefined) return true;
+  const provider = config.provider as Partial<ApiTarget>;
+  return !!provider && typeof provider.protocol === 'string' && ['openai', 'anthropic', 'gemini'].includes(provider.protocol) &&
+    typeof provider.baseUrl === 'string' && typeof provider.model === 'string' && typeof provider.apiKey === 'string';
+}
 export async function agentRequest<T>(method: string, payload: unknown = {}): Promise<T> {
   if (isDesktop()) return invoke<T>('local_agent_request', { method, payload });
   let response: Response;

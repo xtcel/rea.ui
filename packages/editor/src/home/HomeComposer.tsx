@@ -78,9 +78,16 @@ export function HomeComposer(props: ComposerProps) {
   useEffect(() => {
     let active = true;
     setConnection('checking'); setConnectionError('');
-    void agentRequest<AgentInfo>('detect', { executable: config.executable }).then(info => { if (active) setConnection(info.loggedIn ? 'connected' : 'signed-out'); }).catch(error => { if (active) { setConnection('unavailable'); setConnectionError(error instanceof Error ? error.message : String(error)); } });
+    if (config.provider) {
+      const provider = config.provider;
+      const ready = !!(provider.baseUrl.trim() && provider.model.trim() && (provider.apiKey.trim() || /^http:\/\/(127\.0\.0\.1|localhost)/i.test(provider.baseUrl.trim())));
+      setConnection(ready ? 'connected' : 'signed-out');
+      if (!ready) setConnectionError('请在设置中补全接口地址、模型与 API Key。');
+      return () => { active = false; };
+    }
+    void agentRequest<AgentInfo>('detect', { executable: config.executable, command: config.command }).then(info => { if (active) setConnection(info.loggedIn === false ? 'signed-out' : 'connected'); }).catch(error => { if (active) { setConnection('unavailable'); setConnectionError(error instanceof Error ? error.message : String(error)); } });
     return () => { active = false; };
-  }, [config.executable]);
+  }, [config.executable, config.command, config.provider?.baseUrl, config.provider?.model, config.provider?.apiKey]);
   useLayoutEffect(() => {
     function resize() {
       const input = inputRef.current;
@@ -93,6 +100,8 @@ export function HomeComposer(props: ComposerProps) {
     return () => window.removeEventListener('resize', resize);
   }, [inputRef, prompt]);
   const connectionLabel = { checking: '正在检测连接', connected: '已连接', 'signed-out': '尚未登录', unavailable: '未连接' }[connection];
+  const agentName = config.provider?.name ?? config.name ?? 'Codex CLI';
+  const agentModel = config.model || (config.provider ? '未设置模型' : 'Codex 默认模型');
   const closeMenu = useCallback((restoreFocus = false) => { setMenuOpen(false); if (restoreFocus) addButton.current?.focus({ preventScroll: true }); }, []);
   return <>
     <form className="home-composer" onSubmit={event => { event.preventDefault(); onSend(); }}>
@@ -108,14 +117,14 @@ export function HomeComposer(props: ComposerProps) {
             <label className="composer-system-picker" htmlFor={systemId} title="选择设计系统"><Palette size={19} /><select id={systemId} aria-label="选择设计系统" value={selectedSystem} disabled={running || preparing} onChange={event => onSystem(event.currentTarget.value)}>{systems.map(system => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>
           </div>
           <div className="home-composer-send">
-            <button type="button" className="composer-agent-button" aria-label={`Codex CLI：${connectionLabel}，打开设置`} title={`Codex CLI · ${connectionLabel}\n模型：${config.model || 'Codex 默认模型'}${connectionError ? `\n${connectionError}` : ''}`} onClick={onAgentSettings}><span className={`composer-agent-status is-${connection}`} aria-hidden="true" /><span className="composer-agent-icon" aria-hidden="true"><SquareTerminal size={20} /></span></button>
+            <button type="button" className="composer-agent-button" aria-label={`${agentName}：${connectionLabel}，打开设置`} title={`${agentName} · ${connectionLabel}\n模型：${agentModel}${connectionError ? `\n${connectionError}` : ''}`} onClick={onAgentSettings}><span className={`composer-agent-status is-${connection}`} aria-hidden="true" /><span className="composer-agent-icon" aria-hidden="true"><SquareTerminal size={20} /></span></button>
             {running ? <button type="button" className="home-send-button is-stopping" aria-label="停止生成" title="停止生成" onClick={onStop}><Square size={17} fill="currentColor" /></button> : <button type="submit" className="home-send-button" disabled={!prompt.trim() || busy || preparing} aria-label="生成 UI" title="生成 UI">{preparing ? <LoaderCircle className="composer-preparing" size={21} /> : <ArrowUp size={23} strokeWidth={2.5} />}</button>}
           </div>
         </div>
       </div>
       <div className="home-composer-footer"><button type="button" className="home-directory-button" title={project?.path || '选择工作目录，关联本地项目代码'} disabled={running || preparing} onClick={onProject}><Folder size={17} /><span>{project?.name || '工作目录'}</span><ChevronDown size={14} /></button></div>
     </form>
-    <p className="home-composer-note"><span>{sendKey === 'enter' ? 'Enter 生成，Shift + Enter 换行' : '⌘ / Ctrl + Enter 生成'}</span><span>本地 Codex · 可编辑设计</span></p>
+    <p className="home-composer-note"><span>{sendKey === 'enter' ? 'Enter 生成，Shift + Enter 换行' : '⌘ / Ctrl + Enter 生成'}</span><span>{agentName} · 可编辑设计</span></p>
     {menuOpen && addButton.current && <AddContextMenu anchor={addButton.current} onClose={closeMenu} onAttach={onAttach} onReferences={onReferences} onProject={onProject} />}
   </>;
 }

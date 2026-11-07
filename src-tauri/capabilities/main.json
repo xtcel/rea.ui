@@ -1,11 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Main workspace: native save dialog and writing only to paths selected in that dialog.",
-  "windows": ["main"],
+  "description": "Workspace and settings windows: native dialogs, a second settings window, and writing only to paths chosen in a dialog.",
+  "windows": ["main", "settings"],
   "permissions": [
     "core:default",
     "core:window:allow-destroy",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-get-all-webviews",
     "dialog:allow-save",
     "dialog:allow-open",
     "fs:allow-write-file"

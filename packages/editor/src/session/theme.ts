@@ -49,7 +49,19 @@ export function setThemePreference(preference: ThemePreference): ResolvedTheme {
     catch { /* The session keeps the choice; it just will not survive a reload. */ }
     const theme = applyTheme(resolveTheme(preference));
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: preference }));
+    // 独立设置窗口与主窗口的 localStorage 未必触发 storage 事件，再广播一次。
+    try { themeChannel()?.postMessage(preference); } catch { /* 广播不可用时仅当前窗口生效。 */ }
     return theme;
+}
+
+const THEME_CHANNEL = 'rea-theme';
+let channel: BroadcastChannel | null = null;
+
+function themeChannel(): BroadcastChannel | null {
+    if (channel) return channel;
+    if (typeof BroadcastChannel !== 'function') return null;
+    try { channel = new BroadcastChannel(THEME_CHANNEL); } catch { channel = null; }
+    return channel;
 }
 
 /** Shared by the editor toolbar, the home topbar and the home settings page. */
@@ -67,11 +79,14 @@ export function useTheme() {
         sync();
         window.addEventListener(THEME_EVENT, sync);
         window.addEventListener('storage', sync);
+        const bus = themeChannel();
+        try { bus?.addEventListener('message', sync); } catch { /* 广播不可用。 */ }
         const media = typeof window.matchMedia === 'function' ? window.matchMedia(DARK_QUERY) : null;
         media?.addEventListener('change', sync);
         return () => {
             window.removeEventListener(THEME_EVENT, sync);
             window.removeEventListener('storage', sync);
+            try { bus?.removeEventListener('message', sync); } catch { /* 广播不可用。 */ }
             media?.removeEventListener('change', sync);
         };
     }, []);

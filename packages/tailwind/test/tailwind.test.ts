@@ -48,6 +48,11 @@ describe('Tailwind tokens and property patches', () => {
     expect(second.css).not.toContain('example.com'); expect(second.diagnostics).toHaveLength(1);
     expect((await compiler.build(['w-[317px]'])).css).toBe(second.css);
   });
+  it('compiles object-fit utilities so an image can fill its box without distortion', async () => {
+    const { css, diagnostics } = await new TailwindCompiler().build(['object-cover', 'object-contain']);
+    expect(css).toContain('object-fit: cover'); expect(css).toContain('object-fit: contain');
+    expect(diagnostics).toHaveLength(0);
+  });
 });
 
 describe('editing core styles',()=>{

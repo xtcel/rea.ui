@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { FormEvent, MouseEventHandler, ReactNode } from 'react';
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, FolderOpen, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Moon, Plus, Search, Settings2, Shapes, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';import type { FormEvent, MouseEventHandler, ReactNode } from 'react';
+import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Moon, Plus, Search, Settings2, Shapes, SlidersHorizontal, Sun, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import { EditorWorkspace } from '../EditorApp';
 import { useDocument } from '../session/useDocument';
@@ -10,12 +9,13 @@ import type { DesignSystem, Preferences, Section, View } from './data';
 import { ProjectPreview, SystemPreview } from './Previews';
 import { HomeComposer, ReferenceProjectsDialog } from './HomeComposer';
 import { listenForOpenedFiles } from '../platform';
-import { AgentSettings } from '../agent/AgentSettings';
+import { SettingsApp } from '../settings/SettingsApp';
+import { openSettingsWindow } from '../settings/window';
+import { loadProviders, notifyProvidersChanged, resolveAgentConfig, subscribeProviders } from '../settings/providers';
 import { useTheme } from '../session/theme';
-import type { ThemePreference } from '../session/theme';
 import { ProjectDialog } from '../agent/ProjectDialog';
 import { SystemWorkbench } from '../agent/SystemWorkbench';
-import { agentRequest, defaultAgentConfig, isAgentConfig } from '../agent/client';
+import { agentRequest } from '../agent/client';
 import type { ProjectContext } from '../agent/client';
 import { defaultTokens, resolvedSystem, withTokens } from '../agent/designSystem';
 import { DesignAgentPanel } from '../agent/DesignAgentPanel';
@@ -24,7 +24,6 @@ import type { DesignRequest } from '../agent/DesignAgentPanel';
 const navigation: { id: Section; label: string; icon: typeof House }[] = [
   { id: 'home', label: '首页', icon: House }, { id: 'projects', label: '全部项目', icon: Folder },
   { id: 'systems', label: '设计系统', icon: Shapes }, { id: 'templates', label: '模板', icon: LayoutTemplate },
-  { id: 'settings', label: '设置', icon: Settings2 },
 ];
 
 function IconControl({ label, children, onClick, pressed }: { label: string; children: ReactNode; onClick: MouseEventHandler<HTMLButtonElement>; pressed?: boolean }) {
@@ -68,7 +67,16 @@ export function HomeApp() {
   const [preferences, setPreferences] = useState(() => readStored('preferences', defaultPreferences, isPreferences));
   const [customSystems, setCustomSystems] = useState<DesignSystem[]>(() => readStored('systems', [], isSystems));
   const [selectedSystem, setSelectedSystem] = useState(() => readStored('selected-system', 'rea', (v): v is string => typeof v === 'string'));
-  const [agentConfig, setAgentConfig] = useState(() => readStored('agent', defaultAgentConfig, isAgentConfig));
+  const [agentConfig, setAgentConfig] = useState(() => resolveAgentConfig(loadProviders()));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => subscribeProviders(() => {
+    // 设置窗口改动后同步当前窗口：提供商、创作偏好与当前模型。
+    setAgentConfig(resolveAgentConfig(loadProviders()));
+    setPreferences(current => {
+      const next = readStored('preferences', defaultPreferences, isPreferences);
+      return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+    });
+  }), []);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [preparing, setPreparing] = useState(false);
   const sending = useRef(false);
@@ -124,11 +132,18 @@ export function HomeApp() {
     return () => window.removeEventListener('resize', closeOnDesktop);
   }, [mobileMenu]);
 
-  function navigate(next: Section) { setSection(next); setSearch(''); setSort('recent'); setMobileMenu(false); content.current?.scrollTo(0, 0); }
+  function navigate(next: Section) {
+    setSection(next); setSearch(''); setSort('recent'); setMobileMenu(false); content.current?.scrollTo(0, 0);
+  }
+  async function openSettings() {
+    setMobileMenu(false);
+    if (await openSettingsWindow() === 'in-app') setSettingsOpen(true);
+  }
   function updatePreferences(next: Partial<Preferences>) {
     const updated = { ...preferences, ...next }; setPreferences(updated);
     if (!writeStored('preferences', updated)) setError('浏览器未能保存设置；本次会话仍可继续使用。');
     window.dispatchEvent(new CustomEvent('rea:preferences'));
+    notifyProvidersChanged();
   }
   function changeView(view: View) {
     if (section !== 'projects' && section !== 'systems') return;
@@ -174,15 +189,15 @@ export function HomeApp() {
   function useTemplate(value: string) { navigate('home'); setPrompt(value); requestAnimationFrame(() => composer.current?.focus()); }
 
   async function openComponentAssets(){if(!model.current)return;await model.storage.setMeta('editor-open-assets',{documentId:model.current.manifest.id});setInEditor(true);}
-  if (inEditor) return <EditorWorkspace model={model} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} onConfig={next => { setAgentConfig(next); writeStored('agent', next); }} systems={usableSystems} system={currentSystem} onSystem={setSelectedSystem} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
+  if (inEditor) return <EditorWorkspace model={model} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} systems={usableSystems} system={currentSystem} onSystem={setSelectedSystem} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
 
   const filteredDocuments = documents.filter(doc => doc.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : b.updatedAt.localeCompare(a.updatedAt));
   const filteredSystems = systems.filter(system => `${system.name} ${system.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : 0);
   const navContent = <>
     <div className="home-brand"><button type="button" onClick={() => navigate('home')} aria-label="REA UI 首页"><span className="home-wordmark">rea<span /></span><span className="home-brand-label">设计工作空间</span></button><span className="home-mobile-close"><IconControl label="关闭导航" onClick={() => setMobileMenu(false)}><X size={18} /></IconControl></span></div>
-    <nav className="home-navigation" aria-label="主导航">{navigation.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={`home-nav-item ${section === id ? 'is-active' : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={18} /><span>{label}</span>{id === 'projects' && <span className="home-nav-count">{documents.length}</span>}</button>)}</nav>
+    <nav className="home-navigation" aria-label="主导航">{navigation.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={`home-nav-item ${section === id ? 'is-active' : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={18} /><span>{label}</span>{id === 'projects' && <span className="home-nav-count">{documents.length}</span>}</button>)}<button type="button" className="home-nav-item home-nav-settings" onClick={() => void openSettings()}><Settings2 size={18} /><span>设置</span></button></nav>
     <div className="home-recent-nav"><button type="button" className="home-recent-heading" aria-expanded={recentExpanded} aria-controls="home-sidebar-recents" onClick={() => setRecentExpanded(!recentExpanded)}><Clock3 size={15} /><span>最近项目</span><ChevronDown size={13} className={recentExpanded ? '' : 'is-collapsed'} /></button>{recentExpanded && <div id="home-sidebar-recents">{recentDocuments.slice(0, 5).map(doc => <button type="button" key={doc.id} disabled={busy} className="home-recent-item" onClick={() => openProject(doc.id)} title={doc.name}><FileText size={15} /><span>{doc.name}</span></button>)}{!documents.length && <p className="home-sidebar-empty">{loading ? '正在读取项目…' : '创建项目后会显示在这里'}</p>}</div>}</div>
-    <button type="button" className="home-workspace-switch" onClick={() => navigate('settings')}><span className="home-workspace-avatar">R</span><span><strong>本地工作空间</strong><small>你的灵感，保存在此</small></span><ChevronsUpDown size={14} /></button>
+    <button type="button" className="home-workspace-switch" onClick={() => void openSettings()}><span className="home-workspace-avatar">R</span><span><strong>本地工作空间</strong><small>你的灵感，保存在此</small></span><ChevronsUpDown size={14} /></button>
   </>;
 
   function projectCollection(items: DocumentSummary[], home = false) {
@@ -198,7 +213,7 @@ export function HomeApp() {
     </div>;
   }
 
-  const composerUI = <HomeComposer inputRef={composer} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => {}} sendKey={preferences.sendKey} running={false} preparing={preparing} busy={busy} systems={usableSystems} selectedSystem={currentSystem.id} onSystem={setSelectedSystem} config={agentConfig} onAgentSettings={() => navigate('settings')} project={project} onProject={() => setDialog('directory')} attachments={attachments} onAttach={() => attachmentInput.current?.click()} onRemoveAttachment={index => setAttachments(files => files.filter((_, i) => i !== index))} references={referenceProjects} onReferences={() => setDialog('references')} onRemoveReference={id => setReferenceProjects(items => items.filter(doc => doc.id !== id))} />;
+  const composerUI = <HomeComposer inputRef={composer} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => {}} sendKey={preferences.sendKey} running={false} preparing={preparing} busy={busy} systems={usableSystems} selectedSystem={currentSystem.id} onSystem={setSelectedSystem} config={agentConfig} onAgentSettings={() => void openSettings()} project={project} onProject={() => setDialog('directory')} attachments={attachments} onAttach={() => attachmentInput.current?.click()} onRemoveAttachment={index => setAttachments(files => files.filter((_, i) => i !== index))} references={referenceProjects} onReferences={() => setDialog('references')} onRemoveReference={id => setReferenceProjects(items => items.filter(doc => doc.id !== id))} />;
 
   return <div className="home-shell">
     <a className="home-skip-link" href="#home-content">跳转到内容</a>
@@ -215,12 +230,7 @@ export function HomeApp() {
           </section>
           <section className="home-recent-projects" aria-labelledby="home-recent-title"><header className="home-section-heading"><div><h2 id="home-recent-title">最近项目</h2><p>继续上次的创作，或者开启新的可能。</p></div><button type="button" className="home-text-button" onClick={() => navigate('projects')}>全部项目 <ArrowRight size={14} /></button></header>{loading ? <div className="home-loading" role="status"><LoaderCircle size={17} />正在读取本地项目…</div> : projectCollection(recentDocuments.slice(0, 2), true)}</section>
           <footer className="home-overview-footer"><span>每个好设计，都始于一个想法。</span><span>REA UI</span></footer>
-        </div> : section === 'settings' ? <section className="home-library"><div className="home-page-heading"><div><h1>设置</h1><p>让工作空间更贴合你的创作习惯。</p></div></div><div className="home-settings">
-          <AgentSettings config={agentConfig} onChange={next => { setAgentConfig(next); if (!writeStored('agent', next)) setError('无法保存 Agent 配置。'); }} />
-          <section><h2>创作偏好</h2><div className="home-setting-row"><div><label htmlFor="home-send-key">发送快捷键</label><p>选择你习惯的消息发送方式。</p></div><select id="home-send-key" value={preferences.sendKey} onChange={event => updatePreferences({ sendKey: event.currentTarget.value as Preferences['sendKey'] })}><option value="enter">Enter 发送</option><option value="command">⌘ / Ctrl + Enter 发送</option></select></div><div className="home-setting-row"><div><label htmlFor="home-show-rulers">显示标尺</label><p>在画布顶部与左侧显示刻度，可从标尺拖出参考线；默认关闭。</p></div><input id="home-show-rulers" type="checkbox" aria-label="显示标尺" checked={preferences.showRulers ?? false} onChange={event => updatePreferences({ showRulers: event.currentTarget.checked })} /></div><div className="home-setting-row"><div><label htmlFor="home-show-guides">显示参考线</label><p>显示已创建的参考线，并允许拖动与吸附；关闭不会删除数据。</p></div><input id="home-show-guides" type="checkbox" aria-label="显示参考线" checked={preferences.showGuides ?? true} onChange={event => updatePreferences({ showGuides: event.currentTarget.checked })} /></div><div className="home-setting-row"><div><strong>关联项目代码</strong><p>{project?.path || '尚未关联本地项目'}</p></div><button type="button" className="home-secondary-button" onClick={() => setDialog('directory')}><FolderOpen size={15} />关联项目</button></div></section>
-          <section><h2>外观</h2><div className="home-setting-row"><div><label htmlFor="home-theme">界面主题</label></div><select id="home-theme" value={theme.preference} onChange={event => theme.setPreference(event.currentTarget.value as ThemePreference, event.currentTarget)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></section>
-          <section><h2>关于工作空间</h2><div className="home-setting-row"><div><strong>本地存储</strong><p>项目保存在本地工作空间中，可在编辑器中导出 .reaui 备份。</p></div><span className="home-setting-tag"><Check size={13} />本地工作空间</span></div><div className="home-setting-row"><div><strong>REA UI</strong><p>React 单源设计编辑器</p></div><span className="home-muted">v0.1.0</span></div></section>
-        </div></section> : <section className="home-library">
+        </div> : <section className="home-library">
           <div className="home-page-heading"><div><h1>{activeNav.label}</h1><p>{section === 'projects' ? '把灵感留在这里，随时回来继续。' : section === 'systems' ? '用一致的设计语言，让每一次创作更从容。' : '从一个好的起点，开始你的下一个设计。'}</p></div>{section !== 'templates' && <button type="button" className="home-primary-button" disabled={busy} onClick={() => showCreate(section === 'systems' ? 'system' : 'project')}><Plus size={16} />{section === 'systems' ? '新建设计系统' : '新建项目'}</button>}</div>
           <div className="home-library-toolbar">{section==='systems'&&<button type="button" className="home-secondary-button" onClick={()=>void openComponentAssets()}>本地组件资源</button>}<label className="home-search"><Search size={16} /><input aria-label={`搜索${activeNav.label}`} placeholder={section === 'projects' ? '搜索项目…' : section === 'systems' ? '搜索设计系统…' : '搜索模板…'} value={search} onChange={event => setSearch(event.currentTarget.value)} />{search && <button type="button" aria-label="清空搜索" onClick={() => setSearch('')}><X size={14} /></button>}</label><div className="home-toolbar-right">{section !== 'templates' && <><SelectControl label="排序方式" value={sort} onChange={setSort} icon={<SlidersHorizontal size={13} />}><option value="recent">{section === 'projects' ? '最近更新' : '默认排序'}</option><option value="name">名称排序</option></SelectControl><span className="home-control-divider" /><div className="home-view-switch" role="group" aria-label="显示方式"><IconControl label="网格视图" pressed={views[section] === 'grid'} onClick={() => changeView('grid')}><LayoutGrid size={16} /></IconControl><IconControl label="列表视图" pressed={views[section] === 'list'} onClick={() => changeView('list')}><List size={17} /></IconControl></div></>}</div></div>
           <div className="home-library-count">{section === 'projects' ? `${filteredDocuments.length} 个项目` : section === 'systems' ? `${filteredSystems.length} 个设计系统` : '示例模板 · 点击填入设计需求'}</div>
@@ -235,6 +245,7 @@ export function HomeApp() {
     {dialog === 'directory' && <ProjectDialog project={project} initialPath={preferences.directory} onSelect={next => { setProject(next); updatePreferences({ directory: next?.path || '' }); setDialog(null); }} onClose={() => setDialog(null)} />}
     {dialog === 'project' && <Dialog title="新建项目" onClose={() => { if (!busy) setDialog(null); }}><form className="home-create-form" onSubmit={createProject}><label>项目名称<input autoFocus value={newName} maxLength={120} disabled={busy} placeholder="给你的新想法起个名字" onChange={event => setNewName(event.currentTarget.value)} required /></label>{error && <p className="home-inline-error" role="alert">{error}</p>}<div className="home-dialog-actions"><button type="button" className="home-secondary-button" disabled={busy} onClick={() => setDialog(null)}>取消</button><button type="submit" className="home-primary-button" disabled={busy || !newName.trim()}>{busy ? <LoaderCircle size={15} /> : <Plus size={15} />}{busy ? '正在创建…' : '创建并打开'}</button></div></form></Dialog>}
     {busy && <div className="home-busy" role="status"><LoaderCircle size={15} />正在处理项目…</div>}
+    {settingsOpen && <div className="rs-overlay"><SettingsApp onClose={() => setSettingsOpen(false)} /></div>}
   </div>;
 }
 

@@ -1,4 +1,4 @@
-export type Section = 'home' | 'projects' | 'systems' | 'templates' | 'settings';
+export type Section = 'home' | 'projects' | 'systems' | 'templates';
 export type View = 'grid' | 'list';
 export type PreviewKind = 'starter' | 'website' | 'dashboard' | 'mobile';
 import { isTokens } from '../agent/designSystem';

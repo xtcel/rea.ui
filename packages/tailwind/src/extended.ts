@@ -80,6 +80,8 @@ export function installExtendedGroups(groups: Record<PropertyGroupKey, PropertyG
   choice('flex-size',{'1':'flex-1',auto:'flex-auto',none:'flex-none',initial:'flex-initial'});
   choice('self',{stretch:'self-stretch',auto:'self-auto',start:'self-start',end:'self-end',center:'self-center'});
   choice('overflow',{hidden:'overflow-hidden',visible:'overflow-visible',auto:'overflow-auto',clip:'overflow-clip',scroll:'overflow-scroll'});
+  // Images only: how the artwork fills its layer box when the ratio differs.
+  choice('object-fit',{contain:'object-contain',cover:'object-cover',fill:'object-fill',none:'object-none','scale-down':'object-scale-down'});
   choice('whitespace',{'pre-wrap':'whitespace-pre-wrap',pre:'whitespace-pre',normal:'whitespace-normal',nowrap:'whitespace-nowrap'});
 }
 

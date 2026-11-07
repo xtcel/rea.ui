@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub mod provider;
+
 const MAX_PROMPT: usize = 300_000;
 const MAX_RESULT: u64 = 2_000_000;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -35,21 +37,26 @@ fn field<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
-fn command(path: &Path) -> Command {
-    let mut cmd = Command::new(path);
-    // GUI applications do not inherit a login shell's PATH.
+/// GUI applications do not inherit a login shell's PATH.
+fn search_paths() -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> =
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
     paths.extend([
         PathBuf::from("/opt/homebrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ]);
-    if let Some(parent) = path.parent() {
-        paths.insert(0, parent.to_path_buf());
-    }
     if let Some(home) = std::env::var_os("HOME") {
         paths.push(PathBuf::from(&home).join(".local/bin"));
         paths.push(PathBuf::from(home).join("Library/pnpm"));
+    }
+    paths
+}
+
+fn command(path: &Path) -> Command {
+    let mut cmd = Command::new(path);
+    let mut paths = search_paths();
+    if let Some(parent) = path.parent() {
+        paths.insert(0, parent.to_path_buf());
     }
     if let Ok(path) = std::env::join_paths(paths) {
         cmd.env("PATH", path);
@@ -59,31 +66,40 @@ fn command(path: &Path) -> Command {
     cmd
 }
 
-fn codex_path(configured: &str) -> Result<PathBuf, String> {
-    let name = if cfg!(windows) { "codex.exe" } else { "codex" };
-    let mut candidates = Vec::new();
-    if !configured.trim().is_empty() {
-        let path = PathBuf::from(configured.trim());
+/// 解析本地 CLI：优先绝对路径，其次在 PATH 中按命令名查找。
+fn binary_path(configured: &str, command: &str) -> Result<PathBuf, String> {
+    let configured = configured.trim();
+    if !configured.is_empty() {
+        let path = PathBuf::from(configured);
         if !path.is_absolute() {
-            return Err("Codex 路径必须是可执行文件的绝对路径。".into());
+            return Err("可执行文件路径必须是绝对路径。".into());
         }
-        candidates.push(path);
-    } else {
-        candidates.extend(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-                .map(|p| p.join(name)),
-        );
-        candidates.extend([
-            PathBuf::from("/opt/homebrew/bin/codex"),
-            PathBuf::from("/usr/local/bin/codex"),
-        ]);
-        if let Some(home) = std::env::var_os("HOME") {
-            candidates.push(PathBuf::from(home).join(".local/bin").join(name));
+        if !path.is_file() {
+            return Err(format!("找不到可执行文件：{}", path.display()));
         }
+        return Ok(path);
     }
-    candidates.into_iter().find(|p| p.is_file()).ok_or_else(|| {
-        "未找到 Codex CLI。请安装并运行 codex login，或在设置中填写可执行文件路径。".into()
-    })
+    let name = command.trim();
+    if name.is_empty() {
+        return Err("请填写命令名称或可执行文件路径。".into());
+    }
+    if name.contains(['/', '\\']) {
+        return Err("命令名称不能包含路径分隔符，请填写可执行文件路径。".into());
+    }
+    let file = if cfg!(windows) && !name.to_ascii_lowercase().ends_with(".exe") {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    search_paths()
+        .into_iter()
+        .map(|dir| dir.join(&file))
+        .find(|path| path.is_file())
+        .ok_or_else(|| format!("未找到 {name} 命令。请检查安装路径，或在设置中填写可执行文件路径。"))
+}
+
+fn codex_path(configured: &str) -> Result<PathBuf, String> {
+    binary_path(configured, "codex")
 }
 
 fn bounded_output(path: &Path, args: &[&str]) -> Result<(bool, String), String> {
@@ -92,7 +108,7 @@ fn bounded_output(path: &Path, args: &[&str]) -> Result<(bool, String), String> 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("无法启动 Codex：{e}"))?;
+        .map_err(|e| format!("无法启动命令：{e}"))?;
     let out = child.stdout.take().unwrap();
     let err = child.stderr.take().unwrap();
     let read = |mut stream: Box<dyn Read + Send>| {
@@ -110,7 +126,7 @@ fn bounded_output(path: &Path, args: &[&str]) -> Result<(bool, String), String> 
         if start.elapsed() > Duration::from_secs(10) {
             let _ = child.kill();
             let _ = child.wait();
-            return Err("Codex 检测超时，请检查可执行文件路径。".into());
+            return Err("命令检测超时，请检查可执行文件路径。".into());
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -390,24 +406,65 @@ fn public_progress(event: &Value) -> Option<String> {
     }
 }
 
+/// 统一的本地 CLI 检测：版本信息 + Codex 的登录状态。
+fn detect_cli(payload: &Value) -> Result<Value, String> {
+    let kind = field(payload, "kind");
+    let default_command = match kind {
+        "claude" => "claude",
+        "gemini" => "gemini",
+        "custom" => "",
+        _ => "codex",
+    };
+    let configured_command = field(payload, "command");
+    let command = if configured_command.trim().is_empty() {
+        default_command
+    } else {
+        configured_command
+    };
+    let path = binary_path(field(payload, "executable"), command)?;
+    let (ok, output) = bounded_output(&path, &["--version"])?;
+    if !ok {
+        return Err(format!(
+            "无法读取版本信息：{}",
+            output.chars().take(400).collect::<String>()
+        ));
+    }
+    let version: String = output
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("已安装")
+        .chars()
+        .take(120)
+        .collect();
+    let logged_in = if kind.is_empty() || kind == "codex" {
+        let (ok, _login) = bounded_output(&path, &["login", "status"])?;
+        // 登录诊断可能包含账号信息，只返回布尔结果。
+        Some(ok)
+    } else {
+        None
+    };
+    Ok(json!({"path": path, "version": version, "loggedIn": logged_in}))
+}
+
 impl AgentService {
     pub fn request(&self, method: &str, payload: Value) -> Result<Value, String> {
         match method {
-            "detect" => {
-                let path = codex_path(field(&payload, "executable"))?;
-                let (ok, version) = bounded_output(&path, &["--version"])?;
-                if !ok {
-                    return Err(version);
-                }
-                let (logged_in, login) = bounded_output(&path, &["login", "status"])?;
-                // Login diagnostics may contain account information; never return raw credentials.
-                let _ = login;
-                Ok(
-                    json!({"path":path,"version":version.lines().find(|l| l.starts_with("codex")).unwrap_or("Codex CLI"),"loggedIn":logged_in}),
-                )
-            }
+            "detect" => detect_cli(&payload),
             "project" => inspect_project(field(&payload, "path")),
-            "start" => self.start(payload),
+            "test" => {
+                let target = provider::parse_target(
+                    payload.get("provider").ok_or("缺少提供商配置。")?,
+                )?;
+                provider::test(&target).map(|message| json!({"message": message}))
+            }
+            "start" => {
+                if payload.get("provider").is_some_and(Value::is_object) {
+                    self.start_api(payload)
+                } else {
+                    self.start(payload)
+                }
+            }
             "status" | "cancel" => {
                 let id = field(&payload, "id");
                 let job = self
@@ -644,6 +701,156 @@ impl AgentService {
         }
         result
     }
+
+    /// API 提供商：一次 HTTP 请求拿到完整设计文件，写入临时工作区后复用预览快照。
+    fn start_api(&self, payload: Value) -> Result<Value, String> {
+        let target = provider::parse_target(payload.get("provider").ok_or("缺少提供商配置。")?)?;
+        let prompt = field(&payload, "prompt").to_string();
+        if prompt.trim().is_empty() || prompt.len() > MAX_PROMPT {
+            return Err("生成内容为空或超过大小限制。".into());
+        }
+        let schema = payload
+            .get("schema")
+            .filter(|v| v.is_object())
+            .ok_or("缺少生成格式约束。")?;
+        if schema.to_string().len() > 32_000 {
+            return Err("生成格式约束过大。".into());
+        }
+        let workspace = payload.get("files");
+        let workspace_paths = workspace.map(validate_sources).transpose()?;
+        let mut jobs = self.jobs.lock().unwrap();
+        if jobs.values().any(|j| j.lock().unwrap().state == "running") {
+            return Err("已有生成任务正在运行，请等待完成或先取消。".into());
+        }
+        if jobs.len() >= 24 {
+            jobs.clear();
+        }
+        let id = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let temp = std::env::temp_dir().join(format!("rea-agent-{id}"));
+        std::fs::create_dir(&temp).map_err(|e| e.to_string())?;
+        let design_root = temp.join("design");
+        let prepared = (|| -> Result<(), String> {
+            std::fs::create_dir_all(design_root.join("pages")).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(design_root.join("components")).map_err(|e| e.to_string())?;
+            if let (Some(files), Some(paths)) = (workspace, workspace_paths.clone()) {
+                for path in paths {
+                    std::fs::write(design_root.join(&path), files[&path].as_str().unwrap())
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(())
+        })();
+        if let Err(error) = prepared {
+            let _ = std::fs::remove_dir_all(&temp);
+            return Err(error);
+        }
+        let job = Arc::new(Mutex::new(Job {
+            child: None,
+            state: "running".into(),
+            events: vec![format!("正在连接 {}…", target.name)],
+            ..Job::default()
+        }));
+        jobs.insert(id.clone(), job.clone());
+        drop(jobs);
+
+        let system = format!(
+            "你是 REA UI 的设计 Agent。只输出符合下面 JSON Schema 的 JSON，不要 Markdown 代码块，不要输出 JSON 之外的内容。\nJSON Schema：{}",
+            schema
+        );
+        let has_workspace = workspace.is_some();
+        std::thread::spawn(move || {
+            let cancel_handle = job.clone();
+            let cancelled = move || {
+                cancel_handle
+                    .lock()
+                    .map(|job| job.state != "running")
+                    .unwrap_or(true)
+            };
+            let progress_handle = job.clone();
+            let mut progress = move |message: String| push_event(&progress_handle, message);
+            let result = provider::generate(&target, &system, &prompt, &mut progress, &cancelled);
+            let mut job = job.lock().unwrap();
+            if job.state == "cancelled" {
+                drop(job);
+                let _ = std::fs::remove_dir_all(&temp);
+                return;
+            }
+            match result {
+                Ok(text) => match provider::extract_json(&text) {
+                    Some(value) => match write_api_files(&design_root, &value) {
+                        Ok(summary) => {
+                            if has_workspace {
+                                match workspace_snapshot(&design_root) {
+                                    Ok(snapshot) => {
+                                        job.preview = Some(snapshot);
+                                        job.preview_error = None;
+                                    }
+                                    Err(error) => job.preview_error = Some(error),
+                                }
+                            }
+                            job.result = Some(json!({"summary": summary}));
+                            job.state = "completed".into();
+                        }
+                        Err(error) => {
+                            job.error = Some(error);
+                            job.state = "failed".into();
+                        }
+                    },
+                    None => {
+                        job.error = Some("模型返回的内容不是有效的 JSON，请重试或换用更强的模型。".into());
+                        job.state = "failed".into();
+                    }
+                },
+                Err(error) if error == provider::CANCELLED => job.state = "cancelled".into(),
+                Err(error) => {
+                    job.error = Some(error);
+                    job.state = "failed".into();
+                }
+            }
+            drop(job);
+            let _ = std::fs::remove_dir_all(&temp);
+        });
+        Ok(json!({"id": id}))
+    }
+}
+
+/// 把模型返回的 files 写入设计工作区，路径与大小都按现有规则限制。
+fn write_api_files(root: &Path, value: &Value) -> Result<String, String> {
+    let files = value
+        .get("files")
+        .and_then(Value::as_object)
+        .ok_or("模型没有返回设计文件。")?;
+    let mut written = 0usize;
+    for (path, source) in files {
+        let page = path.starts_with("pages/")
+            && path.ends_with(".page.tsx")
+            && !path.contains("..")
+            && path.matches('/').count() == 1;
+        if path != "rea.json" && path != COMPONENT_SOURCE && !page {
+            continue;
+        }
+        let source = source
+            .as_str()
+            .ok_or("设计文件内容必须是字符串。")?;
+        if source.len() > 500_000 {
+            return Err("设计文件超过大小限制。".into());
+        }
+        std::fs::write(root.join(path), source).map_err(|e| e.to_string())?;
+        written += 1;
+    }
+    if written == 0 {
+        return Err("模型没有返回可用的设计文件。".into());
+    }
+    Ok(field(value, "summary")
+        .chars()
+        .take(4000)
+        .collect::<String>()
+        .trim()
+        .to_string())
 }
 
 impl Drop for AgentService {
@@ -847,6 +1054,42 @@ echo '{"type":"turn.started"}'
         assert!(cancel["result"].is_null());
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn writes_api_files_and_ignores_paths_outside_the_workspace() {
+        let root = std::env::temp_dir().join(format!("rea-api-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("pages")).unwrap();
+        let summary = write_api_files(
+            &root,
+            &json!({"summary":"完成","files":{
+                "rea.json":"{}",
+                "pages/main.page.tsx":"page source",
+                "../evil.txt":"outside",
+                "assets/a.png":"binary",
+                "pages/deep/nested.page.tsx":"nested"
+            }}),
+        )
+        .unwrap();
+        assert_eq!(summary, "完成");
+        assert!(root.join("pages/main.page.tsx").is_file());
+        assert!(!root.join("../evil.txt").exists());
+        assert!(!root.join("pages/deep/nested.page.tsx").exists());
+        assert!(write_api_files(&root, &json!({"summary":"s"})).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_api_providers_before_starting_a_job() {
+        let service = AgentService::default();
+        let error = service
+            .request(
+                "start",
+                json!({"provider":{"name":"x","protocol":"openai","baseUrl":"ftp://a.com","model":"m","apiKey":"k"},"prompt":"x","schema":{}}),
+            )
+            .unwrap_err();
+        assert!(error.contains("http"), "{error}");
+    }
+
     #[test]
     fn rejects_invalid_requests_and_paths() {
         let service = AgentService::default();

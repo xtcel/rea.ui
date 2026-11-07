@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::{collections::VecDeque, path::PathBuf, sync::Mutex};
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 async fn local_agent_request(
@@ -67,6 +68,82 @@ fn read_document(path: PathBuf) -> OpenedFile {
     }
 }
 
+// Formats the editor can place as an Image layer, mirroring `IMAGE_EXTENSIONS` in the web layer.
+const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+// Keep one image below the ZIP asset budget so it still round-trips through .reaui.
+const MAX_IMAGE_SIZE: u64 = 32 * 1024 * 1024;
+
+fn is_image(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        IMAGE_EXTENSIONS
+            .iter()
+            .any(|known| ext.eq_ignore_ascii_case(known))
+    })
+}
+
+fn read_image(path: PathBuf) -> OpenedFile {
+    use std::io::Read;
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let result = (|| -> Result<Vec<u8>, String> {
+        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+            return Err("请选择图片文件。".into());
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_IMAGE_SIZE + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() as u64 > MAX_IMAGE_SIZE {
+            return Err(format!(
+                "图片超过 {} MB 上限。",
+                MAX_IMAGE_SIZE / 1024 / 1024
+            ));
+        }
+        Ok(bytes)
+    })();
+    match result {
+        Ok(bytes) => OpenedFile {
+            name,
+            bytes: Some(bytes),
+            error: None,
+        },
+        Err(error) => OpenedFile {
+            name,
+            bytes: None,
+            error: Some(error),
+        },
+    }
+}
+
+/// The picker runs in Rust so image paths never travel from the webview.
+#[tauri::command]
+async fn pick_images(app: tauri::AppHandle) -> Result<Vec<OpenedFile>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("插入图片")
+        .add_filter("图片", &IMAGE_EXTENSIONS)
+        .blocking_pick_files();
+    let Some(paths) = picked else {
+        return Ok(Vec::new());
+    };
+    let paths: Vec<PathBuf> = paths
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .filter(|path| is_image(path))
+        .collect();
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    tauri::async_runtime::spawn_blocking(move || paths.into_iter().map(read_image).collect())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // No arbitrary path argument: only files explicitly opened through the OS are read.
 #[tauri::command]
 async fn take_pending_open_files(
@@ -89,6 +166,7 @@ pub fn run() {
         .manage(Arc::new(rea_local_agent::AgentService::default()))
         .invoke_handler(tauri::generate_handler![
             take_pending_open_files,
+            pick_images,
             local_agent_request
         ])
         .plugin(tauri_plugin_dialog::init())
@@ -150,5 +228,30 @@ mod tests {
         assert_eq!(file.name, path.file_name().unwrap().to_string_lossy());
         assert_eq!(file.bytes.unwrap(), bytes);
         assert!(file.error.is_none());
+    }
+    #[test]
+    fn accepts_only_supported_image_extensions() {
+        for name in ["/tmp/a.png", "/tmp/图 1.JPG", "/tmp/b.jpeg", "/tmp/c.gif", "/tmp/d.webp", "/tmp/e.svg"] {
+            assert!(is_image(std::path::Path::new(name)), "{name} 应被视为图片");
+        }
+        for name in ["/tmp/a.tiff", "/tmp/a.png.reaui", "/tmp/a", "/tmp/a.svgz"] {
+            assert!(!is_image(std::path::Path::new(name)), "{name} 不应被视为图片");
+        }
+    }
+    #[test]
+    fn reads_image_bytes_and_reports_errors() {
+        let path = std::env::temp_dir().join(format!("rea-ui-{}-图.png", std::process::id()));
+        let bytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        std::fs::write(&path, bytes).unwrap();
+        let file = read_image(path.clone());
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(file.name, path.file_name().unwrap().to_string_lossy());
+        assert_eq!(file.bytes.unwrap(), bytes);
+        assert!(file.error.is_none());
+
+        let missing = read_image(PathBuf::from("/nonexistent/图.png"));
+        assert_eq!(missing.name, "图.png");
+        assert!(missing.bytes.is_none());
+        assert!(missing.error.is_some());
     }
 }

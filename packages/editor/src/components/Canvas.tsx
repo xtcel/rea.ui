@@ -58,6 +58,11 @@ export interface CanvasApi {
         x: number;
         y: number;
     };
+    /** Visible artwork area in world units; new content is fitted into it. */
+    visibleWorld: () => {
+        width: number;
+        height: number;
+    };
     editVector: (id: string) => void;
 }
 interface Member {
@@ -95,9 +100,12 @@ interface Gesture {
     endpoints?: CreationGeometry['endpoints'];
 }
 const handles = [['nw', 3], ['n', 2], ['ne', 6], ['e', 4], ['se', 12], ['s', 8], ['sw', 9], ['w', 1]] as const;
+const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|svg)$/i;
+const draggingImages = (dataTransfer: DataTransfer | null) => !!dataTransfer && [...dataTransfer.items].some(item => item.kind === 'file' && (item.type.startsWith('image/') || IMAGE_FILE.test(item.type)));
+const droppedImages = (dataTransfer: DataTransfer | null) => [...(dataTransfer?.files ?? [])].filter(file => file.type.startsWith('image/') || IMAGE_FILE.test(file.name));
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides,
+export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
     rulerOrigin = { x: 0, y: 0 }, rulerLocked = false, onRulerOriginChange, onRulerContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
@@ -136,6 +144,8 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     onGuideContextMenu?: (id: string, x: number, y: number) => void;
     /** Called when the user starts dragging a guide out of a ruler while guides are hidden. */
     onRevealGuides?: () => void;
+    /** Image files dropped from the desktop land at the pointer, in artwork coordinates. */
+    onDropImages?: (files: readonly File[], point: { x: number; y: number }, parentId: string) => void;
     /** World value that reads as 0 on the rulers. */
     rulerOrigin?: { x: number; y: number };
     rulerLocked?: boolean;
@@ -154,6 +164,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     const [pathDraft,setPathDraft]=useState<PathData|null>(null);
     const [boxes, setBoxes] = useState<Map<string, Rect>>(new Map()), [snapGuides, setSnapGuides] = useState<Guide[]>([]), [marks, setMarks] = useState<DistanceMark[]>([]), [dropTarget, setDropTarget] = useState<string | null>(null);
     const [touchedBoxes, setTouchedBoxes] = useState<{ id: string; box: Rect }[]>([]);
+    const [imageDrag, setImageDrag] = useState(false);
     const gesture = useRef<Gesture | null>(null);
     const ready = useCallback(() => { setMeasurement(value => value + 1); const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]'); if (root)
         setBackground(getComputedStyle(root).backgroundColor); }, []);
@@ -199,7 +210,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         return inParent(b,parentId===undefined?page.nodes.get(id)?.parentId:parentId);
     }
     function editVector(id:string){const node=page.nodes.get(id);if(!node||node.locked||!isVectorKind(node.kind))return;try{if(!(node.element.props as unknown as VectorProps).path&&!onCommit({label:'转换为可编辑路径',ops:[expandVector(node)]}))return;setVectorEditingId(id);onSelection({...selection,ids:[id]});}catch(error){onNotice(String(error));}}
-    apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera),editVector};
+    apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera),visibleWorld:()=>({width:size.width/camera.zoom,height:size.height/camera.zoom}),editVector};
     useEffect(()=>{setVectorEditingId(null);},[page.id,tool]);
     function vectorLocal(point:{x:number;y:number},id:string){const b=box(id)!,node=page.nodes.get(id)!,p=rotatePoint({x:point.x-b.x-b.width/2,y:point.y-b.y-b.height/2},-rotationFor(id));const [x,y,w,h]=((node.element.props as unknown as VectorProps).viewBox??'0 0 100 100').split(/[ ,]+/).map(Number);return{x:x+(p.x+b.width/2)/b.width*w,y:y+(p.y+b.height/2)/b.height*h};}
     function vectorWorld(point:{x:number;y:number},id:string){const b=box(id)!,node=page.nodes.get(id)!,[x,y,w,h]=((node.element.props as unknown as VectorProps).viewBox??'0 0 100 100').split(/[ ,]+/).map(Number);const p=rotatePoint({x:(point.x-x)/w*b.width-b.width/2,y:(point.y-y)/h*b.height-b.height/2},rotationFor(id));return{x:p.x+b.x+b.width/2,y:p.y+b.y+b.height/2};}
@@ -678,7 +689,21 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     }
     const editedElement = editingId ? find(editingId) : undefined, editedBox = editingId ? box(editingId) : undefined;
     const editedText = editingId === draft?.element.props.designId ? textContent(draft.element.props.children) : editingId ? textContent(page.nodes.get(editingId)?.element.props.children) : '';
-    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onLostPointerCapture={() => { if (guideDrag.current) cancelGuideDrag(); if (gesture.current)
+    return <div className="rea-canvas-wrap"><div ref={container} className={`rea-canvas ${panMode ? 'rea-is-hand' : creating ? 'rea-is-draw' : ''} ${phase.state === 'panning' ? 'rea-is-dragging' : ''}`} data-gesture-state={phase.state} style={background && background !== 'rgba(0, 0, 0, 0)' ? { backgroundColor: background } : undefined} tabIndex={0} role="region" aria-label="设计画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={e => pointerEnd(e)} onPointerCancel={e => pointerEnd(e, true)} onContextMenu={contextMenu} onDragOver={event => {
+        if (!onDropImages || !draggingImages(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        if (!imageDrag) setImageDrag(true);
+    }} onDragLeave={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setImageDrag(false);
+    }} onDrop={event => {
+        const files = droppedImages(event.dataTransfer);
+        setImageDrag(false);
+        if (!onDropImages || !files.length) return;
+        event.preventDefault();
+        // Dropping onto a frame places the image inside it, like pasting into a container.
+        onDropImages(files, worldPoint(event.clientX, event.clientY), containerAt(event.clientX, event.clientY));
+    }} onLostPointerCapture={() => { if (guideDrag.current) cancelGuideDrag(); if (gesture.current)
         cancel(true); }} onDoubleClick={event => { if (tool !== 'select' || panMode || editingId)
         return; const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, true); if (!hit)
         return; const node = page.nodes.get(hit)!; if (node.kind === 'Text') {
@@ -724,6 +749,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     <VectorTools tool={tool} node={vectorEditingId?page.nodes.get(vectorEditingId):undefined} camera={camera} pan={panMode} world={worldPoint} local={vectorLocal} project={vectorWorld} parentAt={containerAt} onCreate={createPath} onPreview={setPathDraft} onChange={path=>{if(vectorEditingId)onCommit({label:'编辑路径',ops:[{type:'set',pageId:page.id,id:vectorEditingId,props:{path,d:undefined}}]});}} onEnd={()=>{setVectorEditingId(null);setPathDraft(null);if(tool==='pen'||tool==='pencil')onToolChange?.('select');}} onNotice={onNotice}/>
     </div>
     {topNodes.length === 0 && !draft && <div className="rea-empty-canvas"><FrameIcon size={28} strokeWidth={1.3}/><p>按 F 创建画框</p><span>也可选择工具栏的画框工具，在画布上拖动</span></div>}
+    {imageDrag && <div className="rea-canvas-drop" aria-hidden="true"><strong>松开以插入图片</strong><span>PNG、JPG、GIF、WebP、SVG</span></div>}
     <div className="rea-canvas-hint">{panMode ? '拖动画布以平移' : creating ? '拖动绘制，也可单击创建' : selection.scope ? '已进入容器 · Esc 逐级退出' : selectionMode === 'direct' ? '单击选择图层 · 双击编辑文字 · Shift 多选' : '按层级选择 · 双击进入容器 · ⌘/Ctrl 穿透选择'}</div>
     <div className="rea-zoom-controls" aria-label="画布缩放"><IconButton label="缩小 (-)" onClick={() => zoom(1 / 1.2)} disabled={camera.zoom <= MIN_ZOOM}><Minus size={15}/></IconButton><output aria-label="当前缩放" className="rea-zoom-value">{Math.round(camera.zoom * 100)}%</output><IconButton label="放大 (+)" onClick={() => zoom(1.2)} disabled={camera.zoom >= MAX_ZOOM}><Plus size={15}/></IconButton><span className="rea-control-divider"/><IconButton label="适应全部 (Shift+1)" onClick={fit}><Maximize size={15}/></IconButton></div>
   </div>;

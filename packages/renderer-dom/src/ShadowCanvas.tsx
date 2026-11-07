@@ -18,7 +18,8 @@ export function ShadowCanvas(props: PageRendererProps & { onReady?: () => void; 
     compiler.current ??= new TailwindCompiler();
     const nodes = inspectPage(props.page, true).nodes;
     const classes = [...nodes.values()].map(node => node.element.props.className ?? '');
-    classes.push('rounded-full');
+    // Implied by the renderer, so they must be compiled even when absent from the source.
+    classes.push('rounded-full', 'max-w-none');
     if (props.draft) classes.push(props.draft.element.props.className ?? '');
     if (props.preview) {
       const patches = 'get' in props.preview ? props.preview : new Map([[props.preview.id, props.preview.styles]]);

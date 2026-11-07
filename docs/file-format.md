@@ -64,6 +64,15 @@ export default (
 
 隐藏和锁定向后代继承。普通节点修改、删除、插入到锁定容器中均被拒绝；可先解锁锁定的父级。
 
+## 图片资源
+
+编辑器把 PNG、JPEG、GIF、WebP 与 SVG 插入为普通 `Image` 图层：主菜单或工具栏「插入图片…」、把文件拖到画布、或粘贴剪贴板里的图片。桌面版在 Rust 侧弹出系统选择器并读取字节，前端只接收内容，不接收文件路径。
+
+- 单个文件上限 32MB。格式按文件内容识别，改过扩展名的普通文本会被拒绝。
+- 资源路径由内容决定：`assets/img-<sha256 前 16 位>.<ext>`。同一张图重复插入共用一条资源，原文件名只用作图层名称。
+- `Image.src` 只接受 `assets/…` 安全相对路径；`.reaui` 会连同资源一起打包，导入后在 IndexedDB 中恢复为 blob URL。缺失资源的图层不渲染内容，也不会发起远程请求。
+- 插入按图片自身像素尺寸放置，超出当前可见范围时等比缩小；拖放的文件进入指针所在的画框。`object-fill` / `object-contain` / `object-cover` / `object-none` 决定图层框与图片比例不一致时的填充方式，可在右栏「图片」切换。
+
 ## Tailwind 样式
 
 使用 Tailwind CSS **4.3.3 默认主题和 preflight**。运行时主题、preflight 通过本地 `?raw` 导入，工具类由 `compile()` / `build()` 编译，注入 Shadow DOM。导出到其他项目时，应启用 Tailwind v4、默认主题及 preflight，并确保扫描页面文件。

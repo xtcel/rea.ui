@@ -26,7 +26,7 @@ const textNodes=(n:IndexedNode)=>n.kind==='Text';
 const defaultStroke:StrokeValue={width:1,color:{hex:'#000000'},position:'inside',style:'solid'};
 const defaultShadow=(inset:boolean):ShadowValue=>({inset,x:0,y:4,blur:12,spread:0,color:'rgba(0,0,0,0.25)'});
 function same<T>(values:readonly T[]):T|'mixed'|undefined{return !values.length?undefined:values.every(v=>JSON.stringify(v)===JSON.stringify(values[0]))?values[0]:'mixed';}
-export function PropertyPanel({nodes,page,measurements,onTransaction,onPreview,onCreateBoard,onEditVector}:{nodes:readonly IndexedNode[];page:InspectedPage;measurements:Measurements;onTransaction:(transaction:Transaction)=>unknown;onPreview:(transaction:Transaction|null)=>void;onCreateBoard:()=>void;onEditVector?:(id:string)=>void}) {
+export function PropertyPanel({nodes,page,measurements,onTransaction,onPreview,onCreateBoard,onEditVector,onReplaceImage}:{nodes:readonly IndexedNode[];page:InspectedPage;measurements:Measurements;onTransaction:(transaction:Transaction)=>unknown;onPreview:(transaction:Transaction|null)=>void;onCreateBoard:()=>void;onEditVector?:(id:string)=>void;onReplaceImage?:(id:string)=>void}) {
   const [ratio,setRatio]=useState(false),[corners,setCorners]=useState(false),[paddingSides,setPaddingSides]=useState(false);
   const [savedFills]=useState(()=>new Map<string,ColorValue>()),[savedEffects]=useState(()=>new Map<string,PropertyInput>());
   const visibility=sectionVisibility(nodes,page),editable=nodes.filter(n=>!n.locked),disabled=!editable.length;
@@ -87,12 +87,18 @@ export function PropertyPanel({nodes,page,measurements,onTransaction,onPreview,o
     {exists&&<><div className="grid grid-cols-2 gap-2">{(['x','y','blur','spread'] as const).map(key=><div key={key}>{compositeNumber(`${title}${{x:' X',y:' Y',blur:'模糊',spread:'扩展'}[key]}`,`${title}:${key}`,n=>shadowList(n)?.find(s=>s.inset===inset)?.[key]??defaultShadow(inset)[key],(n,value)=>{const list=shadowList(n);if(!list)return{};const own=list.find(s=>s.inset===inset)??defaultShadow(inset);return{shadow:formatShadows([...list.filter(s=>s.inset!==inset),{...own,[key]:value}])};},shapes,key==='blur'?0:-Infinity)}</div>)}</div><ColorField label={`${title}颜色`} value={shadowColor(first.color)} mixed={same(current.map(v=>v?.color))==='mixed'} disabled={disabled} onCommit={v=>change({color:rgba(v)})} onPreview={v=>v?change({color:rgba(v)},true):onPreview(null)}/></>}
     </div>;
   }
+  const imageFitValue=merged('object-fit',nodes);
+  const imageFit=typeof imageFitValue==='string'&&imageFitValue!=='mixed'&&imageFitValue!=='conflict'?imageFitValue:'fill';
   return <div className="rea-property-panel" key={page.id}>
     {nodes.length===1&&isVectorKind(target.kind)&&<PropertySection title="形状与路径">
       {['Polygon','Star'].includes(target.kind)&&<NumberField label={target.kind==='Star'?'角数':'边数'} value={Number((target.element.props as unknown as Record<string,unknown>).count??(target.kind==='Star'?5:3))} min={3} max={100} disabled={disabled} onCommit={count=>commit({label:'修改形状',ops:[{type:'set',pageId:page.id,id:target.id,props:{count:Math.round(count)}}]},false)}/>}
       {target.kind==='Star'&&<NumberField label="内半径 %" value={Number((target.element.props as unknown as Record<string,unknown>).innerRatio??.38)*100} min={1} max={100} disabled={disabled} onCommit={v=>commit({label:'修改星形内半径',ops:[{type:'set',pageId:page.id,id:target.id,props:{innerRatio:v/100}}]},false)}/>}
       {target.kind==='Line'&&(['startArrow','endArrow'] as const).map((key,i)=><label className="rea-toggle" key={key}><input type="checkbox" aria-label={i?'终点箭头':'起点箭头'} checked={Boolean((target.element.props as unknown as Record<string,unknown>)[key])} disabled={disabled} onChange={e=>commit({label:'修改箭头',ops:[{type:'set',pageId:page.id,id:target.id,props:{[key]:e.target.checked}}]},false)}/>{i?'终点箭头':'起点箭头'}</label>)}
       {onEditVector&&<button type="button" className="rea-button w-full" disabled={disabled} onClick={()=>onEditVector(target.id)}>{target.kind==='Vector'?'编辑锚点':'转换为路径并编辑'}</button>}
+    </PropertySection>}
+    {nodes.length===1&&target.kind==='Image'&&<PropertySection title="图片">
+      <Select label="适应方式" value={imageFit} options={options([['fill','拉伸填充'],['contain','等比适应'],['cover','等比裁切'],['none','原始尺寸'],['scale-down','适应或原始']])} disabled={disabled} onChange={value=>write('object-fit',value)}/>
+      <button type="button" className="rea-button w-full" disabled={disabled||!onReplaceImage||!!page.origins?.has(target.id)} onClick={()=>onReplaceImage?.(target.id)}>替换图片…</button>
     </PropertySection>}
     <div className="rea-property-summary"><strong>{nodes.length===1?target.name:`${nodes.length} 个图层`}</strong>{nodes.some(n=>n.locked)&&<p className="rea-field-help">已锁定图层会跳过修改。</p>}{nodes.length===1&&<input className="rea-input" aria-label="图层名称" key={`${target.id}:${target.name}`} disabled={target.locked} defaultValue={target.name} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){e.currentTarget.value=target.name;e.currentTarget.blur();}}} onBlur={e=>{const name=e.target.value.trim();if(name&&name!==target.name)commit({label:'重命名图层',ops:[{type:'set',pageId:page.id,id:target.id,props:{name}}]},false);}}/>}</div>
     <PropertySection title="对齐"><div className="rea-align-buttons">{([

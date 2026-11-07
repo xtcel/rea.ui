@@ -6,12 +6,13 @@ import type { DocumentSummary } from '@rea/storage';
 import type { DocumentModel } from '../session/useDocument';
 import { HomeComposer, ReferenceProjectsDialog } from '../home/HomeComposer';
 import { Button, Dialog } from '../ui';
-import { AgentSettings } from './AgentSettings';
+import { SettingsApp } from '../settings/SettingsApp';
+import { openSettingsWindow } from '../settings/window';
 import { ProjectDialog } from './ProjectDialog';
 import { agentRequest } from './client';
 import type { AgentConfig, ProjectContext } from './client';
 import type { DesignSystem } from './designSystem';
-import { attachmentContext, designSources, workspacePrompt, workspaceSchema } from './generation';
+import { apiFilesSchema, apiWorkspacePrompt, attachmentContext, designSources, workspacePrompt, workspaceSchema } from './generation';
 import { useAgentTask } from './useAgentTask';
 import { AGENT_SESSION_FILE, activeSession, addSession, createStore, legacyStore, parseStore, removeSession, selectSession, serializeStore, writeTurns } from './sessions';
 import type { AgentRef, AgentSession, AgentSessionStore, AgentTurn } from './sessions';
@@ -24,7 +25,7 @@ export interface DesignRequest {
   system: DesignSystem; project: ProjectContext | null;
 }
 export interface DesignAgentPanelProps {
-  model: DocumentModel; canvas: AgentCanvasContext; initialRequest?: DesignRequest; config: AgentConfig; onConfig: (config: AgentConfig) => void;
+  model: DocumentModel; canvas: AgentCanvasContext; initialRequest?: DesignRequest; config: AgentConfig;
   systems: DesignSystem[]; system: DesignSystem; onSystem: (id: string) => void;
   project: ProjectContext | null; onProject: (project: ProjectContext | null) => void; sendKey: 'enter' | 'command';
 }
@@ -67,7 +68,7 @@ function SessionMenu({ anchor, store, onSelect, onDelete, onNew, onClose }: {
 }
 
 export function DesignAgentPanel(props: DesignAgentPanelProps) {
-  const { model, canvas, config, onConfig, systems, system, onSystem, project, onProject, sendKey, initialRequest } = props;
+  const { model, canvas, config, systems, system, onSystem, project, onProject, sendKey, initialRequest } = props;
   const documentId = model.current!.manifest.id;
   const task = useAgentTask();
   const [store, setStore] = useState<AgentSessionStore | null>(null);
@@ -79,7 +80,8 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [references, setReferences] = useState<DocumentSummary[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
-  const [dialog, setDialog] = useState<'settings' | 'project' | 'references' | null>(null);
+  const [dialog, setDialog] = useState<'project' | 'references' | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionMenu, setSessionMenu] = useState(false);
   const [deleting, setDeleting] = useState<AgentSession | null>(null);
   const [notice, setNotice] = useState('');
@@ -173,6 +175,9 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
     cancelled.current = true;
     try { await task.cancel(); } catch (error) { setNotice(String(error)); }
   }
+  async function openSettings() {
+    if (await openSettingsWindow() === 'in-app') setSettingsOpen(true);
+  }
   async function send(request?: DesignRequest) {
     const text = (request?.text ?? prompt).trim();
     if (!text || sending.current || !loaded || !storeRef.current) return;
@@ -186,7 +191,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
     const selection = elementContext(pages, elementRefs);
     const events: string[] = ['项目已就绪，正在读取设计参考…'];
     const addEvent = (event: string) => { if (!events.includes(event)) { events.push(event); if (events.length > 80) events.splice(1, 1); update(id, { events: [...events] }); } };
-    remember([...sessionTurns(), { id, text, context: `${selectedSystem.name}${selectedProject ? ` · ${selectedProject.name}` : ''}`, model: config.model || 'Codex 默认模型', files: [...files.map(file => file.name), ...refs.map(ref => `引用：${ref.name}`)], state: 'running', events: [...events], refs: elementRefs }]);
+    remember([...sessionTurns(), { id, text, context: `${selectedSystem.name}${selectedProject ? ` · ${selectedProject.name}` : ''}`, model: `${config.provider?.name ?? config.name ?? 'Codex CLI'}${config.model ? ` · ${config.model}` : ''}`, files: [...files.map(file => file.name), ...refs.map(ref => `引用：${ref.name}`)], state: 'running', events: [...events], refs: elementRefs }]);
     if (selection.missing.length) addEvent(`有 ${selection.missing.length} 个引用元素已不存在，本轮已跳过`);
     if (elementRefs.length) addEvent(`已引用 ${elementRefs.length} 个画布元素作为修改范围`);
     canvas.clearRefs();
@@ -210,9 +215,13 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
       if (current.manifest.id !== documentId) throw new Error('项目已切换，请重新发送需求。');
       let sources = designSources(current.files), expectedRev = current.rev, feedback = '';
       setPreparing(false);
+      const apiMode = !!config.provider;
       for (let attempt = 0; attempt < 2; attempt++) {
         let validationError = '', lastPreview = '', receivedPreview = false;
-        const result = await task.generate(workspacePrompt(`${text}${feedback}`, selectedSystem, context, referenceText, conversation, current.files, selection.text), workspaceSchema, config, '', {
+        const agentPrompt = apiMode
+          ? apiWorkspacePrompt(`${text}${feedback}`, selectedSystem, context, referenceText, conversation, sources, selection.text)
+          : workspacePrompt(`${text}${feedback}`, selectedSystem, context, referenceText, conversation, current.files, selection.text);
+        const result = await task.generate(agentPrompt, apiMode ? apiFilesSchema : workspaceSchema, config, '', {
           files: sources,
           onStatus(status) {
             if (cancelled.current || !alive.current) throw new Error('已停止生成。');
@@ -239,8 +248,8 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
             }
           },
         });
-        if (!receivedPreview) validationError = 'Agent 没有返回设计文件。请直接编辑工作区中的页面。';
-        if (!validationError && expectedRev === current.rev && current.pages.values().next().value!.page.nodes.size === 1) validationError = 'Agent 没有创建页面内容，请直接写入有效的设计文件。';
+        if (!receivedPreview) validationError = apiMode ? '模型没有返回可用的设计文件。' : 'Agent 没有返回设计文件。请直接编辑工作区中的页面。';
+        if (!validationError && expectedRev === current.rev && current.pages.values().next().value!.page.nodes.size === 1) validationError = apiMode ? '模型没有返回页面内容，请补充更具体的需求。' : 'Agent 没有创建页面内容，请直接写入有效的设计文件。';
         if (validationError) {
           if (attempt === 1) throw new Error(`设计校验失败：${validationError}。已保留最后一次有效设计，请调整需求后重试。`);
           addEvent('设计未通过静态校验，正在自动修复（1/1）…');
@@ -283,12 +292,12 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
       </article>)}
     </div>
     <div className="rea-agent-composer">{notice && <p role="alert" className="rea-agent-error">{notice}</p>}
-      <HomeComposer inputRef={input} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => void stop()} sendKey={sendKey} running={task.running || preparing} preparing={!loaded} busy={!loaded} systems={systems} selectedSystem={system.id} onSystem={onSystem} config={config} onAgentSettings={() => setDialog('settings')} project={project} onProject={() => setDialog('project')} attachments={attachments} onAttach={() => fileInput.current?.click()} onRemoveAttachment={index => setAttachments(items => items.filter((_, i) => index !== i))} references={references} onReferences={() => { void model.storage.listDocuments().then(setDocuments).then(() => setDialog('references')).catch(error => setNotice(String(error))); }} onRemoveReference={id => setReferences(items => items.filter(ref => ref.id !== id))} elements={canvas.refs} onRemoveElement={ref => canvas.removeRef(ref.pageId, ref.designId)} onToggleElement={ref => canvas.toggleSubtree(ref.pageId, ref.designId)} />
+      <HomeComposer inputRef={input} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => void stop()} sendKey={sendKey} running={task.running || preparing} preparing={!loaded} busy={!loaded} systems={systems} selectedSystem={system.id} onSystem={onSystem} config={config} onAgentSettings={() => void openSettings()} project={project} onProject={() => setDialog('project')} attachments={attachments} onAttach={() => fileInput.current?.click()} onRemoveAttachment={index => setAttachments(items => items.filter((_, i) => index !== i))} references={references} onReferences={() => { void model.storage.listDocuments().then(setDocuments).then(() => setDialog('references')).catch(error => setNotice(String(error))); }} onRemoveReference={id => setReferences(items => items.filter(ref => ref.id !== id))} elements={canvas.refs} onRemoveElement={ref => canvas.removeRef(ref.pageId, ref.designId)} onToggleElement={ref => canvas.toggleSubtree(ref.pageId, ref.designId)} />
     </div>
     <input ref={fileInput} type="file" hidden multiple accept=".reaui,.md,.txt,.css,.json,.tsx,.jsx,.ts,.js" aria-label="选择设计参考文件" onChange={event => { const files = Array.from(event.currentTarget.files ?? []); if (attachments.length + references.length + files.length > 6) setNotice('参考文件和引用项目合计最多 6 项。'); else setAttachments(items => [...items, ...files]); event.currentTarget.value = ''; }} />
     {sessionMenu && sessionButton.current && store && <SessionMenu anchor={sessionButton.current} store={store} onSelect={switchSession} onDelete={next => { setSessionMenu(false); setDeleting(next); }} onNew={newSession} onClose={() => setSessionMenu(false)} />}
     {deleting && <Dialog title="删除会话" onClose={() => setDeleting(null)}><p className="text-xs leading-6">删除「{deleting.title}」后，这段对话记录会从当前文档中移除，且无法撤销。设计内容与画布不受影响。</p><div className="rea-dialog-actions"><Button onClick={() => setDeleting(null)}>取消</Button><Button onClick={deleteSession}>删除会话</Button></div></Dialog>}
-    {dialog === 'settings' && <Dialog title="AI Agent 设置" onClose={() => setDialog(null)}><AgentSettings config={config} onChange={onConfig} /></Dialog>}
+    {settingsOpen && <div className="rs-overlay"><SettingsApp onClose={() => setSettingsOpen(false)} /></div>}
     {dialog === 'project' && <ProjectDialog project={project} initialPath={project?.path ?? ''} onSelect={next => { onProject(next); setDialog(null); }} onClose={() => setDialog(null)} />}
     {dialog === 'references' && <ReferenceProjectsDialog documents={documents} selected={references} limit={6 - attachments.length} onConfirm={items => { setReferences(items); setDialog(null); }} onClose={() => setDialog(null)} />}
   </section>;
