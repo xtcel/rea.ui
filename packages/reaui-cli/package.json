@@ -1,0 +1,30 @@
+{
+  "name": "@rea/reaui-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Command line interface for building, validating and previewing REA UI documents.",
+  "bin": {
+    "reaui": "./bin/reaui.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "reaui": "node ./bin/reaui.mjs"
+  },
+  "dependencies": {
+    "@rea/design": "workspace:*",
+    "@rea/document": "workspace:*",
+    "@rea/renderer-dom": "workspace:*",
+    "@rea/storage": "workspace:*",
+    "@rea/tailwind": "workspace:*",
+    "fflate": "0.8.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.5"
+  }
+}

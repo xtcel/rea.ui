@@ -33,6 +33,8 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 | `renderer-dom` | 原语渲染、class 预览修补、Shadow DOM、blob URL、composedPath 命中 |
 | `editor` | 选区、工具、相机、文档管理、页面/图层导航、Design/Inspect 外壳与共享 UI 控件；标尺 / 手动参考线屏幕覆盖层与视图偏好 |
 | `geometry` / `crates/geometry` | 加载真实 WASM；Rust 计算矩形归一化、吸附和缩放边界，不保存文档或场景 |
+| `reaui-cli` | 面向外部 Agent 的文档命令：init / validate / pack / unpack / diff / preview；复用 `document` 校验与 `storage` ZIP 封解包，不复制规则 |
+| `integrations/workbuddy` | WorkBuddy 专家包源（Agent 定义、技能、模板）；薄封装，通过绝对路径调用 `reaui-cli` |
 | `apps/web` | 初始化 WASM 并装配编辑器 |
 
 ## 事务与历史
@@ -130,3 +132,13 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 吸附接入不改 Rust ABI：`SnapSession` 增加可选第三参数 `guides`，`snap_rects` 使用「对象候选 + 参考线候选」合并缓冲区，而 `distribute_marks` 使用**只含对象候选的独立缓冲区**，避免零宽 / 零高参考线产生虚假间距标注；旧的两参数调用保持原行为。`guideSnapRects()` 把可见参考线转成 `{width:0}` / `{height:0}` 的矩形并按 6px 屏幕阈值（除以 zoom）裁剪视口外条目。
 
 `showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、悬停预览与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺原点与锁定状态是**视图态**，存在编辑器内存里，不写入文档也不跨会话保留。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。
+
+## 外部 Agent 与 reaui CLI
+
+`add-workbuddy-design-agent` 让 WorkBuddy 的 Agent 在不打开编辑器的情况下产出可编辑设计稿。`packages/reaui-cli` 只做文件 I/O、命令编排与错误整形：校验调用 `new DocumentSession(files)`，打包调用 `storage/reaui.ts` 的 `exportReaui()`，解包前的 ZIP 安全校验复用同一套 `inspectZip` / CRC / 路径检查（`readReaui()` 保留原文档 id，不做改名）。因此 CLI 与编辑器的接受标准天然一致，不存在第二份规则。
+
+CLI 源码是 TS/TSX 且使用无扩展名导入，Node 无法直接加载。`bin/reaui.mjs` 用 Vite 的 `createServer({ server: { middlewareMode: true } })` + `ssrLoadModule()` 加载 `src/cli.ts`，复用项目已有的转译与 `?raw` 能力，不新增构建步骤；`ssr.noExternal` 必须包含 `@rea/`，否则 workspace 包会被外部化并交给 Node 解析。
+
+预览复用画布的 `PageRenderer` 与 `TailwindCompiler`：按顶层 `Frame` 的 `fixedValue()` 计算画板包围盒（非固定尺寸回退 `1440×1024` 并标注），用 `renderToStaticMarkup()` 输出 HTML，把编译后的 CSS 内联为单文件。组件实例先由 `DocumentSession` 的 `resolvePage()` 展开，因此预览看到的是最终图层树；图片资源与字体不加载。
+
+WorkBuddy 专家包位于 `integrations/workbuddy/reaui-designer`，`plugin.json` 只声明 Agent 与技能，技能通过 `REAUI_ROOT` 指向的仓库绝对路径调用 CLI。协议文本在 [agent-protocol.md](agent-protocol.md)。本期不做 MCP 画布联动与 PNG 截图。

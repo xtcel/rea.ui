@@ -1,0 +1,58 @@
+import { parseArgs } from './args';
+import { CliError, describe, printErrors } from './errors';
+import { runDiff } from './commands/diff';
+import { runInit } from './commands/init';
+import { runPack } from './commands/pack';
+import { runPreview } from './commands/preview';
+import { runUnpack } from './commands/unpack';
+import { runValidate } from './commands/validate';
+
+export const VERSION = '0.1.0';
+
+const HELP = `reaui ${VERSION} - REA UI 设计源命令行
+
+用法：reaui <command> [options]
+
+命令：
+  init       创建最小合法文档（rea.json + 页面）
+  validate   校验文档目录或 .reaui
+  pack       打包为 .reaui
+  unpack     解包 .reaui 为文档目录
+  diff       比较两个设计源
+  preview    生成自包含 HTML 预览
+
+通用选项：
+  --json     以 JSON 输出结果
+  --force    允许覆盖或写入非空目录
+  --out, -o  指定输出路径
+  --help     显示帮助
+  --version  显示版本
+
+示例：
+  reaui init ./demo --name 我的应用 --page main --page-name 首页
+  reaui validate ./demo --json
+  reaui pack ./demo --out demo.reaui
+  reaui unpack demo.reaui --out ./restored
+  reaui preview ./demo --out preview.html
+`;
+
+export async function main(argv: string[]): Promise<number> {
+  const args = parseArgs(argv);
+  if (args.flags.has('version') || args.command === 'version') { console.log(VERSION); return 0; }
+  if (args.flags.has('help') || args.command === 'help') { console.log(HELP); return 0; }
+  const json = args.flags.has('json');
+  try {
+    switch (args.command) {
+      case 'init': return await runInit(args);
+      case 'validate': return await runValidate(args);
+      case 'pack': return await runPack(args);
+      case 'unpack': return await runUnpack(args);
+      case 'diff': return await runDiff(args);
+      case 'preview': return await runPreview(args);
+      default: throw new CliError('USAGE_COMMAND', `未知命令：${args.command}`, undefined, '运行 reaui help 查看可用命令。');
+    }
+  } catch (error) {
+    printErrors([describe(error)], json);
+    return error instanceof CliError && error.code.startsWith('USAGE') ? 2 : 1;
+  }
+}

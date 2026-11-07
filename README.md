@@ -44,6 +44,21 @@ pnpm design:app         # 重建可编辑的应用界面设计稿
 
 「设计系统」支持 AI 生成、语义配色/字体/间距/圆角配置、组件规范、使用指南与实时预览。关联项目只用于生成参考。配置方法与真实 Codex 复测命令见 [本地 Agent 说明](docs/local-agent.md)。
 
+## WorkBuddy Agent 与 reaui CLI
+
+`packages/reaui-cli` 提供不依赖浏览器的文档命令，WorkBuddy 专家「小瑞」用它把需求变成可编辑设计稿。校验与打包复用编辑器同一套 `DocumentSession` 与 `.reaui` 封解包，不会出现「CLI 能过、编辑器打不开」。
+
+```bash
+pnpm reaui init ./demo --name "我的应用" --page main --page-name 首页
+pnpm reaui validate ./demo --json
+pnpm reaui pack ./demo --out demo.reaui
+pnpm reaui preview ./demo --out preview.html
+```
+
+`preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明与约束见 [Agent 设计协议](docs/agent-protocol.md)。
+
+专家包源码在 `integrations/workbuddy/reaui-designer`，本机已注册到专家中心；更新时把该目录同步到 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/`，再用专家校验与注册脚本刷新。技能默认从 `REAUI_ROOT`（缺省 `~/workspace/rea.ui`）调用 CLI；仓库换位置时需设置该环境变量。
+
 ## 编辑操作
 
 | 操作 | 方法 |

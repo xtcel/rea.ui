@@ -337,3 +337,43 @@ Image 与资源格式/渲染已实现，图片添加 UI 留待后续。旋转/�
 独立界面复核提出的三个问题（Mixed 复合数值、Mixed 字体失焦、透明度输入裁切）已修正并由复核逐项判为 resolved，修正项范围内结论为 ship。静态检测无主诊断；色板/文档颜色、已有界面颜色及少量紧凑尺寸有设计系统 advisory，未借本次扩展重写既有系统。
 
 吸管的系统拾色过程、Pointer Lock 在不同操作系统的无边界行为以及读屏器实机交互没有跨平台人工验收。M3 中系统中文输入法等未验收项仍按该提案单独跟踪。
+
+## WorkBuddy Agent 与 reaui CLI
+
+对应 `add-workbuddy-design-agent`。验证环境：macOS、Node 22.22.2、pnpm 12.4.1、Vite 8.3.5。
+
+### 自动化
+
+- `pnpm exec vitest run packages/reaui-cli`：3 个文件、15 项通过（参数解析 4、文档命令 6、预览与画板 5）。
+- `pnpm typecheck`：通过。
+- `openspec validate add-workbuddy-design-agent --strict`：通过。
+
+### 端到端
+
+以 `/tmp/reaui-demo` 为工作目录执行真实命令：
+
+1. `reaui init` 生成 `rea.json` 与 `pages/main.page.tsx`；`reaui validate` 通过（v2，1 页）。
+2. `reaui pack` 生成 0.7KB `.reaui`；连续两次打包 `cmp` 字节一致。
+3. `reaui unpack` 还原目录，`rea.json` 的 `id` 与源文档一致；`reaui diff` 报告无差异。
+4. 写入含 `div` 与 `onClick` 的页面后，`reaui validate --json` 返回 `ok:false`、`code:PAGE_SUBSET`、`path:pages/main.page.tsx`，退出码 1；`reaui pack` 被阻断。
+5. 重复 `reaui init` 返回 `DOC_EXISTS`，原文件不变。
+
+### 预览
+
+- `reaui preview` 对模板文档输出 7.8KB 单文件 HTML，含 `board-canvas`、`data-design-id` 与内联 Tailwind CSS，无 `<script>`、`<link>`、`@import`。
+- 无头 Chrome（`--headless=new --no-sandbox`，1600×1200）截图确认：文档标题、页面元信息、1440×1024 画板、标题文字均正常；仪表盘模板的四张指标卡、柱状图、活动列表无重叠或裁切。
+
+### 模板
+
+`dashboard / list / form / mobile` 四个页面模板分别替换进真实文档后均通过 `reaui validate`，覆盖 `.tsx` 模板 4 份。
+
+### 专家包
+
+`validate_expert.py` 通过；`register_expert.py` 已注册到 `my-experts`，`marketplace.json` 含 `reaui-designer`。头像为 512×512 PNG（7.5KB）。
+
+### 未覆盖
+
+- ReaUI 桌面版双击 `.reaui` 的真实导入未做人工验收（已由 `DocumentSession` 与 `decodeReaui` 同一校验链覆盖）。
+- 组件实例（`Instance` / `Slot`）的预览展开未做视觉抽样；本期协议要求 Agent 不使用组件。
+- 图片资源、外部字体、PNG 截图、MCP 画布联动不在本期范围。
+- Windows / Linux 路径与编码未验证。
