@@ -6,6 +6,7 @@ import { Text } from '@rea/design';
 import { EDITOR_GUIDES_FILE, sourceElement, extractComponent, detachInstance, placementStyles } from '@rea/document';
 import type { SourceOperation, Transaction, StylePatch, DocumentSession } from '@rea/document';
 import type { PathData, LineProps } from '@rea/design';
+import type { IndexedNode } from '@rea/design';
 import { exportPageCode, libraryVersions } from '@rea/storage';
 import type { AssetRecord } from '@rea/storage';
 import { fixedValue, patchClassNames, writeTextSizing } from '@rea/tailwind';
@@ -23,12 +24,13 @@ import { usePropertyPanel } from './inspector/usePropertyPanel';
 import { Inspector } from './components/Inspector';
 import { InspectPanel } from './components/InspectPanel';
 import { LayersPanel } from './components/LayersPanel';
+import type { LayerDrop } from './components/LayersPanel';
 import { DocumentListDialog } from './components/DocumentListDialog';
 import { EditorShell } from './components/EditorShell';
 import { Button, ContextMenu, Dialog, IconButton, InlineName, Menu, Panel, Tabs, ThemeButton } from './ui';
 import { useDocument } from './session/useDocument';
 import type { DocumentModel } from './session/useDocument';
-import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots, toggleSelection } from './session/selection';
+import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots } from './session/selection';
 import type { SelectionMode, SelectionState } from './session/selection';
 import { copyFragment, FRAGMENT_MIME, preparePaste, readClipboard, rewriteClipboardAssets, clipboardAssetPaths } from './session/clipboard';
 import type { ClipboardFragment } from './session/clipboard';
@@ -54,6 +56,7 @@ export function EditorWorkspace({ model, onHome, agent }: { model: DocumentModel
 function DocumentEditor({ model, current, onHome, agent }: { model: DocumentModel; current: DocumentSession; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode }) {
   const pages = [...current.pages.values()].map(parsed => parsed.page);
   const [pageId, setPageId] = useState(pages[0].id), [selection, setSelection] = useState<SelectionState>(() => emptySelection(pages[0].id));
+  const [renameRequest, setRenameRequest] = useState<{ id: string; serial: number } | null>(null);
   const [editingComponent,setEditingComponent]=useState<string|null>(null),[leftTab,setLeftTab]=useState(agent ? 'agent' : 'layers'),[createComponentDialog,setCreateComponentDialog]=useState(false),[componentName,setComponentName]=useState('新组件');
   const canvas = useRef<CanvasApi | null>(null);
   const sessionRef=useRef(current);sessionRef.current=current;
@@ -64,11 +67,13 @@ function DocumentEditor({ model, current, onHome, agent }: { model: DocumentMode
   const [zoom, setZoom] = useState(100), [panel, setPanel] = useState<'layers' | 'inspector' | null>(() => agent && window.innerWidth < 900 ? 'layers' : null);
   const [showDocuments, setShowDocuments] = useState(false), [shortcuts, setShortcuts] = useState(false), [renaming, setRenaming] = useState(false);
   const [tab, setTab] = useState('design');
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('direct');
+  // Sketch selects the outermost layer in the current scope; double-click drills one level in.
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('hierarchy');
   const [agentRefs, setAgentRefs] = useState<AgentRef[]>([]);
   const [agentTouched, setAgentTouched] = useState<readonly string[]>([]);
   const [contextMenu, setContextMenu] = useState<CanvasMenuRequest | null>(null);
   const internalClipboard = useRef<ClipboardFragment | null>(null);
+  const renameSerial = useRef(0);
   const agentTimer = useRef<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const measure = useCallback(() => {}, []);
@@ -189,10 +194,20 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     if(removable.length)commit({label:'删除图层',ops:removable.map(id=>({type:'delete',pageId:page.id,id}))},[]);
     if(removable.length!==ids.length)model.setNotice('已跳过锁定的图层；请先解锁后删除。');
   }
+  /** Sketch groups any sibling selection, so make the picked layers contiguous before wrapping them. */
   function group(kind:'Frame'|'Group'='Group') {
-    const ids=selectionRoots(page,selectedIds);if(!ids.length)return;const designId=newId(kind.toLowerCase());
-    const bounds=Object.fromEntries(ids.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1]));
-    commit({label:kind==='Group'?'编组':'用画框包裹',ops:[{type:'wrap',pageId:page.id,ids,kind,designId,bounds}]},[designId]);
+    const ids=selectionRoots(page,selectedIds);if(!ids.length)return;
+    const parents=new Set(ids.map(id=>page.nodes.get(id)!.parentId));
+    if(parents.size>1){model.setNotice('编组需要选中同一容器中的图层；请先调整层级。');return;}
+    const parentId=[...parents][0]!,siblings=[...page.nodes.get(parentId)!.children];
+    const chosen=siblings.filter(id=>ids.includes(id)),rest=siblings.filter(id=>!ids.includes(id));
+    const top=siblings.indexOf(chosen.at(-1)!),at=siblings.slice(0,top).filter(id=>!ids.includes(id)).length;
+    const ordered=[...rest.slice(0,at),...chosen,...rest.slice(at)],designId=newId(kind.toLowerCase());
+    const bounds=Object.fromEntries(chosen.map(id=>[id,canvas.current?.localBox(id)]).filter((entry):entry is [string,Rect]=>!!entry[1]));
+    const ops:SourceOperation[]=[];
+    if(ordered.some((id,index)=>id!==siblings[index]))ops.push({type:'reorderChildren',pageId:page.id,id:parentId,ids:ordered});
+    ops.push({type:'wrap',pageId:page.id,ids:chosen,kind,designId,bounds});
+    commit({label:kind==='Group'?'编组':'用画框包裹',ops},[designId]);
   }
   function ungroup() {
     const ids=selectionRoots(page,selectedIds).filter(id=>['Frame','Group'].includes(page.nodes.get(id)!.kind)),ops:SourceOperation[]=[],children:string[]=[];
@@ -349,12 +364,15 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   }
   function selectLayer(id:string) { setSelection(state=>({...state,pageId:page.id,ids:[id]})); }
   function openLayerMenu(id:string,x:number,y:number) {
-    setSelection({...selection,pageId:page.id,ids:[id]});
+    // Right-clicking a layer that is already selected keeps the whole selection, like Sketch.
+    if(!selectedIds.includes(id))setSelection({...selection,pageId:page.id,ids:[id]});
     const rect=canvas.current?.box(id);
     setContextMenu({x,y,point:rect?{x:rect.x+rect.width/2,y:rect.y+rect.height/2}:canvas.current?.viewportCenter()??{x:0,y:0},parentId:page.nodes.get(id)?.parentId??page.source.props.designId,hits:[id]});
   }
   const menuActions = contextMenu && selectedIds.length ? {
-    select: selectLayer, copy: copySelection, pasteHere: () => pasteHere(contextMenu), pasteReplace, copyAsCode: copySelectionCode, copyAsClasses: copySelectionClasses,
+    select: selectLayer,
+    rename: () => { const id=selectedIds.at(-1); if(!id)return; setLeftTab('layers'); renameSerial.current+=1; setRenameRequest({ id, serial: renameSerial.current }); },
+    copy: copySelection, pasteHere: () => pasteHere(contextMenu), pasteReplace, copyAsCode: copySelectionCode, copyAsClasses: copySelectionClasses,
     reorder, group, ungroup, autoLayout: addAutoLayout, createComponent, detach: detachInstances, toggleHidden, toggleLock, flip, remove,
   } : null;
   const canvasMenuActions = contextMenu ? {
@@ -381,14 +399,26 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     ? guideMenu({ showGuides: viewPrefs.showGuides, guideCount: guides.length, deleteGuide: () => setGuides(guides.filter(guide => guide.id !== contextMenu.guideId)), toggleGuides: () => viewPrefs.setShowGuides(!viewPrefs.showGuides), clearGuides })
     : menuActions ? layerMenu(page, selectedIds, contextMenu.hits, menuActions)
     : canvasMenu(canvasMenuActions!);
-  function moveLayer(id:string,parentId:string,index:number) {
-    const node=page.nodes.get(id);if(!node)return;const siblings=page.nodes.get(parentId)!.children;
-    const oldIndex=node.parentId===parentId?siblings.indexOf(id):-1;if(oldIndex>=0&&oldIndex<index)index--;
-    let patch:StylePatch|undefined;
-    if(node.parentId!==parentId){const b=canvas.current?.localBox(id,parentId),cls=page.nodes.get(parentId)!.element.props.className??'';
-      if(/(?:^|\s)(?:flex|inline-flex|grid)(?:\s|$)/.test(cls))patch={'position-type':null,left:null,top:null};
-      else if(b)patch={'position-type':'absolute',left:b.x,top:b.y,rotate:(canvas.current?.rotation(id)??0)-(canvas.current?.rotation(parentId)??0)};else{model.setNotice('请先显示图层后再调整父级。');return;}}
-    commit({label:'移动图层',ops:[{type:'move',pageId:page.id,id,parentId,index,patch}]},[id]);
+  /** Layer-panel drop: the whole dragged selection moves in one transaction, order preserved. */
+  function moveLayers(ids:readonly string[],drop:LayerDrop) {
+    const nodes=ids.map(id=>page.nodes.get(id)).filter((node):node is IndexedNode=>!!node);
+    const parent=page.nodes.get(drop.parentId);if(!nodes.length||!parent)return;
+    const base=parent.children.filter(id=>!ids.includes(id));
+    const anchor=drop.anchorId?base.indexOf(drop.anchorId):-1;
+    const at=drop.anchorId&&anchor>=0?anchor+(drop.zone==='before'?1:0):base.length;
+    const depth=(node:IndexedNode)=>node.parentId?page.nodes.get(node.parentId)?.children.indexOf(node.id)??0:0;
+    // Children arrays are bottom-to-top, so walking them in order keeps the stacking of a block drag.
+    const ordered=[...nodes].sort((a,b)=>depth(a)-depth(b));
+    const ops:SourceOperation[]=[];let slot=at;
+    for(const node of ordered){
+      let patch:StylePatch|undefined;
+      if(node.parentId!==drop.parentId){const b=canvas.current?.localBox(node.id,drop.parentId),cls=parent.element.props.className??'';
+        if(/(?:^|\s)(?:flex|inline-flex|grid)(?:\s|$)/.test(cls))patch={'position-type':null,left:null,top:null};
+        else if(b)patch={'position-type':'absolute',left:b.x,top:b.y,rotate:(canvas.current?.rotation(node.id)??0)-(canvas.current?.rotation(drop.parentId)??0)};else{model.setNotice('请先显示图层后再调整父级。');return;}}
+      ops.push({type:'move',pageId:page.id,id:node.id,parentId:drop.parentId,index:slot,patch});
+      slot+=1;
+    }
+    commit({label:'移动图层',ops},[...ids]);
   }
   function finishText(text:string|null) {
     const id=editingId;setEditingId(null);setTextDraft(null);if(text===null||!id)return;
@@ -518,7 +548,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     ]}><span className="text-xs">视图</span><ChevronDown size={12} /></Menu>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
-  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={(id, additive) => setSelection({...selection, ids:toggleSelection(page, selectedIds, id, !!additive)})} onMove={moveLayer} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onReplaceImage={replaceImage} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
+  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={ids => setSelection({ ...selection, pageId: page.id, ids })} onMove={moveLayers} renameRequest={renameRequest ?? undefined} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onReplaceImage={replaceImage} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
     {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
     <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} onDropImages={(files, point, parentId) => run(() => insertImages(files, point, parentId))} showRulers={viewPrefs.showRulers} showGuides={viewPrefs.showGuides} guides={guides} onGuidesChange={setGuides} onGuideContextMenu={openGuideMenu} onRevealGuides={() => { if (!viewPrefs.showGuides) viewPrefs.setShowGuides(true); }} onRulerContextMenu={openRulerMenu} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}

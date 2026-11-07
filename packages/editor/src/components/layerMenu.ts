@@ -5,6 +5,7 @@ import { selectionRoots } from '../session/selection';
 
 export interface LayerMenuActions {
   select: (id: string) => void;
+  rename: () => void;
   copy: () => void;
   pasteHere: () => void;
   pasteReplace: () => void;
@@ -140,6 +141,7 @@ export function layerMenu(page: InspectedPage, selectedIds: readonly string[], h
   const hint = empty ? '请先选择图层' : locked ? '图层已锁定' : undefined;
   return [
     { label: '选择图层', submenu: layers.length ? layers.map(node => ({ label: node.name, hint: node.kind, checked: selectedIds.includes(node.id), action: () => actions.select(node.id) })) : [{ label: '指针下没有图层', disabled: true }] },
+    { label: '重命名图层', shortcut: 'Mod+R', disabled: empty || roots.length !== 1 || roots[0].locked, hint: roots.length > 1 ? '请只保留一个选中图层' : hint, action: actions.rename },
     'separator',
     { label: '复制', shortcut: 'Mod+C', disabled: empty, action: actions.copy },
     { label: '粘贴到此处', shortcut: 'Mod+V', action: actions.pasteHere },
