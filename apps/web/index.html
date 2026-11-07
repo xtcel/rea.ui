@@ -6,6 +6,16 @@
     <meta name="theme-color" content="#f7f8fa" />
     <meta name="description" content="REA UI — React 单源设计编辑器" />
     <title>REA UI · 设计工作台</title>
+    <script>
+      // Paint the stored theme before the first frame so a dark session never flashes white.
+      try {
+        var stored = localStorage.getItem('rea-theme');
+        var dark = stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#15171a');
+      } catch (error) { /* Storage or matchMedia unavailable: the light theme still renders. */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, FolderOpen, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Plus, Search, Settings2, Shapes, SlidersHorizontal, X } from 'lucide-react';
+import type { FormEvent, MouseEventHandler, ReactNode } from 'react';
+import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, FolderOpen, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Moon, Plus, Search, Settings2, Shapes, SlidersHorizontal, Sun, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import { EditorWorkspace } from '../EditorApp';
 import { useDocument } from '../session/useDocument';
@@ -11,6 +11,8 @@ import { ProjectPreview, SystemPreview } from './Previews';
 import { HomeComposer, ReferenceProjectsDialog } from './HomeComposer';
 import { listenForOpenedFiles } from '../platform';
 import { AgentSettings } from '../agent/AgentSettings';
+import { useTheme } from '../session/theme';
+import type { ThemePreference } from '../session/theme';
 import { ProjectDialog } from '../agent/ProjectDialog';
 import { SystemWorkbench } from '../agent/SystemWorkbench';
 import { agentRequest, defaultAgentConfig, isAgentConfig } from '../agent/client';
@@ -25,7 +27,7 @@ const navigation: { id: Section; label: string; icon: typeof House }[] = [
   { id: 'settings', label: '设置', icon: Settings2 },
 ];
 
-function IconControl({ label, children, onClick, pressed }: { label: string; children: ReactNode; onClick: () => void; pressed?: boolean }) {
+function IconControl({ label, children, onClick, pressed }: { label: string; children: ReactNode; onClick: MouseEventHandler<HTMLButtonElement>; pressed?: boolean }) {
   return <button type="button" className="home-icon-button" aria-label={label} title={label} aria-pressed={pressed} onClick={onClick}>{children}</button>;
 }
 function SelectControl({ label, value, onChange, children, icon }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode; icon?: ReactNode }) {
@@ -34,6 +36,7 @@ function SelectControl({ label, value, onChange, children, icon }: { label: stri
 
 export function HomeApp() {
   const model = useDocument();
+  const theme = useTheme();
   const [section, setSection] = useState<Section>('home');
   const [inEditor, setInEditor] = useState(false);
   const latestModel = useRef(model);
@@ -201,7 +204,7 @@ export function HomeApp() {
     <a className="home-skip-link" href="#home-content">跳转到内容</a>
     <aside className="home-sidebar">{!mobileMenu && navContent}</aside>
     <dialog ref={mobileDialog} className="home-mobile-nav" aria-label="工作空间导航" onCancel={event => { event.preventDefault(); setMobileMenu(false); }} onClick={event => { if (event.target === event.currentTarget) setMobileMenu(false); }}><div className="home-mobile-nav-inner">{mobileMenu && navContent}</div></dialog>
-    <div className="home-main"><header className="home-topbar"><span className="home-mobile-menu"><IconControl label="打开导航" onClick={() => setMobileMenu(true)}><Menu size={20} /></IconControl></span><span className="home-breadcrumb">工作空间<ChevronRight size={13} /><strong>{activeNav.label}</strong></span><span className="home-local-indicator"><i />本地工作空间</span></header>
+    <div className="home-main"><header className="home-topbar"><span className="home-mobile-menu"><IconControl label="打开导航" onClick={() => setMobileMenu(true)}><Menu size={20} /></IconControl></span><span className="home-breadcrumb">工作空间<ChevronRight size={13} /><strong>{activeNav.label}</strong></span><span className="home-local-indicator"><i />本地工作空间</span><IconControl label={theme.resolved === 'dark' ? '切换到浅色模式' : '切换到深色模式'} onClick={event => theme.toggle(event.currentTarget)}>{theme.resolved === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</IconControl></header>
       <main ref={content} id="home-content" className="home-content" tabIndex={-1}>
         {error && <div className="home-error" role="alert"><span>{error}</span><IconControl label="关闭错误提示" onClick={() => setError('')}><X size={16} /></IconControl></div>}
         {section === 'systems' && activeSystem ? <SystemWorkbench onOpenComponents={()=>void openComponentAssets()} key={activeSystem.id} system={activeSystem} config={agentConfig} project={project} onProject={() => setDialog('directory')} isBuiltIn={builtInSystems.some(s => s.id === activeSystem.id)} onClose={() => setActiveSystem(null)} onSave={saveSystem} onUse={system => { saveSystem(system); setSelectedSystem(system.id); setActiveSystem(null); navigate('home'); }} onDelete={customSystems.some(s => s.id === activeSystem.id) ? () => { const next = customSystems.filter(s => s.id !== activeSystem.id); if (!writeStored('systems', next)) { setError('无法保存删除操作，请重试。'); return; } setCustomSystems(next); if (selectedSystem === activeSystem.id) setSelectedSystem('rea'); setActiveSystem(null); } : undefined} /> : section === 'home' ? <div className="home-overview">
@@ -215,6 +218,7 @@ export function HomeApp() {
         </div> : section === 'settings' ? <section className="home-library"><div className="home-page-heading"><div><h1>设置</h1><p>让工作空间更贴合你的创作习惯。</p></div></div><div className="home-settings">
           <AgentSettings config={agentConfig} onChange={next => { setAgentConfig(next); if (!writeStored('agent', next)) setError('无法保存 Agent 配置。'); }} />
           <section><h2>创作偏好</h2><div className="home-setting-row"><div><label htmlFor="home-send-key">发送快捷键</label><p>选择你习惯的消息发送方式。</p></div><select id="home-send-key" value={preferences.sendKey} onChange={event => updatePreferences({ sendKey: event.currentTarget.value as Preferences['sendKey'] })}><option value="enter">Enter 发送</option><option value="command">⌘ / Ctrl + Enter 发送</option></select></div><div className="home-setting-row"><div><label htmlFor="home-show-rulers">显示标尺</label><p>在画布顶部与左侧显示刻度，可从标尺拖出参考线；默认关闭。</p></div><input id="home-show-rulers" type="checkbox" aria-label="显示标尺" checked={preferences.showRulers ?? false} onChange={event => updatePreferences({ showRulers: event.currentTarget.checked })} /></div><div className="home-setting-row"><div><label htmlFor="home-show-guides">显示参考线</label><p>显示已创建的参考线，并允许拖动与吸附；关闭不会删除数据。</p></div><input id="home-show-guides" type="checkbox" aria-label="显示参考线" checked={preferences.showGuides ?? true} onChange={event => updatePreferences({ showGuides: event.currentTarget.checked })} /></div><div className="home-setting-row"><div><strong>关联项目代码</strong><p>{project?.path || '尚未关联本地项目'}</p></div><button type="button" className="home-secondary-button" onClick={() => setDialog('directory')}><FolderOpen size={15} />关联项目</button></div></section>
+          <section><h2>外观</h2><div className="home-setting-row"><div><label htmlFor="home-theme">界面主题</label></div><select id="home-theme" value={theme.preference} onChange={event => theme.setPreference(event.currentTarget.value as ThemePreference, event.currentTarget)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></section>
           <section><h2>关于工作空间</h2><div className="home-setting-row"><div><strong>本地存储</strong><p>项目保存在本地工作空间中，可在编辑器中导出 .reaui 备份。</p></div><span className="home-setting-tag"><Check size={13} />本地工作空间</span></div><div className="home-setting-row"><div><strong>REA UI</strong><p>React 单源设计编辑器</p></div><span className="home-muted">v0.1.0</span></div></section>
         </div></section> : <section className="home-library">
           <div className="home-page-heading"><div><h1>{activeNav.label}</h1><p>{section === 'projects' ? '把灵感留在这里，随时回来继续。' : section === 'systems' ? '用一致的设计语言，让每一次创作更从容。' : '从一个好的起点，开始你的下一个设计。'}</p></div>{section !== 'templates' && <button type="button" className="home-primary-button" disabled={busy} onClick={() => showCreate(section === 'systems' ? 'system' : 'project')}><Plus size={16} />{section === 'systems' ? '新建设计系统' : '新建项目'}</button>}</div>

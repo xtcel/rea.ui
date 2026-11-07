@@ -16,6 +16,7 @@ import { parseGuides, serializeGuides, withPageGuides, appendGuide, MAX_GUIDES_P
 import type { GuideAxis, ManualGuide } from './session/guides';
 import type { RulerZone } from './components/rulerGesture';
 import { useViewPreferences } from './session/viewPreferences';
+import { useTheme } from './session/theme';
 import { layoutTransaction } from './inspector/model';
 import { usePropertyPanel } from './inspector/usePropertyPanel';
 import { Inspector } from './components/Inspector';
@@ -23,7 +24,7 @@ import { InspectPanel } from './components/InspectPanel';
 import { LayersPanel } from './components/LayersPanel';
 import { DocumentListDialog } from './components/DocumentListDialog';
 import { EditorShell } from './components/EditorShell';
-import { Button, ContextMenu, Dialog, IconButton, InlineName, Menu, Panel, Tabs } from './ui';
+import { Button, ContextMenu, Dialog, IconButton, InlineName, Menu, Panel, Tabs, ThemeButton } from './ui';
 import { useDocument } from './session/useDocument';
 import type { DocumentModel } from './session/useDocument';
 import { descendants, emptySelection, isContainer, navigateSelection, scopedChildren, selectionRoots, toggleSelection } from './session/selection';
@@ -76,6 +77,7 @@ function DocumentEditor({ model, current, onHome, agent }: { model: DocumentMode
   const componentParsed=editingComponent?current.componentPages.get(editingComponent):undefined;
   const page = componentParsed?.page??pages.find(item => item.id === pageId) ?? pages[0], parsed = componentParsed??current.pages.get(page.id)!;
   const viewPrefs = useViewPreferences();
+  const theme = useTheme();
   const pageIds = pages.map(item => item.id);
   const guideStore = useMemo(() => parseGuides(current.files[EDITOR_GUIDES_FILE], pageIds), [current]);
   const guides: readonly ManualGuide[] = guideStore.pages[pageId] ?? [];
@@ -434,8 +436,9 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       <IconButton label="文字工具 (T)" active={tool === 'text'} onClick={() => chooseTool('text')}><Type size={17} /></IconButton>
       <IconButton label="抓手工具 (H)" active={tool === 'hand'} onClick={() => chooseTool('hand')}><Hand size={17} /></IconButton>
     </div><span className="rea-divider rea-history" /><div className="rea-history flex"><IconButton label="撤销 (⌘/Ctrl+Z)" disabled={!current.past.length} onClick={model.undo}><Undo2 size={16} /></IconButton><IconButton label="重做 (⌘/Ctrl+Shift+Z)" disabled={!current.future.length} onClick={model.redo}><Redo2 size={16} /></IconButton></div>
-    <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-slate-400">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-red-700!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
+    <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-[var(--rea-muted)]">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-[var(--rea-danger)]!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
     <div className="ml-auto flex shrink-0 items-center"><IconButton label="显示 AI 与图层" className="rea-mobile-only" active={panel === 'layers'} onClick={() => setPanel(panel === 'layers' ? null : 'layers')}><Layers size={16} /></IconButton><IconButton label="显示属性" className="rea-mobile-only" active={panel === 'inspector'} onClick={() => setPanel(panel === 'inspector' ? null : 'inspector')}><PanelRight size={16} /></IconButton>
+    <ThemeButton />
     <Menu label="视图" items={[
       { label: '添加垂直参考线', action: () => { const point = canvas.current?.viewportCenter() ?? { x: 0, y: 0 }; addGuideAt('x', point.x); } },
       { label: '添加水平参考线', action: () => { const point = canvas.current?.viewportCenter() ?? { x: 0, y: 0 }; addGuideAt('y', point.y); } },
@@ -444,6 +447,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       { label: '锁定标尺原点', checked: rulerLocked, action: () => setRulerLocked(value => !value) },
       { label: '重置标尺原点', action: () => setRulerOrigin({ x: 0, y: 0 }) },
       { label: '清除当前页面参考线', disabled: !guides.length, action: () => clearGuides() },
+      { label: '深色模式', checked: theme.resolved === 'dark', action: () => theme.toggle() },
     ]}><span className="text-xs">视图</span><ChevronDown size={12} /></Menu>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
