@@ -1,29 +1,49 @@
 {
-  "name": "@rea/reaui-cli",
+  "name": "@xtcel/reaui-cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "Command line interface for building, validating and previewing REA UI documents.",
+  "description": "REA UI 设计源命令行：创建、校验、打包、解包与生成自包含 HTML 预览，不依赖浏览器。",
+  "license": "Apache-2.0",
+  "keywords": [
+    "reaui",
+    "react",
+    "design",
+    "tailwindcss",
+    "ai-agent",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "reaui": "./bin/reaui.mjs"
   },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/reaui.mjs"
   },
   "scripts": {
-    "reaui": "node ./bin/reaui.mjs"
+    "reaui": "node ./bin/reaui.mjs",
+    "build": "node scripts/build.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
     "@rea/design": "workspace:*",
     "@rea/document": "workspace:*",
     "@rea/renderer-dom": "workspace:*",
     "@rea/storage": "workspace:*",
     "@rea/tailwind": "workspace:*",
+    "@babel/parser": "8.0.10",
+    "@babel/types": "8.0.10",
     "fflate": "0.8.3",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
-  },
-  "devDependencies": {
+    "react-dom": "19.3.1",
     "tailwindcss": "4.3.3",
     "vite": "8.3.5"
   }

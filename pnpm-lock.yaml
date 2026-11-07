@@ -293,7 +293,13 @@ importers:
   packages/geometry: {}
 
   packages/reaui-cli:
-    dependencies:
+    devDependencies:
+      '@babel/parser':
+        specifier: 8.0.10
+        version: 8.0.10
+      '@babel/types':
+        specifier: 8.0.10
+        version: 8.0.10
       '@rea/design':
         specifier: workspace:*
         version: link:../design
@@ -318,7 +324,6 @@ importers:
       react-dom:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
-    devDependencies:
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3

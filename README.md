@@ -1,10 +1,43 @@
 # REA UI
 
-React 单源设计编辑器，使用 **React Web + Rust/WASM 几何内核**。已实现 OpenSpec M1 文档模型、M2 编辑器外壳与 M3 编辑核心：文档 → 页面（无限画布）→ 多个独立画框 → 图层。
+**AI 生成的设计稿，第一次能像设计稿一样改。**
+
+开源、可自托管的 React 单源设计编辑器。设计源是一份真实的 React TSX + Tailwind，而不是私有格式：你可以在画布上直接修改 AI 生成的界面，导出生产代码，也可以把同一份文档交回给 AI agent 继续迭代。
+
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%E2%89%A522.18.0-339933)
+![Status](https://img.shields.io/badge/status-early%20preview-orange)
 
 ![编辑器预览](docs/assets/editor-preview.jpg)
 
-## 启动
+## 为什么不是 Figma 或 v0
+
+| 工具 | 产物 | 在画布上改 AI 的结果 | 能交回 AI 继续迭代 |
+|---|---|---|---|
+| v0 / Lovable | 代码 | 只能重新生成 | 是 |
+| Figma Make / make-real | 图或私有文件 | 可以 | 难以回到代码 |
+| **REA UI** | 画布 + React TSX | 可以 | 是 |
+
+核心差异在于 **`.reaui` 是一个开放的交换格式**：任何 agent 只要按 [设计协议](docs/agent-protocol.md) 生成 TSX，就能产出可编辑设计稿；同一份文件在 CLI、桌面版、Web 版之间无损往返。
+
+## 快速开始
+
+### 1. 命令行：零安装，先试一次
+
+```bash
+npx @xtcel/reaui-cli init ./demo --name "我的应用" --page main --page-name 首页
+npx @xtcel/reaui-cli validate ./demo --json
+npx @xtcel/reaui-cli pack ./demo --out demo.reaui
+npx @xtcel/reaui-cli preview ./demo --out preview.html
+```
+
+得到两份产物：`demo.reaui` 双击用 REA UI 打开继续编辑，`preview.html` 是自包含离线预览，可直接发给他人查看。
+
+### 2. 桌面版：双击 .reaui 继续编辑
+
+macOS 12+、Apple Silicon。下载 `.dmg` 并安装后，在 Finder 中双击 `.reaui` 即可打开；首次启动会导入一份包含 249 个可编辑图层的示例设计稿。
+
+### 3. 从源码运行
 
 要求 Node.js **22.18+**、pnpm **12.4.1** 与 Rust 稳定工具链。
 
@@ -25,9 +58,9 @@ pnpm preview    # 生产预览
 
 pnpm 使用项目缓存 `.pnpm-store/`，锁文件固定依赖版本。
 
-## macOS 桌面版
+## 桌面版开发
 
-桌面版使用 Tauri 2 封装同一套 React 界面和 Rust/WASM 几何内核，支持 macOS 12+、Apple Silicon。
+桌面版使用 Tauri 2 封装同一套 React 界面和 Rust/WASM 几何内核，与 Web 版共享同一份设计源。
 
 ```bash
 pnpm desktop:dev        # 本地桌面开发，自动启动 Web 开发服务
@@ -40,24 +73,34 @@ pnpm design:app         # 重建可编辑的应用界面设计稿
 
 ## 本地 AI 生成
 
-支持使用本机 **Codex CLI** 生成可编辑 UI，并选择设计系统、关联本地项目代码、添加 `.reaui` 设计参考。先在终端运行 `codex login`，再到首页「设置 → 本地 AI Agent」检测连接。桌面版与 `pnpm dev` 均可使用；提交需求后先创建项目、打开编辑器，在左侧 AI 会话中查看执行过程，右侧同步显示通过校验的设计。后续对话继续修改同一项目，支持停止、自动修复与整轮撤销。
+支持使用本机 **Codex CLI** 或 **API 提供商**生成可编辑 UI，并选择设计系统、关联本地项目代码、添加 `.reaui` 设计参考。点击首页侧栏「设置」会打开独立的设置窗口（桌面版是多窗口，浏览器是弹出窗口，被拦截时回退为整页设置）：在「模型与提供商」里可以配置 Codex CLI、Claude Code、Gemini CLI 等本地命令，也可以直接填写 OpenAI 兼容、Anthropic、Gemini、DeepSeek、通义千问、智谱 GLM、Moonshot Kimi、Ollama 或自定义接口的地址、模型与 API Key，并用「检测连接 / 测试连接」确认可用。使用本地 CLI 时先在终端运行 `codex login`。桌面版与 `pnpm dev` 均可使用；提交需求后先创建项目、打开编辑器，在左侧 AI 会话中查看执行过程，右侧同步显示通过校验的设计。后续对话继续修改同一项目，支持停止、自动修复与整轮撤销。
 
-「设计系统」支持 AI 生成、语义配色/字体/间距/圆角配置、组件规范、使用指南与实时预览。关联项目只用于生成参考。配置方法与真实 Codex 复测命令见 [本地 Agent 说明](docs/local-agent.md)。
+「设计系统」支持 AI 生成、语义配色/字体/间距/圆角配置、组件规范、使用指南与实时预览。关联项目只用于生成参考。设置项与窗口行为见 [设置说明](docs/settings.md)，本地 CLI 的配置方法与真实 Codex 复测命令见 [本地 Agent 说明](docs/local-agent.md)。
 
-## WorkBuddy Agent 与 reaui CLI
+## reaui CLI 与 AI agent
 
-`packages/reaui-cli` 提供不依赖浏览器的文档命令，WorkBuddy 专家「小瑞」用它把需求变成可编辑设计稿。校验与打包复用编辑器同一套 `DocumentSession` 与 `.reaui` 封解包，不会出现「CLI 能过、编辑器打不开」。
+`packages/reaui-cli` 提供不依赖浏览器的文档命令，校验与打包复用编辑器同一套 `DocumentSession` 与 `.reaui` 封解包，不会出现「CLI 能过、编辑器打不开」。它是外部 agent 接入 REA UI 的唯一入口。
+
+发布到 npm 后，任何 agent 无需克隆仓库即可使用：
 
 ```bash
-pnpm reaui init ./demo --name "我的应用" --page main --page-name 首页
-pnpm reaui validate ./demo --json
-pnpm reaui pack ./demo --out demo.reaui
-pnpm reaui preview ./demo --out preview.html
+npx @xtcel/reaui-cli init ./demo --name "我的应用" --page main --page-name 首页
+npx @xtcel/reaui-cli validate ./demo --json
+npx @xtcel/reaui-cli pack ./demo --out demo.reaui
+npx @xtcel/reaui-cli preview ./demo --out preview.html
 ```
 
-`preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明与约束见 [Agent 设计协议](docs/agent-protocol.md)。
+仓库内开发用 `pnpm reaui`（通过 Vite 直接加载 TS，改源码立即生效）；`pnpm build:cli` 生成零运行时依赖的单文件 `packages/reaui-cli/dist/reaui.mjs`，发布包只包含 `bin` 与 `dist`。构建与发布流程见 [CLI 分发说明](docs/cli-distribution.md)。
 
-专家包源码在 `integrations/workbuddy/reaui-designer`，本机已注册到专家中心；更新时把该目录同步到 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/`，再用专家校验与注册脚本刷新。技能默认从 `REAUI_ROOT`（缺省 `~/workspace/rea.ui`）调用 CLI；仓库换位置时需设置该环境变量。
+| 场景 | 接入方式 |
+|---|---|
+| Codex CLI / Claude Code / 其他 agent | 直接调用 `reaui` 命令，按 [设计协议](docs/agent-protocol.md) 产出 TSX |
+| WorkBuddy | 内置专家「小瑞」已封装 CLI 调用，见 `integrations/workbuddy/reaui-designer` |
+| MCP server | 规划中，把上述命令暴露为标准工具 |
+
+`preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明、错误码与交付要求见 [Agent 设计协议](docs/agent-protocol.md)。
+
+专家包源码在 `integrations/workbuddy/reaui-designer`；更新时把该目录同步到 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/`，再用专家校验与注册脚本刷新。技能默认从 `REAUI_ROOT`（缺省 `~/workspace/rea.ui`）调用 CLI；仓库换位置时需设置该环境变量。
 
 ## 编辑操作
 
@@ -123,3 +166,29 @@ packages/
 属性面板支持单选与多选、数值预览和原子撤销。当前仅支持单个纯色填充；渐变、图片填充、自定义字体加载、混合模式和导出位图不在本阶段范围。
 
 ![属性面板预览](docs/assets/property-panel-preview.jpg)
+
+## 路线图
+
+**已完成**：M1 文档模型、M2 编辑器外壳、M3 编辑核心、M4 属性面板、reaui CLI、本机与 API 两种 AI 生成方式。
+
+**接下来**（按优先级）：
+
+| 阶段 | 内容 |
+|---|---|
+| 开箱即用 | 在线 Web demo、`npx` CLI 发布、Homebrew cask、桌面版签名与公证 |
+| 接入面 | MCP server、主流 agent 集成示例、设计系统转换器 |
+| 云端 | 账号、文档同步、版本历史、协作评论 |
+
+## 参与贡献
+
+欢迎 issue 与 PR。为保证主线可推进，以下方向**暂不接受 PR**：
+
+- 引入任意 React 运行入口或执行文档内代码（设计源必须保持静态可解析）
+- 第二套可编辑设计真源（所有能力必须落在现有静态 TSX 事务上）
+- 协作引擎、插件系统、企业权限（属于云端阶段）
+
+不确定某项改动是否在范围内，请先开 issue 讨论。
+
+## 许可证
+
+[Apache License 2.0](LICENSE)。`.reaui` 文件格式与 CLI 同样开源，欢迎第三方实现与集成。
