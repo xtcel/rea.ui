@@ -7,7 +7,7 @@ import type { ContextMenuEntry } from '../ui';
 
 function actions(): LayerMenuActions {
   const noop = () => {};
-  return { select: noop, copy: noop, pasteHere: noop, pasteReplace: noop, copyAsCode: noop, copyAsClasses: noop, reorder: noop, group: noop, ungroup: noop, autoLayout: noop, createComponent: noop, detach: noop, toggleHidden: noop, toggleLock: noop, flip: noop, remove: noop };
+  return { select: noop, rename: noop, copy: noop, pasteHere: noop, pasteReplace: noop, copyAsCode: noop, copyAsClasses: noop, reorder: noop, group: noop, ungroup: noop, autoLayout: noop, createComponent: noop, detach: noop, toggleHidden: noop, toggleLock: noop, flip: noop, remove: noop };
 }
 const entry = (entries: readonly ContextMenuEntry[], label: string) => {
   const found = entries.find(item => item !== 'separator' && item.label === label);

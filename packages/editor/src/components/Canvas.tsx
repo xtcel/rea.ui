@@ -19,7 +19,7 @@ import { VectorTools } from './VectorTools';
 import { IconButton } from '../ui';
 import { relativeRect, rotatedBounds, advanceGesture, contentBounds, drawingRect, fitBounds, panCamera, resizeSelection, rotatePoint, rotationDelta, scaleMember, screenToWorld } from '../session/gestures';
 import type { GesturePhase } from '../session/gestures';
-import { descendants, intersects, isContainer, marqueeIds, pointerSelectionHit, resolveHit, selectionRoots, toggleSelection } from '../session/selection';
+import { descendants, hierarchyHit, intersects, isContainer, marqueeIds, pointerSelectionHit, resolveHit, selectionRoots, toggleSelection } from '../session/selection';
 import type { SelectionMode, SelectionState } from '../session/selection';
 import { TextEditor } from './TextEditor';
 import { DRAFT_GUIDE_ID, MAX_GUIDES_PER_PAGE, guideSnapRects } from '../session/guides';
@@ -105,7 +105,7 @@ const draggingImages = (dataTransfer: DataTransfer | null) => !!dataTransfer && 
 const droppedImages = (dataTransfer: DataTransfer | null) => [...(dataTransfer?.files ?? [])].filter(file => file.type.startsWith('image/') || IMAGE_FILE.test(file.name));
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'direct', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
+export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
     rulerOrigin = { x: 0, y: 0 }, rulerLocked = false, onRulerOriginChange, onRulerContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
@@ -166,11 +166,16 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     const [touchedBoxes, setTouchedBoxes] = useState<{ id: string; box: Rect }[]>([]);
     const [imageDrag, setImageDrag] = useState(false);
     const gesture = useRef<Gesture | null>(null);
+    // React replays a discrete pointerdown after it commits, keeping the original timestamp.
+    // Ignoring the replay stops one shift-click from toggling the same layer twice.
+    const lastPointerDown = useRef(0);
     const ready = useCallback(() => { setMeasurement(value => value + 1); const root = container.current?.querySelector('[data-shadow-canvas]')?.shadowRoot?.querySelector('[data-page-origin]'); if (root)
         setBackground(getComputedStyle(root).backgroundColor); }, []);
     const panMode = tool === 'hand' || spaceHeld, creating = ['board', 'rectangle', 'ellipse', 'text','line','arrow','triangle','polygon','star','pen','pencil'].includes(tool);
     const selectedIds = selection.ids.filter(id => page.nodes.has(id)), selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
-    const canTransform = !!selectedIds.length && selectedIds.every(id => { const n = page.nodes.get(id)!; return (n.position === 'absolute'||n.parentId==='component-editor-surface') && !n.locked; });
+    // Commands always act on the outermost selected layers, so transform affordances follow them too.
+    const transformRoots = selectionRoots(page, selectedIds);
+    const canTransform = !!transformRoots.length && transformRoots.every(id => { const n = page.nodes.get(id)!; return (n.position === 'absolute'||n.parentId==='component-editor-surface') && !n.locked; });
     const topNodes = [...page.nodes.values()].filter(n => n.parentId === page.source.props.designId && !n.hidden);
     const content = contentBounds(topNodes.map(n => ({ x: fixedValue(n.element.props.className ?? '', 'left') ?? 0, y: fixedValue(n.element.props.className ?? '', 'top') ?? 0, width: fixedValue(n.element.props.className ?? '', 'width') ?? 320, height: fixedValue(n.element.props.className ?? '', 'height') ?? 200 })));
     const hadContent = useRef(topNodes.length > 0);
@@ -442,6 +447,15 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         const excluded = new Set(exclude.flatMap(id => [id, ...descendants(page, id)]));
         return hitIds(x, y).find(id => { const n = page.nodes.get(id); return isContainer(n) && !n!.locked && !n!.hidden && !excluded.has(id); }) ?? page.source.props.designId;
     }
+    /** Is this DOM hit inside the container the user has entered? */
+    function withinScope(scopeId: string, id: string) {
+        let node = page.nodes.get(id);
+        while (node) {
+            if (node.id === scopeId) return true;
+            node = node.parentId ? page.nodes.get(node.parentId) : undefined;
+        }
+        return false;
+    }
     function candidates(ids: readonly string[], parentId?: string) {
         const excluded = new Set(ids.flatMap(id => [id, ...descendants(page, id)]));
         const parents = new Set(ids.map(id => page.nodes.get(id)?.parentId).filter((id): id is string => !!id));
@@ -467,6 +481,9 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         onContextMenu?.({ x: event.clientX, y: event.clientY, point: worldPoint(event.clientX, event.clientY), parentId: containerAt(event.clientX, event.clientY), hits });
     }
     function pointerDown(event: PointerEvent<HTMLDivElement>) {
+        if (lastPointerDown.current === event.timeStamp)
+            return;
+        lastPointerDown.current = event.timeStamp;
         if (editingId || gesture.current || (event.button !== 0 && event.button !== 1))
             return;
         const target = event.target as HTMLElement, handle = target.closest<HTMLElement>('[data-resize-edge]'), rotate = target.closest('[data-rotate-handle]');
@@ -482,7 +499,7 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
             }
             else if (hit) {
                 if (!handle && !rotate) {
-                    ids = event.shiftKey ? toggleSelection(page, selectedIds, hit, true) : selectedIds.includes(hit) ? selectedIds : [hit];
+                    ids = event.shiftKey ? toggleSelection(selectedIds, hit, true) : selectedIds.includes(hit) ? selectedIds : [hit];
                     onSelection({ ...selection, ids });
                 }
                 g.clickId = !event.shiftKey ? hit : undefined;
@@ -505,7 +522,14 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
             }
             else {
                 intent = 'marquee';
-                if (!event.shiftKey)
+                // Inside a container, clicking anywhere outside it leaves the container and picks
+                // the top-level layer under the pointer, exactly like Sketch.
+                const scope = selection.scope;
+                if (scope && !rawHits.some(id => withinScope(scope, id))) {
+                    const top = hierarchyHit(page, rawHits, null);
+                    onSelection({ ...selection, ids: top ? [top] : [], scope: null });
+                }
+                else if (!event.shiftKey)
                     onSelection({ ...selection, ids: [] });
             }
         }
@@ -705,14 +729,25 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
         onDropImages(files, worldPoint(event.clientX, event.clientY), containerAt(event.clientX, event.clientY));
     }} onLostPointerCapture={() => { if (guideDrag.current) cancelGuideDrag(); if (gesture.current)
         cancel(true); }} onDoubleClick={event => { if (tool !== 'select' || panMode || editingId)
-        return; const hit = resolveHit(page, hitIds(event.clientX, event.clientY, event.nativeEvent), selection.scope, true); if (!hit)
-        return; const node = page.nodes.get(hit)!; if (node.kind === 'Text') {
-        onSelection({ ...selection, ids: [hit] });
-        onEdit(hit);
+        return; const hits = hitIds(event.clientX, event.clientY, event.nativeEvent), deepest = resolveHit(page, hits, selection.scope, true); if (!deepest)
+        return; const node = page.nodes.get(deepest)!; if (node.kind === 'Text') {
+        onSelection({ ...selection, ids: [deepest] });
+        onEdit(deepest);
     }
-    else if(isVectorKind(node.kind))editVector(hit);
-    else if (isContainer(node))
-        onSelection({ ...selection, scope: hit, ids: [] }); }}>
+    else {
+        // One level per double-click, like Sketch: the layer under the pointer at the current level
+        // is entered, edited as a vector, or — when a plain shape sits inside a group — ignored so
+        // the group itself absorbs the click first.
+        const level = hierarchyHit(page, hits, selection.scope) ?? deepest, levelNode = page.nodes.get(level)!;
+        if (isVectorKind(levelNode.kind)) {
+            onSelection({ ...selection, ids: [level] });
+            editVector(level);
+        }
+        else if (isContainer(levelNode)) {
+            const child = hierarchyHit(page, hits, level);
+            onSelection({ ...selection, scope: level, ids: child ? [child] : [] });
+        }
+    } }}>
     <div className="rea-canvas-content-position" style={{ position: 'absolute', left: camera.x, top: camera.y }}>
       <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ position:'relative', transform: `scale(${camera.zoom})`, transformOrigin: '0 0' }}>
       <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} pathPreview={vectorEditingId&&pathDraft?{id:vectorEditingId,path:pathDraft}:null} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} zoom={camera.zoom}/>
@@ -721,8 +756,8 @@ export function Canvas({ page, selection, selectionMode = 'direct', onSelection,
     </div>
     <div className="rea-canvas-scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
       {topNodes.filter(n => n.kind === 'Frame').map(node => { const cls = node.element.props.className ?? ''; return <button key={node.id} type="button" className={`rea-artboard-label ${selectedIds.includes(node.id) ? 'rea-active' : ''}`} hidden={camera.zoom < .25} style={{ width: 'max-content', right: 'auto', left: fixedValue(cls, 'left') ?? 0, top: (fixedValue(cls, 'top') ?? 0) - 28 / camera.zoom, transform: `scale(${1 / camera.zoom})`, transformOrigin: 'left top' }} onPointerDown={e => e.stopPropagation()} onClick={e => { if (!node.locked)
-        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, e.shiftKey) }); }} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); if (!node.locked)
-        onSelection({ ...selection, ids: toggleSelection(page, selectedIds, node.id, false) }); onContextMenu?.({ x: e.clientX, y: e.clientY, point: worldPoint(e.clientX, e.clientY), parentId: node.parentId ?? page.source.props.designId, hits: [node.id] }); }}>{node.name}</button>; })}
+        onSelection({ ...selection, ids: toggleSelection(selectedIds, node.id, e.shiftKey) }); }} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); if (!node.locked)
+        onSelection({ ...selection, ids: [node.id] }); onContextMenu?.({ x: e.clientX, y: e.clientY, point: worldPoint(e.clientX, e.clientY), parentId: node.parentId ?? page.source.props.designId, hits: [node.id] }); }}>{node.name}</button>; })}
       {drawing && <div className={`rea-drawing-preview ${tool === 'ellipse' ? 'rea-ellipse-preview' : ''}`} style={{ left: drawing.x, top: drawing.y, width: drawing.width, height: drawing.height }}/>}
       {marquee && <div className="rea-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, borderWidth: 1 / camera.zoom }}/>}
       {dropTarget && box(dropTarget) && <div className="rea-drop-container" style={{ left: box(dropTarget)!.x, top: box(dropTarget)!.y, width: box(dropTarget)!.width, height: box(dropTarget)!.height, borderWidth: 2 / camera.zoom }}/>}

@@ -79,6 +79,8 @@
   .rea-node-symbol + div h3 { @apply text-xs font-semibold; } .rea-node-symbol + div p { @apply mt-1 text-[11px] text-[var(--rea-muted)]; }
   .rea-fill-field { @apply mb-3 flex items-center gap-2; } .rea-fill-field input[type=color] { @apply size-8 shrink-0 cursor-pointer border-0 bg-transparent p-0; }
   .rea-layer-row { @apply flex h-8 items-center pr-1 text-[var(--rea-text)] hover:bg-[var(--rea-hover)]; } .rea-layer-row.rea-selected { @apply bg-[var(--rea-selected)] text-[var(--rea-accent)] ring-1 ring-inset ring-[var(--rea-ring)]; }
+  /* Hidden layers stay selectable from the list, but read back dimmed like Sketch. */
+  .rea-layer-row.rea-layer-hidden > [data-layer-name] { @apply text-[var(--rea-muted)]; } .rea-layer-row.rea-layer-hidden > svg { @apply opacity-45; }
   .rea-dialog,.rea-document-dialog { @apply m-auto max-h-[calc(100dvh-48px)] w-[min(640px,calc(100vw-28px))] overflow-auto rounded-lg border-0 bg-[var(--rea-surface)] p-0 text-[var(--rea-text)]; box-shadow:var(--rea-shadow-dialog); }
   .rea-dialog::backdrop,.rea-document-dialog::backdrop { background:var(--rea-scrim); }
   .rea-notice { @apply absolute left-1/2 top-3 z-30 flex max-h-[40%] max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 overflow-auto rounded px-4 py-2 text-xs whitespace-pre-line; background:var(--rea-notice-bg); color:var(--rea-notice-text); border:1px solid var(--rea-notice-border); box-shadow:var(--rea-shadow-popup); overflow-wrap:anywhere; }
