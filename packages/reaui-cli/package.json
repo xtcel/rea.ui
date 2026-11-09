@@ -1,15 +1,25 @@
 {
   "name": "@xtcel/reaui-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
-  "description": "REA UI 设计源命令行：创建、校验、打包、解包与生成自包含 HTML 预览，不依赖浏览器。",
+  "description": "Command-line interface for REA UI design documents: create, validate, pack, unpack and preview React TSX design sources. No browser, no runtime dependencies.",
   "license": "Apache-2.0",
+  "author": "xtcel",
   "keywords": [
     "reaui",
     "react",
-    "design",
+    "tsx",
     "tailwindcss",
+    "design",
+    "design-tool",
+    "ui-design",
+    "design-system",
+    "figma",
+    "ai",
     "ai-agent",
+    "llm",
+    "mcp",
+    "codegen",
     "cli"
   ],
   "engines": {
@@ -19,12 +29,13 @@
     "access": "public"
   },
   "bin": {
-    "reaui": "./bin/reaui.mjs"
+    "reaui": "bin/reaui.mjs"
   },
   "files": [
     "bin",
     "dist",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ],
   "exports": {
     ".": "./dist/reaui.mjs"

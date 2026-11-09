@@ -7,7 +7,7 @@ import { runPreview } from './commands/preview';
 import { runUnpack } from './commands/unpack';
 import { runValidate } from './commands/validate';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
