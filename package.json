@@ -16,6 +16,7 @@
     "design:app": "node scripts/build-app-design.mjs",
     "reaui": "node packages/reaui-cli/bin/reaui.mjs",
     "build:cli": "pnpm --filter @xtcel/reaui-cli build",
+    "build:mcp": "pnpm --filter @xtcel/reaui-mcp build",
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "pnpm build:wasm && pnpm typecheck && pnpm --filter @rea/web build",
     "test:rust": "cargo test --workspace",

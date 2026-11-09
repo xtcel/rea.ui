@@ -1,0 +1,57 @@
+{
+  "name": "@xtcel/reaui-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for REA UI: let any AI agent create, validate and pack editable .reaui design documents. Runs locally over stdio or remotely over HTTP.",
+  "license": "Apache-2.0",
+  "author": "xtcel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xtcel/rea.ui.git",
+    "directory": "packages/reaui-mcp"
+  },
+  "homepage": "https://github.com/xtcel/rea.ui/tree/main/packages/reaui-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/xtcel/rea.ui/issues"
+  },
+  "keywords": [
+    "reaui",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "design",
+    "react",
+    "tailwindcss",
+    "design-tool",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "reaui-mcp": "bin/reaui-mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./dist/reaui-mcp.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@xtcel/reaui-cli": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}

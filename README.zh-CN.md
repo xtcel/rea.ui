@@ -112,7 +112,7 @@ npx @xtcel/reaui-cli preview ./demo --out preview.html
 |---|---|
 | Codex CLI / Claude Code / 其他 agent | 直接调用 `reaui` 命令，按 [设计协议](docs/agent-protocol.md) 产出 TSX |
 | WorkBuddy | 内置专家「小瑞」已封装 CLI 调用，见 `integrations/workbuddy/reaui-designer` |
-| MCP server | 规划中，把上述命令暴露为标准工具 |
+| MCP 客户端（Claude Code、Cursor、Cline） | `npx @xtcel/reaui-mcp`：八个工具 + 设计协议资源，支持 stdio 与 Streamable HTTP 两种传输。见 [MCP server](packages/reaui-mcp/README.md) |
 
 `preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明、错误码与交付要求见 [Agent 设计协议](docs/agent-protocol.md)。
 
@@ -185,14 +185,14 @@ packages/
 
 ## 路线图
 
-**已完成**：M1 文档模型、M2 编辑器外壳、M3 编辑核心、M4 属性面板、reaui CLI、在线 demo、本机与 API 两种 AI 生成方式。
+**已完成**：M1 文档模型、M2 编辑器外壳、M3 编辑核心、M4 属性面板、reaui CLI、MCP server、在线 demo、本机与 API 两种 AI 生成方式。
 
 **接下来**（按优先级）：
 
 | 阶段 | 内容 |
 |---|---|
-| 开箱即用 | `npx` CLI 发布、Homebrew cask、桌面版签名与公证 |
-| 接入面 | MCP server、主流 agent 集成示例、设计系统转换器 |
+| 开箱即用 | Homebrew cask、桌面版签名与公证 |
+| 接入面 | 主流 agent 集成示例、设计系统转换器 |
 | 云端 | 账号、文档同步、版本历史、协作评论 |
 
 ## 参与贡献

@@ -2,6 +2,7 @@ import { parseArgs } from './args';
 import { CliError, describe, printErrors } from './errors';
 import { runDiff } from './commands/diff';
 import { runInit } from './commands/init';
+import { runMcp } from './commands/mcp';
 import { runPack } from './commands/pack';
 import { runPreview } from './commands/preview';
 import { runUnpack } from './commands/unpack';
@@ -20,6 +21,7 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
   unpack     解包 .reaui 为文档目录
   diff       比较两个设计源
   preview    生成自包含 HTML 预览
+  mcp        启动 MCP server（转发到 @xtcel/reaui-mcp）
 
 通用选项：
   --json     以 JSON 输出结果
@@ -37,6 +39,8 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 `;
 
 export async function main(argv: string[]): Promise<number> {
+  // mcp 直接转发：MCP server 有自己的命令行，不能被 CLI 的参数解析拦截。
+  if (argv[0] === 'mcp') return await runMcp(argv.slice(1));
   const args = parseArgs(argv);
   if (args.flags.has('version') || args.command === 'version') { console.log(VERSION); return 0; }
   if (args.flags.has('help') || args.command === 'help') { console.log(HELP); return 0; }

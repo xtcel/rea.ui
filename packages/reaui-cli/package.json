@@ -47,7 +47,8 @@
     "README.zh-CN.md"
   ],
   "exports": {
-    ".": "./dist/reaui.mjs"
+    ".": "./dist/reaui.mjs",
+    "./package.json": "./package.json"
   },
   "scripts": {
     "reaui": "node ./bin/reaui.mjs",

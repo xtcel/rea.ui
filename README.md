@@ -114,7 +114,7 @@ Inside the repo use `pnpm reaui` (loads TS through Vite, so source edits take ef
 |---|---|
 | Codex CLI / Claude Code / other agents | Call the `reaui` command and follow the [design protocol](docs/agent-protocol.md) |
 | WorkBuddy | Ships an expert that wraps the CLI, see `integrations/workbuddy/reaui-designer` |
-| MCP server | Planned; exposes the same commands as standard tools |
+| MCP clients (Claude Code, Cursor, Cline) | `npx @xtcel/reaui-mcp` — eight tools plus the design protocol as a resource, over stdio or Streamable HTTP. See [MCP server](packages/reaui-mcp/README.md) |
 
 `preview.html` is a self-contained offline preview that opens in the WorkBuddy result pane; `demo.reaui` opens in REA UI for continued editing. Command reference, error codes and delivery rules: [agent design protocol](docs/agent-protocol.md).
 
@@ -188,14 +188,14 @@ The property panel supports single and multi-selection, numeric preview and atom
 
 ## Roadmap
 
-**Shipped:** M1 document model, M2 editor shell, M3 editing core, M4 property panel, `@xtcel/reaui-cli` on npm, online demo, local-CLI and API-provider AI generation.
+**Shipped:** M1 document model, M2 editor shell, M3 editing core, M4 property panel, `@xtcel/reaui-cli` on npm, `@xtcel/reaui-mcp`, online demo, local-CLI and API-provider AI generation.
 
 **Next**, in priority order:
 
 | Area | Work |
 |---|---|
 | Distribution | Homebrew cask, signed and notarised desktop build |
-| Integrations | MCP server, agent recipes, design-system converter |
+| Integrations | Agent recipes, design-system converter |
 | Cloud | Accounts, document sync, version history, commenting |
 
 ## Contributing
