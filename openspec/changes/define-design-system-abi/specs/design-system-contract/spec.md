@@ -30,6 +30,13 @@
 
 系统 MUST 为每个令牌派生唯一 CSS 变量名 `--rea-ds-<group>-<kebab-path>`，例如 `--rea-ds-color-primary`、`--rea-ds-color-primary-hover`、`--rea-ds-space-24`、`--rea-ds-radius-md`、`--rea-ds-typography-body-size`、`--rea-ds-shadow-card`；两个令牌派生出同名变量时 MUST 拒绝整个包。
 
+变量值 MUST 是可直接被 CSS 接受的合法值，而不是裸数字：`size`、`space.scale`、`radius` MUST 序列化为带 `px` 的长度（如 `--rea-ds-radius-md:8px`）；`lineHeight` 为 1–3 时 MUST 保持无单位倍数，为 8–96 时 MUST 输出 `px`；`weight` MUST 为无单位整数；颜色 MUST 为六位十六进制。变量名与值的派生 MUST 可被画布 `:host` 注入、`reaui preview` 的 `:root` 与导出预览共用同一实现。
+
+#### Scenario: 长度令牌带单位
+
+- **WHEN** `radius.md` 为 `8`、`space.scale` 含 `24`、`typography.heading.size` 为 `30`
+- **THEN** 派生变量为 `--rea-ds-radius-md:8px`、`--rea-ds-space-24:24px`、`--rea-ds-typography-heading-size:30px`，`border-radius` / `padding` / `font-size` 引用后取到对应像素值而不是回退为 `0`
+
 #### Scenario: 非法颜色被拒绝
 
 - **WHEN** `color.primary` 为 `#fff` 或 `red`

@@ -448,9 +448,27 @@ CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图�
 
 **未覆盖 / 待补**
 
-- 50% / 200% 缩放下的引用对齐截图（任务 8.5）：演示文档不含令牌引用，需先准备样例文档；`reaui preview` 的 `:root` 变量同源已由 `packages/reaui-cli/test/system.test.ts` 断言。
 - ShadowCanvas 的 `:host` 输出仍无组件级断言（node 测试环境），本轮通过 CDP 读取 `getComputedStyle` 间接验证。
 - 取消固定时「仍有引用则拒绝」只在单元测试覆盖，界面未做对应提示截图。
+
+## 设计系统 ABI：缩放与 preview 同值复核（2026-11-09 第三轮）
+
+补齐任务 8.5：把演示页换成引用 `var(--rea-ds-*)` 的样例，在三档缩放下比对几何与计算值，再用真实 CLI 复核同一份文件。
+
+**修复的真实缺陷**
+
+- `systemVariables()` 原先把所有令牌值序列化为无单位字符串，长度类令牌因此输出 `--rea-ds-radius-md:8` / `--rea-ds-space-24:24` / `--rea-ds-typography-heading-size:30`。CSS 判定这些值非法，`border-radius` / `padding` / `font-size` 全部回退为 `0` / 默认值——颜色（hex）、行高（1–3 的无单位倍数）、字重恰好合法，所以只有部分令牌「看起来生效」，单元测试只断言变量名也没能拦住。
+- 现按 CSS 语义输出：字号 / 间距 / 圆角补 `px`，行高 1–3 保持无单位倍数、8–96 输出 `px`，字重保持整数。哈希基于 tokens 原始数值，不受序列化格式影响；唯一受影响的其它消费方是 `systemChanges` 的变更摘要文字（同样变得可读）。
+
+**命令结果**
+
+- `pnpm test`：521 通过 / 2 跳过（65 文件）；`pnpm typecheck`、`pnpm build` 通过；`openspec validate define-design-system-abi --strict` 通过。
+- `node scripts/verify-design-system-zoom.mjs`（CDP + headless Chrome，1440×900，浅色）：**26 项全部通过**。发布并固定 v1 → 替换演示页为令牌样例后：100% / 50% / 200% 三档下令牌色块与字面量对照块的缩放比一致（1.0000 / 0.5000 / 2.0000，误差 <1%）、与缩放标签一致（<2%）、块间距成比例（16 / 8 / 32px）、计算值始终未缩放（圆角 8px、内边距 24px、主色 `rgb(53,106,240)`）、标题 30px / 38.1px / 500；同一份文件 `reaui validate` 通过并报告 `source: pinned` 的 v1 快照，`reaui preview` 的 `:root` 与画布同值（`--rea-ds-radius-md:8px`、`--rea-ds-space-24:24px`、`--rea-ds-typography-heading-size:30px`），且自行编译出 `background-color: var(--rea-ds-color-primary)`。
+
+**未覆盖 / 待补**
+
+- 只在 Chromium 复核，未做 WebKit / Firefox 真机；缩放用 `⌘` + 滚轮模拟，触控板捏合手势未单独验证。
+- 阴影令牌（`--rea-ds-shadow-*`）未进本次样例；圆角、间距、字号与颜色已覆盖。
 
 ## SVG 矢量导入与图片导出（2026-11-09）
 

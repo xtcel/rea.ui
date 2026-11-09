@@ -91,7 +91,7 @@ describe('preview token scope', () => {
   it('writes the pinned tokens into :root with the same derivation as the canvas', () => {
     const html = previewHtml('测试', [], '', '2026-11-09', cssVariables(system().tokens, ':root'));
     expect(html).toContain(':root{--rea-ds-color-primary:');
-    expect(html).toContain('--rea-ds-space-8:8');
+    expect(html).toContain('--rea-ds-space-8:8px');
     expect(html).toContain('font-family:var(--rea-ds-typography-family)');
   });
 

@@ -97,6 +97,19 @@ describe('package', () => {
     expect(cssVariables(system().tokens, ':root')).toMatch(/^:root\{--rea-ds-color-primary:#356AF0;/);
   });
 
+  it('serialises lengths as CSS lengths and line-heights by their own rule', () => {
+    const value = system();
+    const css = cssVariables(value.tokens, ':root');
+    expect(css).toContain('--rea-ds-radius-md:8px');
+    expect(css).toContain('--rea-ds-space-24:24px');
+    expect(css).toContain('--rea-ds-typography-heading-size:30px');
+    expect(css).toContain('--rea-ds-typography-heading-line:1.27');
+    expect(css).toContain('--rea-ds-typography-heading-weight:500');
+    const absolute = { ...value.tokens, typography: { ...value.tokens.typography, body: { size: 14, lineHeight: 20, weight: 400 } } };
+    expect(cssVariables(absolute, ':root')).toContain('--rea-ds-typography-body-line:20px');
+    expect(css).not.toContain('--rea-ds-radius-md:8;');
+  });
+
   it('extracts only the token namespace', () => {
     const refs = extractTokenRefs('bg-[var(--rea-ds-color-primary)] text-[var(--my-brand)] p-[var(--rea-ds-space-24)]');
     expect(refs.map(ref => ref.name)).toEqual(['--rea-ds-color-primary', '--rea-ds-space-24']);

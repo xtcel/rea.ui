@@ -24,14 +24,16 @@ export function systemVariables(tokens: DesignSystemTokens): SystemVariable[] {
   variables.push({ name: '--rea-ds-typography-family', value: tokens.typography.family, path: 'typography.family' });
   for (const role of TYPOGRAPHY_ROLES) {
     const value = tokens.typography[role];
+    // CSS semantics: line-height 1–3 is a multiplier, 8–96 is an absolute px length.
+    const line = value.lineHeight <= 3 ? String(value.lineHeight) : `${value.lineHeight}px`;
     variables.push(
-      { name: `--rea-ds-typography-${role}-size`, value: String(value.size), path: `typography.${role}.size` },
-      { name: `--rea-ds-typography-${role}-line`, value: String(value.lineHeight), path: `typography.${role}.lineHeight` },
+      { name: `--rea-ds-typography-${role}-size`, value: `${value.size}px`, path: `typography.${role}.size` },
+      { name: `--rea-ds-typography-${role}-line`, value: line, path: `typography.${role}.lineHeight` },
       { name: `--rea-ds-typography-${role}-weight`, value: String(value.weight), path: `typography.${role}.weight` },
     );
   }
-  for (const value of tokens.space.scale) variables.push({ name: `--rea-ds-space-${value}`, value: String(value), path: `space.${value}` });
-  for (const key of RADIUS_KEYS) variables.push({ name: `--rea-ds-radius-${key}`, value: String(tokens.radius[key]), path: `radius.${key}` });
+  for (const value of tokens.space.scale) variables.push({ name: `--rea-ds-space-${value}`, value: `${value}px`, path: `space.${value}` });
+  for (const key of RADIUS_KEYS) variables.push({ name: `--rea-ds-radius-${key}`, value: `${tokens.radius[key]}px`, path: `radius.${key}` });
   for (const [key, value] of Object.entries(tokens.shadow ?? {})) variables.push({ name: `--rea-ds-shadow-${kebab(key)}`, value, path: `shadow.${key}` });
   return variables;
 }
