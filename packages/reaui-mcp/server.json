@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.xtcel/reaui",
+  "title": "REA UI",
+  "description": "Create, validate and pack .reaui React TSX design documents that open in an editor.",
+  "version": "0.1.1",
+  "websiteUrl": "https://reaui.xtcel.com/",
+  "repository": {
+    "url": "https://github.com/xtcel/rea.ui",
+    "source": "github",
+    "subfolder": "packages/reaui-mcp"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/xtcel/rea.ui/main/src-tauri/icons/128x128.png",
+      "mimeType": "image/png",
+      "sizes": ["128x128"]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@xtcel/reaui-mcp",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

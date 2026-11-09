@@ -112,7 +112,7 @@ npx @xtcel/reaui-cli preview ./demo --out preview.html
 |---|---|
 | Codex CLI / Claude Code / 其他 agent | 直接调用 `reaui` 命令，按 [设计协议](docs/agent-protocol.md) 产出 TSX |
 | WorkBuddy | 内置专家「小瑞」已封装 CLI 调用，见 `integrations/workbuddy/reaui-designer` |
-| MCP 客户端（Claude Code、Cursor、Cline） | `npx @xtcel/reaui-mcp`：八个工具 + 设计协议资源，支持 stdio 与 Streamable HTTP 两种传输。见 [MCP server](packages/reaui-mcp/README.md) |
+| MCP 客户端（Claude Code、Cursor、Codex CLI、Cline） | `npx @xtcel/reaui-mcp`：八个工具 + 设计协议资源，支持 stdio 与 Streamable HTTP 两种传输。各客户端配置见 [接入示例](docs/agents/README.md) · [MCP server](packages/reaui-mcp/README.md) |
 
 `preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明、错误码与交付要求见 [Agent 设计协议](docs/agent-protocol.md)。
 

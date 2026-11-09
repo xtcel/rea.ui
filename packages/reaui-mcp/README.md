@@ -41,6 +41,8 @@ claude mcp add reaui -- npx -y @xtcel/reaui-mcp --root /absolute/path/to/designs
 
 You can also reach it through the CLI: `npx @xtcel/reaui-cli mcp`.
 
+Per-client guides, with prompts and rules files: [Claude Code](https://github.com/xtcel/rea.ui/blob/main/docs/agents/claude-code.md) · [Cursor](https://github.com/xtcel/rea.ui/blob/main/docs/agents/cursor.md) · [Codex CLI](https://github.com/xtcel/rea.ui/blob/main/docs/agents/codex-cli.md) · [WorkBuddy](https://github.com/xtcel/rea.ui/blob/main/docs/agents/workbuddy.md)
+
 ## Remote (Streamable HTTP)
 
 ```bash

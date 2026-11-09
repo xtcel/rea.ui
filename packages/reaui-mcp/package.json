@@ -1,6 +1,7 @@
 {
   "name": "@xtcel/reaui-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.xtcel/reaui",
   "type": "module",
   "description": "MCP server for REA UI: let any AI agent create, validate and pack editable .reaui design documents. Runs locally over stdio or remotely over HTTP.",
   "license": "Apache-2.0",
