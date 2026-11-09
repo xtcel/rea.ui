@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@rea/design": "workspace:*",
+    "@rea/design-system": "workspace:*",
     "@rea/tailwind": "workspace:*",
     "@babel/parser": "8.0.10",
     "@babel/types": "8.0.10"

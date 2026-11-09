@@ -31,7 +31,7 @@ const RULES: { test: RegExp; code: string; hint: string }[] = [
 ];
 
 function pathFromMessage(message: string): string | undefined {
-  return message.match(/^((?:pages|components|agent|editor)\/[^\s:]+|rea\.json):/)?.[1];
+  return message.match(/^((?:pages|components|agent|editor|design)\/[^\s:]+|rea\.json):/)?.[1];
 }
 
 export function describe(error: unknown, fallbackPath?: string): ReauiError {

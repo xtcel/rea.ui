@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { patchClassNames, TailwindCompiler } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
+import { cssVariables } from '@rea/design-system';
+import type { DesignSystemPackage } from '@rea/design-system';
 import { inspectPage } from '@rea/design';
 import { PageRenderer } from './render';
 import { designPixelCss } from './designUnits';
 import type { PageRendererProps } from './render';
 
-export function ShadowCanvas(props: PageRendererProps & { onReady?: () => void; onDiagnostics?: (diagnostics: StyleDiagnostic[]) => void }) {
+export function ShadowCanvas(props: PageRendererProps & { system?: DesignSystemPackage | null; onReady?: () => void; onDiagnostics?: (diagnostics: StyleDiagnostic[]) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [root, setRoot] = useState<ShadowRoot | null>(null);
   const [css, setCss] = useState('');
@@ -32,7 +34,9 @@ export function ShadowCanvas(props: PageRendererProps & { onReady?: () => void; 
   }, [props.page, props.preview, props.draft, props.onDiagnostics]);
   useLayoutEffect(() => { if (css) props.onReady?.(); }, [css, props.page, props.preview, props.onReady]);
   const resolvedCss = css.replace(/url\((['"]?)(assets\/[^)'"\s]+)\1\)/g, (_, _quote: string, path: string) => `url("${props.assetUrls?.[path] ?? 'data:,'}")`);
+  const systemCss = props.system ? `${cssVariables(props.system.tokens)}\n:host{font-family:var(--rea-ds-typography-family);}` : '';
   return <div ref={host} data-shadow-canvas="">{root && createPortal(<>
+    {systemCss && <style>{systemCss}</style>}
     <style>{designPixelCss(resolvedCss)}</style>
     <style>{`:host { display:block; font:16px/1.5 system-ui,sans-serif; color:#111; } [data-page-origin] { position:relative; width:0; height:0; } [data-coordinate-probe] { position:absolute; left:0; top:0; width:100px; height:100px; visibility:hidden; pointer-events:none; } @layer base { [data-design-kind="Group"], [data-design-kind="Frame"] { position:relative; } [data-design-kind="Text"] { white-space:pre-wrap; } } [data-design-locked] { pointer-events:none; }`}</style>
     <span data-coordinate-probe="" aria-hidden="true" />

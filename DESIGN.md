@@ -150,6 +150,8 @@ components:
 
 **The 令牌唯一 Rule.** 深色只在 `[data-theme="dark"]` 中覆盖令牌；组件不写主题条件分支，也不写死浅色值。
 
+**The 令牌分层 Rule.** 外壳令牌 `--rea-*` 只服务编辑器界面；文档的设计系统令牌固定为 `--rea-ds-*`，由 `design/system.json` 注入 Shadow DOM 的 `:host`（预览为 `:root`）。两者不得互相覆盖，外壳组件不得引用 `--rea-ds-*`，文档内容也不得引用 `--rea-*`。
+
 切换动效：以**触发控件**为圆心，用 `clip-path: circle()` 让新界面圆形推开旧界面（520ms，`cubic-bezier(0.4, 0, 0.2, 1)`），由 `session/themeTransition.ts` 通过 View Transitions 驱动；菜单项、跨标签页同步与系统外观变化没有指针落点，圆心取视口右上角。浏览器不支持 View Transitions 或用户开启「减少动态效果」时直接切换，不播放动画。`theme.css` 只关闭浏览器默认的交叉淡入，并把新快照压在上层。
 
 ## Typography
@@ -192,6 +194,7 @@ M2 桌面基线为单一顶栏（44px）、左栏（240px）、可扩展画布�
 - Do 为图标按钮提供名称、快捷键提示与可见键盘焦点。
 - Do 同时用底色、边线、字重或图标表达选中及锁定状态。
 - Do 让页面 TSX 决定设计内容的外观，保持 Shadow DOM 边界。
+- Do 让文档颜色 / 间距 / 圆角走 `--rea-ds-*` 设计令牌，外壳样式只走 `--rea-*`。
 
 ### Don't:
 

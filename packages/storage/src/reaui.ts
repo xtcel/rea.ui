@@ -1,6 +1,7 @@
 import { strToU8, zipSync, unzipSync } from 'fflate';
 import type { Zippable } from 'fflate';
-import { DocumentSession, AGENT_SESSIONS_FILE, EDITOR_GUIDES_FILE, COMPONENT_FILE } from '@rea/document';
+import { DocumentSession, AGENT_SESSIONS_FILE, EDITOR_GUIDES_FILE, COMPONENT_FILE, SYSTEM_FILE } from '@rea/document';
+import { MAX_SYSTEM_BYTES, parseSystem } from '@rea/design-system';
 import { isAssetPath } from '@rea/design';
 import { recordFromFiles } from './idb';
 import type { AssetRecord, DocumentRecord, StorageService } from './idb';
@@ -8,6 +9,17 @@ import type { AssetRecord, DocumentRecord, StorageService } from './idb';
 export const REAUI_MIME = 'application/vnd.reaui+zip';
 const MAX_ENTRIES = 5000, MAX_SIZE = 256 * 1024 * 1024, MAX_RATIO = 200;
 const safePath = (path: string) => path.length > 0 && !/^[a-z]:|^\/|\\|[\u0000-\u001f]|\/$/i.test(path) && path.split('/').every(p => p !== '..' && p !== '.' && p !== '');
+/** Drop a corrupt snapshot with a warning; a v2/v3 document carrying one is a format error. */
+function checkSystemFile(files: Record<string, string>, warnings: string[]) {
+  const source = files[SYSTEM_FILE];
+  if (source === undefined) return;
+  let version = 0;
+  try { version = Number((JSON.parse(files['rea.json']) as { version?: unknown }).version); } catch { /* handled by DocumentSession */ }
+  if (version < 4) throw new Error('design/system.json 需要文档格式 v4。');
+  if (source.length > MAX_SYSTEM_BYTES) { warnings.push('已忽略过大的设计系统快照。'); delete files[SYSTEM_FILE]; return; }
+  try { parseSystem(source); }
+  catch { warnings.push('已忽略损坏或 hash 不匹配的设计系统快照。'); delete files[SYSTEM_FILE]; }
+}
 
 /** Inspect ZIP metadata before allocating any decompression buffers. ZIP64 is outside v2 limits. */
 function inspectZip(bytes: Uint8Array): Map<string, number> {
@@ -49,6 +61,7 @@ export async function exportReaui(doc: Pick<DocumentRecord, 'files'>, assets: re
   if(doc.files[COMPONENT_FILE])content[COMPONENT_FILE]=strToU8(doc.files[COMPONENT_FILE]);
   if(doc.files[AGENT_SESSIONS_FILE])content[AGENT_SESSIONS_FILE]=strToU8(doc.files[AGENT_SESSIONS_FILE]);
   if(doc.files[EDITOR_GUIDES_FILE])content[EDITOR_GUIDES_FILE]=strToU8(doc.files[EDITOR_GUIDES_FILE]);
+  if(doc.files[SYSTEM_FILE])content[SYSTEM_FILE]=strToU8(doc.files[SYSTEM_FILE]);
   for (const asset of assets) {
     if (!isAssetPath(asset.path)) throw new Error('资源路径不合法。');
     content[asset.path] = new Uint8Array(await asset.blob.arrayBuffer());
@@ -77,17 +90,18 @@ export function readReaui(bytes: Uint8Array): ReauiContents {
   const names = inspectZip(bytes), warnings: string[] = [];
   if (!names.has('rea.json')) throw new Error('ZIP 缺少 rea.json。');
   const entries = unzipSync(bytes, { filter: entry => {
-    const allowed = entry.name === 'rea.json' || entry.name === COMPONENT_FILE || entry.name === AGENT_SESSIONS_FILE || entry.name === EDITOR_GUIDES_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
+    const allowed = entry.name === 'rea.json' || entry.name === COMPONENT_FILE || entry.name === AGENT_SESSIONS_FILE || entry.name === EDITOR_GUIDES_FILE || entry.name === SYSTEM_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
     if (!allowed) warnings.push(`已忽略未知条目：${entry.name}`);
     return allowed;
   } });
   for (const [path, data] of Object.entries(entries)) if (crc32(data) !== names.get(path)) throw new Error(`ZIP 校验和错误：${path}`);
   const files: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [path, data] of Object.entries(entries)) {
-    if (path === 'rea.json' || path === COMPONENT_FILE || path === AGENT_SESSIONS_FILE || path === EDITOR_GUIDES_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
+    if (path === 'rea.json' || path === COMPONENT_FILE || path === AGENT_SESSIONS_FILE || path === EDITOR_GUIDES_FILE || path === SYSTEM_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
   }
+  checkSystemFile(files, warnings);
   const session = new DocumentSession(files);
-  for (const path of Object.keys(files)) if (path !== 'rea.json' && path !== COMPONENT_FILE && path !== AGENT_SESSIONS_FILE && path !== EDITOR_GUIDES_FILE && !session.manifest.pages.some(page => page.file === path)) {
+  for (const path of Object.keys(files)) if (path !== 'rea.json' && path !== COMPONENT_FILE && path !== AGENT_SESSIONS_FILE && path !== EDITOR_GUIDES_FILE && path !== SYSTEM_FILE && !session.manifest.pages.some(page => page.file === path)) {
     throw new Error(`清单未引用页面：${path}`);
   }
   if (files[AGENT_SESSIONS_FILE] !== undefined) {
@@ -120,18 +134,19 @@ export function decodeReaui(bytes: Uint8Array, existingNames: readonly string[] 
   const names = inspectZip(bytes), warnings: string[] = [];
   if (!names.has('rea.json')) throw new Error('ZIP 缺少 rea.json。');
   const entries = unzipSync(bytes, { filter: entry => {
-    const allowed = entry.name === 'rea.json' || entry.name===COMPONENT_FILE || entry.name===AGENT_SESSIONS_FILE || entry.name===EDITOR_GUIDES_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
+    const allowed = entry.name === 'rea.json' || entry.name===COMPONENT_FILE || entry.name===AGENT_SESSIONS_FILE || entry.name===EDITOR_GUIDES_FILE || entry.name===SYSTEM_FILE || entry.name.startsWith('pages/') || entry.name.startsWith('assets/');
     if (!allowed) warnings.push(`已忽略未知条目：${entry.name}`);
     return allowed;
   } });
   for (const [path, data] of Object.entries(entries)) if (crc32(data) !== names.get(path)) throw new Error(`ZIP 校验和错误：${path}`);
   const files: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [path, data] of Object.entries(entries)) {
-    if (path === 'rea.json' || path===COMPONENT_FILE || path===AGENT_SESSIONS_FILE || path===EDITOR_GUIDES_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
+    if (path === 'rea.json' || path===COMPONENT_FILE || path===AGENT_SESSIONS_FILE || path===EDITOR_GUIDES_FILE || path===SYSTEM_FILE || path.startsWith('pages/')) files[path] = new TextDecoder('utf-8', { fatal: true }).decode(data);
   }
+  checkSystemFile(files, warnings);
   const session = new DocumentSession(files);
   // Validate every page, including unreferenced files, then discard extras.
-  for (const path of Object.keys(files)) if (path !== 'rea.json' && path!==COMPONENT_FILE && path!==AGENT_SESSIONS_FILE && path!==EDITOR_GUIDES_FILE && !session.manifest.pages.some(p => p.file === path)) {
+  for (const path of Object.keys(files)) if (path !== 'rea.json' && path!==COMPONENT_FILE && path!==AGENT_SESSIONS_FILE && path!==EDITOR_GUIDES_FILE && path!==SYSTEM_FILE && !session.manifest.pages.some(p => p.file === path)) {
     throw new Error(`清单未引用页面：${path}`);
   }
   if (files[AGENT_SESSIONS_FILE] !== undefined) {

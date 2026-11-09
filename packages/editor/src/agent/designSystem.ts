@@ -1,3 +1,6 @@
+import { legacySystemToPackage } from '@rea/design-system';
+import type { DesignSystemPackage } from '@rea/design-system';
+
 export interface DesignTokens {
   primary: string; background: string; surface: string; text: string; muted: string; border: string;
   fontFamily: string; fontSize: number; spacing: number; radius: number;
@@ -6,6 +9,8 @@ export interface DesignSystem {
   id: string; name: string; description: string; color: string; colors: string[]; example?: boolean;
   tokens?: DesignTokens; components?: { name: string; description: string }[]; guidelines?: string;
   published?: boolean; sourceProject?: string;
+  /** Last published revision; only trusted together with a matching `hash`. */
+  revision?: number; hash?: string;
 }
 export const defaultTokens: DesignTokens = {
   primary: '#356af0', background: '#fafbfc', surface: '#ffffff', text: '#30343b', muted: '#656d79', border: '#e5e7eb',
@@ -23,8 +28,7 @@ export function resolvedSystem(system: DesignSystem): DesignSystem & { tokens: D
 export function withTokens(system: DesignSystem, tokens: DesignTokens): DesignSystem {
   return { ...system, tokens, color: tokens.primary, colors: [tokens.primary, tokens.background, tokens.text, tokens.muted, tokens.border] };
 }
-export function isTokens(value: unknown): value is DesignTokens {
-  if (!value || typeof value !== 'object') return false;
+export function isTokens(value: unknown): value is DesignTokens {  if (!value || typeof value !== 'object') return false;
   const t = value as DesignTokens;
   return ['primary', 'background', 'surface', 'text', 'muted', 'border'].every(k => /^#[0-9a-f]{6}$/i.test(String(t[k as keyof DesignTokens]))) &&
     typeof t.fontFamily === 'string' && t.fontFamily.length > 0 && t.fontFamily.length <= 240 &&
@@ -47,3 +51,15 @@ export const systemSchema = {
     components: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'description'], properties: { name: string, description: string } } },
   },
 };
+
+export interface SystemSnapshot { pkg: DesignSystemPackage; ref: { id: string; revision: number | null; hash: string; draft: boolean } }
+/**
+ * Snapshot used by prompts and provenance. A record only counts as published when its stored
+ * hash still matches the current tokens, so a locally edited system degrades to a draft instead
+ * of claiming a revision it no longer represents.
+ */
+export function systemSnapshot(system: DesignSystem): SystemSnapshot {
+  const pkg = legacySystemToPackage(system);
+  const published = typeof system.revision === 'number' && system.revision >= 1 && system.hash === pkg.hash;
+  return { pkg, ref: { id: pkg.id, revision: published ? system.revision! : null, hash: pkg.hash, draft: !published } };
+}

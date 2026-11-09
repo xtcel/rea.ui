@@ -8,6 +8,7 @@ import type { PageRendererProps } from '@rea/renderer-dom';
 import { fixedValue, textSizingPatch } from '@rea/tailwind';
 import type { StyleDiagnostic } from '@rea/tailwind';
 import type { SourceOperation, StylePatch, Transaction } from '@rea/document';
+import type { DesignSystemPackage } from '@rea/design-system';
 import { SnapSession } from '@rea/geometry';
 import type { DistanceMark, Guide, Rect } from '@rea/geometry';
 import { Frame as FrameIcon, Maximize, Minus, Plus, Sparkles } from 'lucide-react';
@@ -64,6 +65,8 @@ export interface CanvasApi {
         height: number;
     };
     editVector: (id: string) => void;
+    /** 画布内部的影子根：导出需要读取真实渲染的节点与计算样式。 */
+    root: () => ShadowRoot | null;
 }
 interface Member {
     id: string;
@@ -105,7 +108,7 @@ const draggingImages = (dataTransfer: DataTransfer | null) => !!dataTransfer && 
 const droppedImages = (dataTransfer: DataTransfer | null) => [...(dataTransfer?.files ?? [])].filter(file => file.type.startsWith('image/') || IMAGE_FILE.test(file.name));
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
+export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, system = null, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
     onRulerContextMenu }: {
     page: InspectedPage;
     selection: SelectionState;
@@ -122,6 +125,7 @@ export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelecti
     onCommit: (transaction: Transaction, ids?: string[]) => boolean;
     onDiagnostics: (diagnostics: StyleDiagnostic[]) => void;
     assetUrls: Readonly<Record<string, string>>;
+    system?: DesignSystemPackage | null;
     onMeasure: (size: {
         width: number;
         height: number;
@@ -211,7 +215,7 @@ export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelecti
         return inParent(b,parentId===undefined?page.nodes.get(id)?.parentId:parentId);
     }
     function editVector(id:string){const node=page.nodes.get(id);if(!node||node.locked||!isVectorKind(node.kind))return;try{if(!(node.element.props as unknown as VectorProps).path&&!onCommit({label:'转换为可编辑路径',ops:[expandVector(node)]}))return;setVectorEditingId(id);onSelection({...selection,ids:[id]});}catch(error){onNotice(String(error));}}
-    apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera),visibleWorld:()=>({width:size.width/camera.zoom,height:size.height/camera.zoom}),editVector};
+    apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera),visibleWorld:()=>({width:size.width/camera.zoom,height:size.height/camera.zoom}),editVector,root:()=>shadow()??null};
     useEffect(()=>{setVectorEditingId(null);},[page.id,tool]);
     function vectorLocal(point:{x:number;y:number},id:string){const b=box(id)!,node=page.nodes.get(id)!,p=rotatePoint({x:point.x-b.x-b.width/2,y:point.y-b.y-b.height/2},-rotationFor(id));const [x,y,w,h]=((node.element.props as unknown as VectorProps).viewBox??'0 0 100 100').split(/[ ,]+/).map(Number);return{x:x+(p.x+b.width/2)/b.width*w,y:y+(p.y+b.height/2)/b.height*h};}
     function vectorWorld(point:{x:number;y:number},id:string){const b=box(id)!,node=page.nodes.get(id)!,[x,y,w,h]=((node.element.props as unknown as VectorProps).viewBox??'0 0 100 100').split(/[ ,]+/).map(Number);const p=rotatePoint({x:(point.x-x)/w*b.width-b.width/2,y:(point.y-y)/h*b.height-b.height/2},rotationFor(id));return{x:p.x+b.x+b.width/2,y:p.y+b.y+b.height/2};}
@@ -746,7 +750,7 @@ export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelecti
     } }}>
     <div className="rea-canvas-content-position" style={{ position: 'absolute', left: camera.x, top: camera.y }}>
       <div className="rea-canvas-content" data-camera-zoom={camera.zoom} style={{ position:'relative', transform: `scale(${camera.zoom})`, transformOrigin: '0 0' }}>
-      <ShadowCanvas page={page.source} selectedId={selectedId} interactive={false} preview={preview} pathPreview={vectorEditingId&&pathDraft?{id:vectorEditingId,path:pathDraft}:null} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} zoom={camera.zoom}/>
+      <ShadowCanvas page={page.source} system={system} selectedId={selectedId} interactive={false} preview={preview} pathPreview={vectorEditingId&&pathDraft?{id:vectorEditingId,path:pathDraft}:null} duplicatePreview={!!gesture.current?.duplicate && phase.state === 'moving'} editingId={editingId} draft={draft} assetUrls={assetUrls} onReady={ready} onDiagnostics={onDiagnostics} zoom={camera.zoom}/>
       {editingId && editedElement && editedBox && <TextEditor key={editingId} id={editingId} text={editedText} target={editedElement} box={editedBox} rotation={rotationFor(editingId)} onFinish={onTextFinish}/>}
       </div>
     </div>

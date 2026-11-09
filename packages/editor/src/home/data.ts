@@ -3,15 +3,18 @@ export type View = 'grid' | 'list';
 export type PreviewKind = 'starter' | 'website' | 'dashboard' | 'mobile';
 import { isTokens } from '../agent/designSystem';
 import type { DesignSystem } from '../agent/designSystem';
+import { legacySystemToPackage } from '@rea/design-system';
 export type { DesignSystem } from '../agent/designSystem';
 export interface Preferences { model: string; sendKey: 'enter' | 'command'; directory: string; showRulers?: boolean; showGuides?: boolean }
 
 export const models = ['Codex 默认模型'];
 export const defaultPreferences: Preferences = { model: models[0], sendKey: 'enter', directory: '', showRulers: false, showGuides: true };
+/** Built-ins are code constants, so they participate as a read-only revision 1. */
+const builtIn = (system: DesignSystem): DesignSystem => ({ ...system, revision: 1, hash: legacySystemToPackage(system).hash });
 export const builtInSystems: DesignSystem[] = [
-  { id: 'rea', name: 'REA UI', description: '项目内置 · 清晰、紧凑的设计语言', color: '#356af0', colors: ['#356af0', '#eaf0ff', '#30343b', '#656d79', '#e5e7eb'] },
-  { id: 'minimal', name: '极简界面', description: '示例预设 · 专注内容与留白', color: '#292d32', colors: ['#292d32', '#f1f3f6', '#737981', '#aeb4bc', '#e8ebef'], example: true },
-  { id: 'botanical', name: '自然绿意', description: '示例预设 · 柔和、轻盈的界面', color: '#39725a', colors: ['#39725a', '#eaf3ed', '#293c34', '#789788', '#d9e6df'], example: true },
+  builtIn({ id: 'rea', name: 'REA UI', description: '项目内置 · 清晰、紧凑的设计语言', color: '#356af0', colors: ['#356af0', '#eaf0ff', '#30343b', '#656d79', '#e5e7eb'] }),
+  builtIn({ id: 'minimal', name: '极简界面', description: '示例预设 · 专注内容与留白', color: '#292d32', colors: ['#292d32', '#f1f3f6', '#737981', '#aeb4bc', '#e8ebef'], example: true }),
+  builtIn({ id: 'botanical', name: '自然绿意', description: '示例预设 · 柔和、轻盈的界面', color: '#39725a', colors: ['#39725a', '#eaf3ed', '#293c34', '#789788', '#d9e6df'], example: true }),
 ];
 export const templates: { id: PreviewKind; name: string; description: string; prompt: string }[] = [
   { id: 'website', name: '产品官网', description: '首页、产品介绍与行动入口', prompt: '设计一个简洁的产品官网，包含导航、产品介绍、功能展示与行动按钮。' },
@@ -36,6 +39,7 @@ export function isPreferences(value: unknown): value is Preferences {
 export function isSystems(value: unknown): value is DesignSystem[] {
   return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) && Array.isArray(item.colors) && item.colors.length > 0 && item.colors.every((color: unknown) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) &&
     (item.tokens === undefined || isTokens(item.tokens)) && (item.published === undefined || typeof item.published === 'boolean') &&
+    (item.revision === undefined || (Number.isInteger(item.revision) && item.revision >= 1)) && (item.hash === undefined || /^[0-9a-f]{64}$/.test(item.hash)) &&
     (item.guidelines === undefined || typeof item.guidelines === 'string') && (item.components === undefined || Array.isArray(item.components) && item.components.every((c: { name?: unknown; description?: unknown }) => c && typeof c.name === 'string' && typeof c.description === 'string')));
 }
 export function relativeDate(value: string): string {

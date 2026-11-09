@@ -19,6 +19,10 @@ describe('local agent generation contract', () => {
     expect(prompt).toContain('AGENTS.md');
     expect(prompt).toContain('附件资料');
     expect(prompt).not.toContain('不要修改任何本地文件');
+    expect(prompt).toContain('--rea-ds-color-surface');
+    expect(prompt).toContain('"schemaVersion": 1');
+    expect(prompt).toContain('v1 · rea');
+    expect(prompt).not.toContain('#1D9E75');
     expect(Object.keys(designSources(files))).toEqual(['rea.json', 'pages/main.page.tsx']);
   });
   it('validates generated source and round trips an editable .reaui document', async () => {
@@ -62,6 +66,8 @@ describe('local agent generation contract', () => {
     const system = withTokens(builtInSystems[0], { ...defaultTokens, primary: '#39725a', radius: 12 });
     const context = uiPrompt('界面需求', system, { name: 'project', path: '/tmp/project', files: ['DESIGN.md'], context: '真实项目规范', truncated: false }, '参考页面');
     expect(context).toContain('#39725a'); expect(context).toContain('真实项目规范'); expect(context).toContain('参考页面');
+    // Editing a published system invalidates its stored hash, so the prompt must fall back to a draft.
+    expect(context).toContain('草稿版本');
     expect(isSystems([system])).toBe(true);
     expect(isSystems([{ ...system, tokens: { ...system.tokens, radius: -1 } }])).toBe(false);
     expect(() => parseGeneratedSystem({ name: 'bad', tokens: { primary: 'red' } })).toThrow();

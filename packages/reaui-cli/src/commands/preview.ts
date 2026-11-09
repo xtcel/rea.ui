@@ -4,6 +4,7 @@ import { cloneElement, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PageRenderer } from '@rea/renderer-dom/render';
 import { TailwindCompiler } from '@rea/tailwind';
+import { cssVariables } from '@rea/design-system';
 import { value } from '../args';
 import type { Args } from '../args';
 import { loadDocument, openSession } from '../document';
@@ -39,7 +40,7 @@ export async function runPreview(args: Args): Promise<number> {
     pages.push({ id: entry.id, name: parsed.page.name, boards });
   }
   await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, previewHtml(session.manifest.name, pages, css, new Date().toISOString()), 'utf8');
+  await writeFile(output, previewHtml(session.manifest.name, pages, css, new Date().toISOString(), session.system ? cssVariables(session.system.tokens, ':root') : ''), 'utf8');
   console.log(`已生成预览：${path.relative(process.cwd(), output) || output}`);
   console.log(`  文档：${session.manifest.name}，页面：${pages.length}，画板：${pages.reduce((sum, page) => sum + page.boards.length, 0)}`);
   console.log(`  样式：${(css.length / 1024).toFixed(1)} KB${diagnostics.length ? `，${diagnostics.length} 个类未生成 CSS` : ''}`);

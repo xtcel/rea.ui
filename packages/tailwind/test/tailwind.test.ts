@@ -55,6 +55,15 @@ describe('Tailwind tokens and property patches', () => {
   });
 });
 
+describe('design token candidates',()=>{
+  it('allows only the --rea-ds namespace and keeps rejecting calc/env',()=>{
+    const allowed=filterCandidates(['bg-[var(--rea-ds-color-primary)]','text-[length:var(--rea-ds-typography-heading-size)]','rounded-[var(--rea-ds-radius-md)]','shadow-[var(--rea-ds-shadow-card)]']);
+    expect(allowed.candidates).toHaveLength(4);expect(allowed.diagnostics).toHaveLength(0);
+    const denied=filterCandidates(['bg-[var(--my-brand)]','w-[calc(100%-32px)]','text-[var(--rea-ds-color-primary,red)]','p-[env(safe-area-inset-top)]']);
+    expect(denied.candidates).toHaveLength(0);expect(denied.diagnostics).toHaveLength(4);
+  });
+});
+
 describe('editing core styles',()=>{
   it('round-trips rotation values and preserves variants',()=>{
     for(const angle of [-90,0,45,73]) {const cls=patchClassName('hover:rotate-12 rotate-2','rotate',angle);expect(fixedValue(cls,'rotate')).toBe(angle);expect(cls).toContain('hover:rotate-12');}

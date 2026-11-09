@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@rea/design": "workspace:*",
+    "@rea/design-system": "workspace:*",
     "@rea/tailwind": "workspace:*",
     "@rea/document": "workspace:*"
   },

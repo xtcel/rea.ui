@@ -56,6 +56,7 @@
   },
   "devDependencies": {
     "@rea/design": "workspace:*",
+    "@rea/design-system": "workspace:*",
     "@rea/document": "workspace:*",
     "@rea/renderer-dom": "workspace:*",
     "@rea/storage": "workspace:*",

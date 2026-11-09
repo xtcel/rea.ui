@@ -27,6 +27,7 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 | 模块 | 职责 |
 |---|---|
 | `design` | Page / Frame / Group / Rect / Ellipse / Text / Image / Vector；身份、嵌套、继承和资源路径校验 |
+| `design-system` | 设计系统包（`schemaVersion` / `revision` / `hash`）、令牌与组件规范校验、CSS 变量派生、旧 localStorage 迁移、conformance；无 DOM / React 依赖 |
 | `tailwind` | class 词法、属性组、刻度写入、诊断、默认主题与 preflight 的增量编译；不依赖 React |
 | `document` | 静态 TSX 解析、清单、跨页操作和原子事务、文件差异历史 |
 | `storage` | IndexedDB、多文档、版本冲突、自动保存、ZIP 安全校验、迁移和示例 |
@@ -51,7 +52,7 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 
 `EditorShell` 组织 44px 顶栏、默认 240px 左栏、无限画布和默认 280px 右栏。`ui/` 提供 Button、IconButton、Tooltip、Menu、Tabs、Panel、Section、Field、Dialog、SplitPane；菜单支持键盘导航，分隔条可拖动或用方向键调整。侧栏宽度限制在 200–400px，独立存于 localStorage 的 `rea.editor.leftWidth` / `rea.editor.rightWidth`，不写入设计文档。小于 900px 时左右栏成为互斥抽屉。
 
-主菜单承载文档操作、整页代码导出与快捷键。左栏负责页面就地重命名、排序和带确认的删除；图层树反转各级源码子节点顺序，使上层在上，画布选择会展开祖先并滚动到行。右栏的「设计」承载属性编辑；「检查」从当前解析页的 AST 源码范围截取所选节点与子节点，不保存代码副本。片段超过 200 行只截断展示，复制仍使用完整片段；无选区时显示页面概要。
+主菜单承载文档操作、整页代码导出、图片导出与快捷键。左栏负责页面就地重命名、排序和带确认的删除；图层树反转各级源码子节点顺序，使上层在上，画布选择会展开祖先并滚动到行。右栏的「设计」承载属性编辑；「检查」从当前解析页的 AST 源码范围截取所选节点与子节点，不保存代码副本。片段超过 200 行只截断展示，复制仍使用完整片段；无选区时显示页面概要。
 
 相机与选区是会话状态。页面首次显示时适应内容，切换页面保存并恢复该页相机；刷新不恢复相机或历史。画框标题和选区尺寸标签位于文档样式之外，保持屏幕字号；Shift+1 / Shift+2 / Shift+0 分别适应全部、适应选中和回到 100%。
 
@@ -60,6 +61,12 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 画布使用开放 Shadow DOM；Tailwind 默认主题、preflight、全部合法工具类与变体都在其中运行时编译和渲染。编辑器外壳由 `apps/web/src/theme.css` 使用 `@tailwindcss/vite` 在构建期编译，`source(none)` 与显式 `@source` 将扫描范围限定为编辑器源码；主题颜色来自 `--rea-*` 变量，旧 `styles.css` 已移除。两套编译产物相互隔离，文档中的 `hidden` 或 `fixed inset-0` 不改变工具栏和面板布局。界面令牌与使用约定见 [DESIGN.md](../DESIGN.md)。
 
 命中读取原生事件 `composedPath()`；选区位于 Shadow DOM 外，使用 `getBoundingClientRect()` 对齐。Image 和样式中的资源路径映射为 blob URL，切换文档时释放。
+
+## 矢量导入与图片导出
+
+插入与粘贴按内容分流：位图进入 `assets/` 成为 `Image` 图层，SVG 走矢量解析成为 `Group + Rect / Ellipse / Vector`。解析在 `@rea/design` 的 `svg.ts`，纯文本、无 DOM：自写 XML tokenizer，`transform` 按 SVG 顺序叠乘并烘焙进坐标，路径归一化为绝对 `M/L/C/Z`（`H/V`→`L`、`S/T` 反射控制点、`Q`→`C`、`A`→每段 ≤90° 的三次贝塞尔）。单轮廓路径交给既有 `expandPath()` 得到可编辑锚点，多轮廓保留归一化 `d` 靠 `fill-rule` 表达镂空——与 `expandPath()` 拒绝多轮廓/圆弧的口径一致。落源在 `editor/session/svgImport.ts`：坐标乘 `viewBox` 缩放，颜色写成 `fill-[#…]` / `stroke-[#…]` / `[stroke-width:Npx]`，圆角 `rounded-[Npx]`，整次导入是一个事务。未支持的特性（文字、内嵌位图、蒙版、裁切、滤镜）计数汇报，渐变按首个色标近似，不静默失真。
+
+导出的两条路刻意不同。位图（PNG / JPG，1x–3x）克隆画布上真实渲染的节点并逐节点内联 `getComputedStyle()`，资源换 data URL，外层用 `<foreignObject>` 交给 `<img>` → `<canvas>` → `toBlob()`；阴影、渐变、滤镜因此不需要重新解释。两处必须遵守的细节：内联时跳过 `inset` 系列（它把「用了哪个边」解析成数值，与显式 `left/top` 叠加会把克隆节点推出可见区），以及承载 SVG 的图片必须用 `data:` URL 而不是 blob URL（后者会让 canvas 受污染，`toBlob()` 抛 `SecurityError`）。矢量（SVG）走另一条路：按 `data-design-kind` 读几何与计算样式重建 `<rect>` / `<ellipse>` / `<path>` / `<text>` / `<image>`，容器落成 `<g>`、`overflow:hidden` 落成 `<clipPath>`，文字用 Range 行盒拆行、canvas 字体度量算基线；投影与滤镜不进 SVG。范围是「选中优先，否则当前页所有画框」，多文件由 `@rea/storage` 的 `zipArchive()` 打成一个 ZIP。
 
 ## 持久化与恢复
 
@@ -132,6 +139,16 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 吸附接入不改 Rust ABI：`SnapSession` 增加可选第三参数 `guides`，`snap_rects` 使用「对象候选 + 参考线候选」合并缓冲区，而 `distribute_marks` 使用**只含对象候选的独立缓冲区**，避免零宽 / 零高参考线产生虚假间距标注；旧的两参数调用保持原行为。`guideSnapRects()` 把可见参考线转成 `{width:0}` / `{height:0}` 的矩形并按 6px 屏幕阈值（除以 zoom）裁剪视口外条目。
 
 `showRulers`（默认 `false`）与 `showGuides`（默认 `true`）是**两个互不联动的偏好**：前者只管标尺条带、角块、悬停预览与「从标尺创建」，后者只管参考线渲染、命中带、右键操作与吸附候选；关闭显示不删除数据。偏好存于 localStorage `rea-home:preferences`，由 `session/viewPreferences.ts` 的 `useViewPreferences()` 通过 `rea:preferences` 自定义事件（同页）与 `storage` 事件（跨标签页）同步；`⌃R` 是该偏好的快捷键（只拦 Control-R，`⌘R` 留给浏览器）。标尺没有可变的原点状态，0 点恒为页面世界坐标 (0,0)，不写入文档也不跨会话变化。入口分为首页设置页两个开关、顶栏**独立的「视图」菜单**，以及画布右键菜单里的两个勾选项；菜单按上下文分流：画布空白处是画布菜单、图层 / 元素右键仍是 `layerMenu()` 元素菜单、参考线右键是独立的 `guideMenu()`、标尺右键是 `rulerMenu()`。
+
+## 设计系统快照与令牌
+
+`define-design-system-abi` 把设计系统从提示词载荷收敛为契约。`@rea/design-system` 只做纯函数：解析 / 序列化（键排序、无空白，保证同内容同字节）、同步 SHA-256、令牌值域与变量名冲突校验、`--rea-ds-*` 派生、旧 `localStorage['rea-home:systems']` 迁移，以及 `conformance()`（字面量、非刻度、对比度、未声明令牌）。
+
+文档通过 `design/system.json` 固定自包含快照，清单升级为 v4。固定、升级、取消固定使用 `SourceOperation{ type: 'system' }` 事务：候选文件整体校验后发布，进入撤销历史；这与 `agent/sessions.json`、`editor/guides.json` 的 `withMetadata()` 通道刻意区分——令牌变化会改变渲染结果，必须可撤销。取消固定前 `tokenUsage()` 会扫描页面与组件目录，仍有引用则拒绝。
+
+作者层只允许 `var(--rea-ds-*)`：`@rea/tailwind` 的候选过滤放行该前缀并继续拒绝其它 `var()`、`calc()`、`env()`；`ShadowCanvas` 在 `:host` 注入变量，`reaui preview` 在 `:root` 注入同一组，二者共用 `systemVariables()`。外壳令牌 `--rea-*` 与文档令牌互不覆盖。字面量仍被接受，但由 conformance 报 warning；`reaui validate --system/--strict` 决定是否阻断，`pack` 在存在 warning 时要求 `--force`。生成溯源记在 `AgentTurn.system`（发布版本带 `revision`，草稿为 `null` + `draft: true`）。
+
+发布与绑定分成两个面：工作台（首页）只负责作者与 `publishSystem()`，编辑器只负责 `pinSystem` / `previewSystemUpdate` / 取消固定，后者通过 `model.transact()` 提交，因此与其它编辑共享撤销栈。`localStorage['rea-home:systems']` 的记录带可选 `revision` / `hash`，只有 hash 与当前令牌一致时才被当作已发布，改令牌后自动降级为草稿；内置系统以只读 `revision: 1` 参与解析，发布时先分叉副本。
 
 ## 外部 Agent 与 reaui CLI
 

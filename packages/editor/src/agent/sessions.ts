@@ -7,6 +7,8 @@ export interface AgentRef {
   subtree: boolean;
 }
 export type AgentTurnState = 'running' | 'completed' | 'failed' | 'cancelled';
+/** Which design system version produced this turn. Drafts carry revision: null. */
+export interface AgentSystemRef { id: string; revision: number | null; hash: string; draft: boolean }
 export interface AgentTurn {
   id: string; text: string; context: string; model: string; files: string[];
   state: AgentTurnState; events: string[]; reply?: string;
@@ -15,6 +17,7 @@ export interface AgentTurn {
   changed?: AgentRef[];
   /** Changed nodes outside the referenced scope; shown as a warning, never blocking. */
   outside?: AgentRef[];
+  system?: AgentSystemRef;
 }
 export interface AgentSession {
   id: string; title: string; createdAt: string; updatedAt: string; turns: AgentTurn[];
@@ -47,6 +50,16 @@ function normalizeRef(value: unknown): AgentRef | null {
 export function normalizeRefs(value: unknown): AgentRef[] {
   return Array.isArray(value) ? value.map(normalizeRef).filter((ref): ref is AgentRef => !!ref) : [];
 }
+/** Unknown or malformed provenance is dropped; the turn itself stays usable. */
+export function normalizeSystemRef(value: unknown): AgentSystemRef | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const ref = value as Partial<AgentSystemRef>;
+  if (typeof ref.id !== 'string' || !ref.id || ref.id.length > 128) return undefined;
+  if (typeof ref.hash !== 'string' || !/^[0-9a-f]{64}$/.test(ref.hash)) return undefined;
+  if (typeof ref.draft !== 'boolean') return undefined;
+  if (ref.revision !== null && (typeof ref.revision !== 'number' || !Number.isInteger(ref.revision) || ref.revision < 1)) return undefined;
+  return { id: ref.id, revision: ref.revision ?? null, hash: ref.hash, draft: ref.draft };
+}
 
 export function normalizeTurn(value: unknown): AgentTurn | null {
   if (!value || typeof value !== 'object') return null;
@@ -63,6 +76,7 @@ export function normalizeTurn(value: unknown): AgentTurn | null {
     events: turn.events.slice(-MAX_EVENTS),
     reply: interrupted ? (turn.reply ?? '上次生成已中断。已保存的设计可以继续编辑。') : (typeof turn.reply === 'string' ? turn.reply : undefined),
     refs: normalizeRefs(turn.refs), changed: normalizeRefs(turn.changed), outside: normalizeRefs(turn.outside),
+    system: normalizeSystemRef(turn.system),
   };
 }
 export function normalizeTurns(value: unknown): AgentTurn[] {

@@ -12,6 +12,7 @@ import { ProjectDialog } from './ProjectDialog';
 import { agentRequest } from './client';
 import type { AgentConfig, ProjectContext } from './client';
 import type { DesignSystem } from './designSystem';
+import { systemSnapshot } from './designSystem';
 import { apiFilesSchema, apiWorkspacePrompt, attachmentContext, designSources, workspacePrompt, workspaceSchema } from './generation';
 import { useAgentTask } from './useAgentTask';
 import { AGENT_SESSION_FILE, activeSession, addSession, createStore, legacyStore, parseStore, removeSession, selectSession, serializeStore, writeTurns } from './sessions';
@@ -191,7 +192,8 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
     const selection = elementContext(pages, elementRefs);
     const events: string[] = ['项目已就绪，正在读取设计参考…'];
     const addEvent = (event: string) => { if (!events.includes(event)) { events.push(event); if (events.length > 80) events.splice(1, 1); update(id, { events: [...events] }); } };
-    remember([...sessionTurns(), { id, text, context: `${selectedSystem.name}${selectedProject ? ` · ${selectedProject.name}` : ''}`, model: `${config.provider?.name ?? config.name ?? 'Codex CLI'}${config.model ? ` · ${config.model}` : ''}`, files: [...files.map(file => file.name), ...refs.map(ref => `引用：${ref.name}`)], state: 'running', events: [...events], refs: elementRefs }]);
+    const systemRef = (() => { try { return systemSnapshot(selectedSystem).ref; } catch { return undefined; } })();
+    remember([...sessionTurns(), { id, text, context: `${selectedSystem.name}${selectedProject ? ` · ${selectedProject.name}` : ''}`, model: `${config.provider?.name ?? config.name ?? 'Codex CLI'}${config.model ? ` · ${config.model}` : ''}`, files: [...files.map(file => file.name), ...refs.map(ref => `引用：${ref.name}`)], state: 'running', events: [...events], refs: elementRefs, system: systemRef }]);
     if (selection.missing.length) addEvent(`有 ${selection.missing.length} 个引用元素已不存在，本轮已跳过`);
     if (elementRefs.length) addEvent(`已引用 ${elementRefs.length} 个画布元素作为修改范围`);
     canvas.clearRefs();

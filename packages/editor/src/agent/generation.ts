@@ -1,9 +1,22 @@
 import { AGENT_SESSIONS_FILE, createManifest, DocumentSession, COMPONENT_FILE } from '@rea/document';
 import { decodeReaui, recordFromFiles } from '@rea/storage';
 import type { DocumentRecord } from '@rea/storage';
-import { resolvedSystem } from './designSystem';
+import { serializeSystem } from '@rea/design-system';
+import { systemSnapshot } from './designSystem';
 import type { DesignSystem } from './designSystem';
 import type { ProjectContext } from './client';
+
+/** The pinned package (not the editor's convenience shape) is what the Agent sees. */
+function systemContext(system: DesignSystem): string {
+  const { pkg, ref } = systemSnapshot(system);
+  return `${ref.draft ? '草稿版本' : `v${ref.revision}`} · ${ref.id} · ${ref.hash.slice(0, 12)}
+${serializeSystem(pkg)}
+
+令牌规则：
+- 颜色、间距、圆角与阴影只能引用 var(--rea-ds-*)，例如 bg-[var(--rea-ds-color-surface)]、rounded-[var(--rea-ds-radius-md)]、p-[var(--rea-ds-space-24)]；不要写十六进制字面量。
+- 位置与尺寸（left/top/right/bottom/w-/h-）继续使用设计 px，不要使用间距令牌。
+- 组件规范按 key 引用；条目声明 component 时优先写 <Instance component="…" />，不要重画矩形与文字。`;
+}
 
 const string = { type: 'string' };
 export const uiSchema = { type: 'object', additionalProperties: false, required: ['name', 'summary', 'pages', 'components'], properties: {
@@ -77,7 +90,8 @@ export function apiWorkspacePrompt(prompt: string, system: DesignSystem, project
 
 需求：${prompt}
 
-设计系统：${JSON.stringify(resolvedSystem(system))}
+设计系统：
+${systemContext(system)}
 
 ${FORMAT_RULES}
 
@@ -145,7 +159,8 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
 export function uiPrompt(prompt: string, system: DesignSystem, project: ProjectContext | null, references = '', previous = ''): string {
   return `你是 REA UI 的界面设计 Agent。根据需求设计完成度高的可编辑界面，使用中文内容，遵循给定设计系统。不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。\n
 需求：${prompt}\n
-设计系统：${JSON.stringify(resolvedSystem(system))}\n
+设计系统：
+${systemContext(system)}\n
 格式必须符合 REA UI 静态 TSX 子集：
 - 每页 source 仅允许从 '@rea/design' 导入 Page, Frame, Group, Rect, Ellipse, Text, Vector, Line, Polygon, Star, Instance, SlotContent，并 export default <Page ...>...</Page>。
 - Page 的 id 与输出 pages 的 id 一致，例如 main；每个节点含页面内唯一 designId 和有意义的 name。

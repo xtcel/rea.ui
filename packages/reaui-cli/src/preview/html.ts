@@ -40,7 +40,7 @@ main{padding:24px}
 .note{margin:0 24px 16px;font-size:12px;color:#656d79}
 `;
 
-export function previewHtml(documentName: string, pages: readonly PreviewPage[], css: string, generatedAt: string): string {
+export function previewHtml(documentName: string, pages: readonly PreviewPage[], css: string, generatedAt: string, systemCss = ''): string {
   const boards = pages.reduce((sum, page) => sum + page.boards.length, 0);
   const sections = pages.map(page => {
     const rows = page.boards.map(rendered => {
@@ -60,7 +60,9 @@ export function previewHtml(documentName: string, pages: readonly PreviewPage[],
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="reaui preview">
 <title>${escapeHtml(documentName)} · 设计预览</title>
-<style>${css.replace(/<\/style/gi, '<\\/style')}</style>
+${systemCss ? `<style>${systemCss.replace(/<\/style/gi, '<\\/style')}
+.board-canvas{font-family:var(--rea-ds-typography-family)}</style>
+` : ''}<style>${css.replace(/<\/style/gi, '<\\/style')}</style>
 <style>${STYLE}</style>
 </head>
 <body>

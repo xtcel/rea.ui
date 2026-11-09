@@ -93,6 +93,8 @@ Generate editable UI with a local **Codex CLI** or any **API provider**, with an
 
 Both the desktop app and `pnpm dev` support it. Submit a request and it creates a project, opens the editor, streams execution in the left-hand AI session, and mirrors the validated design on the right. Follow-up turns keep editing the same project, with stop, auto-repair and whole-run undo.
 
+Design systems are versioned packages (`schemaVersion` / `revision` / `hash`) with validated tokens and component specs. A document pins a self-contained snapshot at `design/system.json` (manifest v4), and pages reference tokens as `var(--rea-ds-*)`; `reaui validate --system/--strict` reports conformance, and every AI turn records which system revision produced it. See [agent protocol §10](docs/agent-protocol.md).
+
 "Design systems" supports AI generation, semantic colour/type/spacing/radius tokens, component specs, usage guidance and live preview. A linked project is reference only. See [settings](docs/settings.md) and [local agent](docs/local-agent.md) for configuration and real Codex verification commands.
 
 ## reaui CLI and AI agents
@@ -129,7 +131,9 @@ The WorkBuddy expert source lives in `integrations/workbuddy/reaui-designer`. To
 | Layer navigation | Listed in canvas stacking order, topmost first. Containers collapse; visibility and lock toggle per layer. Selecting on canvas expands ancestors and scrolls to the row |
 | New frame | Drag with the F tool, or click "New frame" with nothing selected |
 | Rect / ellipse / text | Press R / O / T then drag; a single click uses the default size. Works inside a frame or directly on the page |
-| Images | "Insert image…" from the menu or toolbar, multi-select PNG / JPG / GIF / WebP / SVG. You can also drop files on the canvas or paste from the clipboard. Placed at native pixel size, scaled down proportionally when larger than the visible area; a drop lands in the frame under the pointer. With an image selected, the right rail offers "Image" to replace the asset and switch `object-fit` |
+| Images | "Insert image or SVG…" from the menu or toolbar, multi-select PNG / JPG / GIF / WebP / SVG. You can also drop files on the canvas or paste from the clipboard. Bitmaps are placed at native pixel size, scaled down proportionally when larger than the visible area; a drop lands in the frame under the pointer. With an image selected, the right rail offers "Image" to replace the asset and switch `object-fit` |
+| SVG import | An `.svg` becomes an editable `Group` of `Rect` / `Ellipse` / `Vector` layers instead of a bitmap asset: transforms are baked into coordinates, single-contour paths open in the pen tool, and fill / stroke / size are editable like any other layer. Unsupported parts (text, embedded bitmaps, masks, clipping, filters) are reported once; gradients fall back to their first stop |
+| Export images | "Export image…" from the main menu writes PNG / JPG (1x / 2x / 3x, JPG on white) or a real vector SVG rebuilt from the layers. The range is the selection when there is one, otherwise every frame on the page; multiple files arrive as one ZIP |
 | Select / move | V. A single click selects the deepest layer; double-click edits text. The menu beside the move tool switches to "select by hierarchy". Shift-click adds or removes, dragging on empty canvas marquee-selects, ⌘/Ctrl-click selects through. Multi-selection moves as one. Frame titles and layer rows select the whole container |
 | Scope navigation | Double-click a container to enter. Enter goes to a child, Shift+Enter selects the parent, Tab / Shift+Tab cycle siblings, Esc clears then walks out level by level, ⌘/Ctrl+A selects everything in the current scope |
 | Resize / rotate | Eight handles resize as a group; Shift keeps the ratio, Alt resizes from the centre, minimum 4px. With a single selection, drag just outside a corner to rotate; Shift snaps to 15° |

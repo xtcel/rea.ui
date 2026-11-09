@@ -13,10 +13,13 @@ import type { InstanceProps, NodeOverride, SlotProps } from '@rea/design';
 import { COMPONENT_FILE, componentEditor, componentValues, componentPageId, parseCatalog, resolvePage, withComponentRoot } from './components';
 import type { ComponentCatalog } from './components';
 import { sourceElement, sourceLiteral, serializeElement } from './serialize';
+import { declaredVariables, MAX_SYSTEM_BYTES, parseSystem, serializeSystem, SYSTEM_FILE, tokenUsage } from '@rea/design-system';
+import type { DesignSystemPackage } from '@rea/design-system';
 
 export type StylePatch = Partial<Record<PropertyGroupKey, PropertyInput>>;
 export type SourceOperation =
   | { type: 'catalog'; source: string; libraryUpdate?: boolean }
+  | { type: 'system'; source: string | null }
   | { type: 'set'; pageId: string; id: string; props?: Record<string, unknown>; styles?: StylePatch }
   | { type: 'reorderChildren'; pageId: string; id: string; ids: string[] }
   | { type: 'text'; pageId: string; id: string; text: string }
@@ -176,16 +179,35 @@ function applyInstanceOperation(parsed:ParsedPage,op:EditingOperation,catalog:Co
   }
   return applyPageOperation(parsed,op);
 }
+function readSystem(files: Readonly<Record<string, string>>, version: number): DesignSystemPackage | null {
+  const source = files[SYSTEM_FILE];
+  if (source === undefined) return null;
+  if (version < 4) throw new Error('design/system.json 需要文档格式 v4。');
+  if (source.length > MAX_SYSTEM_BYTES) throw new Error('设计系统快照超过 256KB。');
+  try { return parseSystem(source); }
+  catch (error) { throw new Error(`设计系统快照无效：${error instanceof Error ? error.message : String(error)}`); }
+}
+function assertTokenReferences(files: Readonly<Record<string, string>>, version: number, system: DesignSystemPackage | null) {
+  const usage = tokenUsage(files);
+  if (!usage.count) return;
+  if (version < 4) throw new Error('令牌引用需要文档格式 v4；请先固定设计系统。');
+  if (!system) throw new Error(`文档未固定设计系统，无法解析 ${usage.count} 处令牌引用（${usage.names.slice(0, 3).join('、')}）。`);
+  const declared = declaredVariables(system.tokens);
+  const missing = usage.names.filter(name => !declared.has(name));
+  if (missing.length) throw new Error(`设计系统未声明令牌：${missing.slice(0, 5).join('、')}。`);
+}
 export class DocumentSession {
   readonly files: Readonly<Record<string, string>>;
   readonly manifest: DocumentManifest;
   readonly pages: ReadonlyMap<string, ParsedPage>;
   readonly components: ComponentCatalog;
   readonly componentPages: ReadonlyMap<string, ParsedPage>;
+  readonly system: DesignSystemPackage | null;
   constructor(files: Readonly<Record<string, string>>, readonly rev = 0, readonly past: readonly HistoryEntry[] = [], readonly future: readonly HistoryEntry[] = []) {
     if (!files['rea.json']) throw new Error('缺少 rea.json。');
     this.files = { ...files };
     this.manifest = parseManifest(files['rea.json']);
+    this.system = readSystem(files, this.manifest.version);
     this.components = parseCatalog(files[COMPONENT_FILE]);
     if(files[COMPONENT_FILE]&&this.manifest.version!==3)throw new Error('组件目录需要文档格式 v3。');
     const componentPages=new Map<string,ParsedPage>();
@@ -201,6 +223,7 @@ export class DocumentSession {
       pages.set(page.id, {...parsed,page:resolvePage(parsed.source,this.components)});
     }
     this.pages = pages;
+    assertTokenReferences(files, this.manifest.version, this.system);
   }
   commit(transaction: Transaction, time = Date.now()): DocumentSession {
     const files = { ...this.files };
@@ -211,6 +234,19 @@ export class DocumentSession {
         const next=parseCatalog(op.source),previous=parseCatalog(files[COMPONENT_FILE]);
         if(!op.libraryUpdate)for(const [key,def]of previous)if(def.props.library&&(!next.has(key)||serializeElement(next.get(key)!)!==serializeElement(def)))throw new Error('库组件只读，请编辑来源并发布，再使用库升级。');
         files[COMPONENT_FILE]=op.source;manifest={...manifest,version:3};writeManifest();
+      } else if (op.type === 'system') {
+        if (op.source === null) {
+          const usage = tokenUsage(files);
+          if (usage.count) throw new Error(`仍有 ${usage.count} 处设计令牌引用（${usage.files.join('、')}），请先改回字面量再取消固定。`);
+          delete files[SYSTEM_FILE];
+        } else {
+          let system: DesignSystemPackage;
+          try { system = parseSystem(op.source); }
+          catch (error) { throw new Error(`设计系统无效：${error instanceof Error ? error.message : String(error)}`); }
+          files[SYSTEM_FILE] = serializeSystem(system);
+          manifest = { ...manifest, version: 4 };
+          writeManifest();
+        }
       } else if (op.type === 'addPage' || op.type === 'duplicatePage') {
         if (manifest.pages.some(p => p.id === op.id)) throw new Error('页面 id 已存在。');
         const file = `pages/${op.id}.page.tsx`;

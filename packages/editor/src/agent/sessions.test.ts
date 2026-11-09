@@ -9,6 +9,20 @@ function session(id: string, turns: AgentTurn[], updatedAt = '2026-01-01T00:00:0
   return { id, title: id, createdAt: updatedAt, updatedAt, turns };
 }
 describe('AI session store', () => {
+  it('keeps valid system provenance and drops malformed fields without losing the turn', () => {
+    const hash = 'a'.repeat(64);
+    const store = normalizeStore({ version: 2, activeId: 'a', sessions: [session('a', [
+      { ...turn('t1'), system: { id: 'rea', revision: 3, hash, draft: false } },
+      { ...turn('t2'), system: { id: 'rea', revision: null, hash, draft: true } },
+      { ...turn('t3'), system: { id: 'rea', revision: 0, hash: 'nope', draft: false } },
+      turn('t4'),
+    ])] });
+    const turns = store!.sessions[0].turns;
+    expect(turns[0].system).toEqual({ id: 'rea', revision: 3, hash, draft: false });
+    expect(turns[1].system).toEqual({ id: 'rea', revision: null, hash, draft: true });
+    expect(turns[2].system).toBeUndefined();
+    expect(turns[3].system).toBeUndefined();
+  });
   it('migrates a legacy turn array into one session and marks interrupted turns', () => {
     const store = legacyStore([{ ...turn('t1'), state: 'running', reply: undefined }, { nope: true }]);
     expect(store).not.toBeNull();

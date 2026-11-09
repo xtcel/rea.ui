@@ -1,6 +1,6 @@
-# REA UI v2 / v3 文件格式
+# REA UI v2 / v3 / v4 文件格式
 
-一个文档是内存中的虚拟目录。唯一可编辑设计源是清单、页面与组件目录 TSX 文本；AST、索引、React 元素和 DOM 均可重建。`agent/sessions.json` 与 `editor/guides.json` 是随文档保存的编辑器元数据，不参与设计解析。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
+一个文档是内存中的虚拟目录。唯一可编辑设计源是清单、页面与组件目录 TSX 文本；AST、索引、React 元素和 DOM 均可重建。`agent/sessions.json` 与 `editor/guides.json` 是随文档保存的编辑器元数据，不参与设计解析；`design/system.json` 是固定设计系统的只读快照，参与渲染与校验但不提供第二份可编辑设计源。浏览器使用 IndexedDB 保存；交换与备份使用 `.reaui`。
 
 ## 目录和清单
 
@@ -9,6 +9,7 @@ rea.json
 pages/main.page.tsx
 pages/settings.page.tsx
 components/main.components.tsx?  (v3 可选)
+design/system.json?              (v4，固定设计系统时存在)
 assets/photo.png
 agent/sessions.json?            (AI 会话，可选)
 editor/guides.json?             (手动参考线，可选)
@@ -25,7 +26,7 @@ editor/guides.json?             (手动参考线，可选)
 }
 ```
 
-清单只接受上述字段，至少有一个页面。`pages` 顺序就是界面顺序；每项仅含唯一 `id` 与固定路径 `pages/<id>.page.tsx`。`Page.id` 必须与清单一致。页面名称仅保存在 `<Page name>`。修改页面名称不改变路径。文档更新时间和存储 revision 不写入清单，避免无编辑时导出字节变化。
+清单只接受上述字段，至少有一个页面。`version` 为 `2`、`3` 或 `4`：v3 表示含组件目录，v4 表示允许固定设计系统。`design/system.json` 只能出现在 v4 文档中；v2 / v3 携带该文件会被拒绝，未固定系统的 v4 文档合法。`pages` 顺序就是界面顺序；每项仅含唯一 `id` 与固定路径 `pages/<id>.page.tsx`。`Page.id` 必须与清单一致。页面名称仅保存在 `<Page name>`。修改页面名称不改变路径。文档更新时间和存储 revision 不写入清单，避免无编辑时导出字节变化。
 
 页面 id 符合 `^[a-z][a-z0-9-]{0,63}$`，每个节点的 designId 符合 `^[a-z][a-z0-9-]{1,63}$`。designId 仅在各页面内唯一，选区以页面 id 和 designId 定位。
 
@@ -66,7 +67,9 @@ export default (
 
 ## 图片资源
 
-编辑器把 PNG、JPEG、GIF、WebP 与 SVG 插入为普通 `Image` 图层：主菜单或工具栏「插入图片…」、把文件拖到画布、或粘贴剪贴板里的图片。桌面版在 Rust 侧弹出系统选择器并读取字节，前端只接收内容，不接收文件路径。
+编辑器把 PNG、JPEG、GIF、WebP 插入为普通 `Image` 图层：主菜单或工具栏「插入图片或 SVG…」、把文件拖到画布、或粘贴剪贴板里的图片。桌面版在 Rust 侧弹出系统选择器并读取字节，前端只接收内容，不接收文件路径。
+
+SVG 不走资源存储：文件被解析成 `Group + Rect / Ellipse / Vector` 的可编辑图层，文档里不会出现 `assets/img-*.svg`（只有既有文档或「替换图片」仍可能引用 `.svg` 资源）。因此导入结果只受页面源码规则约束，`.reaui` 体积也不随 SVG 增长。
 
 - 单个文件上限 32MB。格式按文件内容识别，改过扩展名的普通文本会被拒绝。
 - 资源路径由内容决定：`assets/img-<sha256 前 16 位>.<ext>`。同一张图重复插入共用一条资源，原文件名只用作图层名称。
@@ -83,12 +86,45 @@ export default (
 - 修改只修补对应基础属性组，保留 `hover:` / `md:` 变体、未知类及其顺序。同组多个基础类显示冲突，`w-full` / `w-fit` 等标记为非固定并使用 DOM 实测尺寸。
 - 编译前过滤非本地 url、`@import`、`expression()`、`javascript:`、`;`、`{`、`}` 和反斜杠等注入内容。被过滤的类保留原文但不生成 CSS，画布显示诊断。
 - Image 与 CSS 的 `url(assets/…)` 都在渲染时映射为对应资源的 blob URL，缺失资源不会发起远程请求。
+- 除 `var(--rea-ds-*)` 设计令牌外，不使用 CSS 变量、`calc()` 或 `env()`；其它 `var()` 会被过滤且不生成 CSS。
+
+## 设计系统快照
+
+固定设计系统时，文档在 `design/system.json` 保存一份自包含快照，结构为 `{ format: "reaui-design-system", schemaVersion: 1, id, revision, hash, name, tokens, components, guidelines }`。`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256；`revision` 是来源系统的已发布版本。
+
+```json
+{
+  "format": "reaui-design-system",
+  "schemaVersion": 1,
+  "id": "rea",
+  "revision": 3,
+  "hash": "9f2c…",
+  "name": "REA UI",
+  "tokens": {
+    "color": { "primary": "#356AF0", "background": "#FAFBFC", "surface": "#FFFFFF", "text": "#30343B", "muted": "#656D79", "border": "#E5E7EB" },
+    "typography": {
+      "family": "-apple-system, …",
+      "body": { "size": 14, "lineHeight": 1.5, "weight": 400 },
+      "heading": { "size": 30, "lineHeight": 1.27, "weight": 500 },
+      "caption": { "size": 12, "lineHeight": 1.5, "weight": 400 }
+    },
+    "space": { "unit": 8, "scale": [4, 8, 12, 16, 24, 32, 48, 64] },
+    "radius": { "sm": 4, "md": 8, "lg": 12 }
+  },
+  "components": [{ "key": "button", "name": "按钮", "description": "主要操作使用主色。" }],
+  "guidelines": "蓝色只表达操作状态。"
+}
+```
+
+每个令牌派生 `--rea-ds-<group>-<path>` 变量（`color.primaryHover` → `--rea-ds-color-primary-hover`，`space.24` → `--rea-ds-space-24`，`typography.body.size` → `--rea-ds-typography-body-size`）。页面 `className` 通过 `var(--rea-ds-*)` 引用；画布在 Shadow DOM 的 `:host` 注入这些变量，预览在 `:root` 注入同一组，外壳 `--rea-*` 不受影响。
+
+固定、升级与取消固定都是文档事务，进入撤销历史。取消固定时若仍有令牌引用会被拒绝。旧文档没有该文件时按未固定系统处理。
 
 ## `.reaui` 容器
 
 MIME：`application/vnd.reaui+zip`，文件名来自文档名称。
 
-ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、可选的组件目录、`agent/sessions.json`（存在时）、`editor/guides.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
+ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、可选的组件目录、可选的 `design/system.json`、`agent/sessions.json`（存在时）、`editor/guides.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
 
 `.reaui` 会携带文档内的 AI 会话记录与手动参考线，换机或转交他人打开后仍可看到历史会话并恢复参考线。两者都不是设计源，不参与静态解析，也不会被注入 Agent 的临时工作区；参考线同样不进入页面 TSX 或代码导出。
 
@@ -97,8 +133,8 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 1. 先检查中央目录和本地条目范围，再进行解压。拒绝加密、分卷、ZIP64、非 store/deflate 压缩、重复路径、重叠条目、损坏元数据和 CRC 不一致。
 2. 路径必须相对、安全且使用 `/`。拒绝绝对路径、盘符、反斜杠、空路径段、`.`、`..`、控制字符、目录条目（结尾 `/`）。
 3. 最多 5000 条目，解压后合计最多 256MiB，任一条目压缩比不得超过 200。超限在分配解压缓冲区前拒绝。
-4. 必须有 UTF-8 `rea.json`，所有清单页面必须存在并通过静态解析，id 必须一致。拒绝清单未引用的页面文件。
-5. `assets/` 路径同时遵守 Image 的资源路径限制。允许的固定元数据路径为 `agent/sessions.json` 与 `editor/guides.json`；根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的其他文件忽略并给出警告。会话文件超过 512KB、参考线文件超过 64KB，或两者不是合法 JSON / 顶层不是对象时丢弃并给出警告，不阻断导入。
+4. 必须有 UTF-8 `rea.json`，所有清单页面必须存在并通过静态解析，id 必须一致。拒绝清单未引用的页面文件。清单 v2 / v3 携带 `design/system.json` 时拒绝；v4 允许。
+5. `assets/` 路径同时遵守 Image 的资源路径限制。允许的固定路径为 `agent/sessions.json`、`editor/guides.json`、`design/system.json`；根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的其他文件忽略并给出警告。会话文件超过 512KB、参考线文件超过 64KB、设计系统快照超过 256KB，或三者不是合法 JSON / 顶层不是对象 / 系统 hash 与内容不符时丢弃并给出警告，不阻断导入；若丢弃快照后页面仍有令牌引用，导入会失败并提示先恢复系统。
 6. 所有校验通过后，在一个 IndexedDB 事务中写入新文档和资源，失败时无残留。
 
 压缩比限制也适用于高度重复的正常文件；若其超过阈值，导入会按同样规则拒绝。

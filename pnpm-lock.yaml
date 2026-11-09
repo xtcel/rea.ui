@@ -231,6 +231,8 @@ importers:
         specifier: 19.3.1
         version: 19.3.1
 
+  packages/design-system: {}
+
   packages/document:
     dependencies:
       '@babel/parser':
@@ -242,6 +244,9 @@ importers:
       '@rea/design':
         specifier: workspace:*
         version: link:../design
+      '@rea/design-system':
+        specifier: workspace:*
+        version: link:../design-system
       '@rea/tailwind':
         specifier: workspace:*
         version: link:../tailwind
@@ -255,6 +260,9 @@ importers:
       '@rea/design':
         specifier: workspace:*
         version: link:../design
+      '@rea/design-system':
+        specifier: workspace:*
+        version: link:../design-system
       '@rea/document':
         specifier: workspace:*
         version: link:../document
@@ -303,6 +311,9 @@ importers:
       '@rea/design':
         specifier: workspace:*
         version: link:../design
+      '@rea/design-system':
+        specifier: workspace:*
+        version: link:../design-system
       '@rea/document':
         specifier: workspace:*
         version: link:../document
@@ -352,6 +363,9 @@ importers:
       '@rea/design':
         specifier: workspace:*
         version: link:../design
+      '@rea/design-system':
+        specifier: workspace:*
+        version: link:../design-system
       '@rea/document':
         specifier: workspace:*
         version: link:../document
@@ -377,6 +391,9 @@ importers:
       '@rea/design':
         specifier: workspace:*
         version: link:../design
+      '@rea/design-system':
+        specifier: workspace:*
+        version: link:../design-system
       '@rea/document':
         specifier: workspace:*
         version: link:../document

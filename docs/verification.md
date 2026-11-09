@@ -407,3 +407,74 @@ CDP + headless Chrome（1440×900，`--no-sandbox`，`Emulation.setEmulatedMedia
 修复（`packages/renderer-dom/src/render.tsx` + 新增 `packages/tailwind/src/preview.ts`）：`PageRenderer` 在渲染预览补丁时，把补丁触及的几何组（`left/top/right/bottom/width/height`、`rotate`，以及手势会写的 `position-type/whitespace/overflow` 关键字组）从补丁后的类名里读回并镜像成内联 `style`，与类补丁同帧生效——内联样式即时生效，类补丁在样式表就绪后与内联值完全一致（两者同源，均读自补丁后的类名）；未识别的值一律跳过而不猜测，避免内联错误覆盖正确的类样式。拖动结束提交后内联样式随之移除，图层不留任何 `style` 属性。旋转镜像用 Tailwind v4 的独立 `rotate` 属性，与类样式不叠加（实测帧帧相等）。
 
 CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图层 → 拖动 240px / SE 手柄缩放 / NW 手柄旋转，逐帧采样）8 项断言全过：拖动 99 帧无一次后退、终点与落点一致（976=736+240）、拖动中内联镜像生效（`left: 670px; top: 430px;`）、提交后无内联残留、缩放期间 top 边恒定且宽度单调增长、旋转期间 `computed rotate` 与类声明帧帧相等（无双重旋转）。拖动中截图确认蓝色图片单份跟随选框，原点处无残影。`pnpm typecheck`、全量 vitest（55 文件 / 434 项，2 跳过）、`pnpm build` 全部通过；新增 `packages/tailwind/test/preview.test.ts`（4 项）与 `render.test.tsx` 内联镜像断言。
+
+## 设计系统 ABI：契约包、文档快照与 conformance（2026-11-09）
+
+本轮实现 `define-design-system-abi` 的契约层，不做编辑器内的发布 / 固定界面。验证范围是「格式、事务、渲染输入、CLI 报告」四段，不含浏览器真机手势。
+
+**已完成并自动验证**
+
+- `@rea/design-system`：同步 SHA-256（标准向量 `abc` / 空串）、键排序无空白序列化、未知顶层字段往返、`schemaVersion` 门禁、颜色 / 字号 / 行高 / 字重 / 间距刻度 / 圆角 / 阴影注入校验、`--rea-ds-*` 派生与同名冲突、组件 key 与令牌引用、旧 localStorage 迁移（不臆造可选色与 shadow）、`conformance()` 的 error / warning 分级与对比度计算。18 项测试。
+- `@rea/document`：清单接受 v2 / v3 / v4；v3 携带 `design/system.json` 拒绝；v4 无系统合法；固定 / 撤销 / 取消固定事务；仍被引用时拒绝取消固定；超过 256KB 或 hash 不匹配拒绝。10 项测试。
+- `@rea/storage`：`.reaui` 往返包含快照且字节稳定；损坏 / 改 hash / 超限快照丢弃并 warning；v3 + 快照拒绝（5 项）。版本库发布 / 重复发布拒绝 / revision 递增 / 快照不可变 / 固定可撤销 / 升级预览不写文档 / 删除仍被引用的令牌整体拒绝（7 项）。
+- `@rea/tailwind`：只放行 `var(--rea-ds-*)`，继续拒绝其它 `var()`、`calc()`、`env()` 与带 fallback 的令牌（新增 4 类候选断言）。
+- `reaui validate`：`--system` / `--strict` / `issues[]` / 退出码；未声明令牌、字面量 warning、strict 提升、版本不匹配、v2 引用令牌、无系统旧文档六种路径（7 项）；`pack` 在 warning 时要求 `--force`。
+- 生成：提示词改为包快照并附三条令牌规则；`AgentTurn.system` 记录发布版本或草稿，非法字段丢弃但保留 turn（新增 4 条断言）。
+
+**命令结果**：`pnpm test` 485 通过 / 2 跳过（60 文件），`pnpm typecheck`、`pnpm build`、`pnpm test:rust` 通过，`openspec validate define-design-system-abi --strict` 通过。
+
+**未覆盖 / 待补**
+
+- 未做 CDP 真机复核：`:host` 变量在 WebKit `transform` 缩放下的解析、50% / 200% 下的引用对齐、`reaui preview` 与画布同值仍未截图验证（任务 8.3）。
+- 编辑器内的发布 / 固定 / 升级入口未实现（任务 4.3、4.4），当前只能通过 CLI 与文档层完成同等校验；内置三套系统仍是代码常量。
+- ShadowCanvas 为 DOM 组件，测试环境为 node，`:host` 输出未做组件级断言（任务 3.5 部分完成）。
+
+## 设计系统 ABI：发布、固定与升级界面（2026-11-09 第二轮）
+
+在上一轮契约层之上补齐界面与绑定链路：工作台发布不可变版本，编辑器把版本固定到当前文档，升级走同一事务模型。
+
+**新增能力**
+
+- 工作台：`发布版本` 写入版本库；`版本` 页签列出 `vN / hash 前缀 / 日期 / 当前`。内置系统只读，发布时先分叉副本，避免把代码常量写进版本库。
+- 编辑器「设计系统」对话框（主菜单进入）：显示当前固定的 `名称 · vN · hash`，列出所有已发布版本；固定 / 升级 / 切换旧版本前先给变更预览（令牌与组件条目的增删改 + 冲突列表），取消固定是一次可撤销事务。
+- 记录新增可选 `revision` / `hash`；只有 hash 与当前令牌一致时才认 revision，发布后改令牌自动降级为草稿。内置系统以只读 `revision: 1` 参与解析，首页与编辑器同源。
+- 生成提示词随之区分：已发布系统下发 `vN`，草稿下发「草稿版本」。
+
+**命令结果**
+
+- `pnpm test`：521 通过 / 2 跳过（65 文件；工作区同时包含 `add-svg-vector-import-and-image-export` 的测试）。本变更新增 `packages/editor/src/agent/designSystem.test.ts`（4 项）、`packages/storage/test/systems.test.ts` 的事务用例（2 项）与 `packages/reaui-cli/test/system.test.ts` 的 preview `:root` 断言（2 项）。
+- `pnpm typecheck`、`pnpm build` 通过；`openspec validate define-design-system-abi --strict` 通过。
+- `node scripts/verify-design-system-pin.mjs`（CDP + headless Chrome，1440×900，浅色）：**24 项全部通过**。覆盖内置系统复制并发布 v1、版本列表「当前」标记、文档初始无变量、主菜单入口、未固定列表、固定前 30 条令牌变更、固定后 `:host` 颜色与圆角、外壳 `--rea-*` 不受影响、刷新后快照仍在、菜单显示 `v1`、改主色发布 v2、升级预览仅 1 条变更、升级后画布取到 `#e0447c`、取消固定后变量消失且刷新仍为空。
+
+**未覆盖 / 待补**
+
+- 50% / 200% 缩放下的引用对齐截图（任务 8.5）：演示文档不含令牌引用，需先准备样例文档；`reaui preview` 的 `:root` 变量同源已由 `packages/reaui-cli/test/system.test.ts` 断言。
+- ShadowCanvas 的 `:host` 输出仍无组件级断言（node 测试环境），本轮通过 CDP 读取 `getComputedStyle` 间接验证。
+- 取消固定时「仍有引用则拒绝」只在单元测试覆盖，界面未做对应提示截图。
+
+## SVG 矢量导入与图片导出（2026-11-09）
+
+导入不再把 SVG 当图片资源：解析成 `Group + Rect / Ellipse / Vector` 的可编辑图层。导出新增 PNG / JPG / SVG，范围沿用「选中优先，否则当前页所有画框」。
+
+**新增能力**
+
+- 解析（`packages/design/src/svg.ts`，纯文本、无 DOM）：自写 XML tokenizer；`transform` 叠乘并烘焙进坐标；路径归一化为绝对 `M/L/C/Z`（`H/V`→`L`、`S/T` 反射、`Q`→`C`、`A`→每段 ≤90° 的三次贝塞尔）。单轮廓转结构化 `path` 供钢笔编辑，多轮廓保留归一化 `d`，与 `expandPath()` 既有口径一致。
+- 落源（`packages/editor/src/session/svgImport.ts`）：按 `viewBox` 等比缩放，颜色写成 `fill-[#…]` / `stroke-[#…]` / `[stroke-width:Npx]`、圆角 `rounded-[Npx]`；整次导入是一个事务。
+- 未支持特性计数汇报（文字、内嵌位图、引用、蒙版、裁切、滤镜、图案；渐变按首个色标近似）。
+- 位图导出：克隆真实渲染 + 内联 `getComputedStyle()`，`<foreignObject>` 交由 `<img>` → `<canvas>` → `toBlob()`；跳过 `inset*` 系列，SVG 外壳用 `data:` URL 避免 canvas 污染。
+- 矢量导出：按 `data-design-kind` 重建 `<rect>` / `<ellipse>` / `<path>` / `<text>` / `<image>`，容器 `<g>`、`overflow:hidden` → `<clipPath>`，文字按 Range 行盒拆行。
+- 多文件用 `zipArchive()` 打包，只弹一次保存框。
+
+**命令结果**
+
+- `pnpm typecheck`、`pnpm build` 通过；`openspec validate add-svg-vector-import-and-image-export --strict` 通过。
+- `npx vitest run`：521 通过 / 2 跳过（63 文件），新增 `packages/design/src/svg.test.ts`（14 项）、`packages/editor/src/session/svgImport.test.ts`（5 项）、`packages/editor/src/export/vector.test.ts`（5 项）、`packages/editor/src/export/targets.test.ts`（4 项）。
+- `node scripts/verify-svg-import-export.mjs`（CDP + headless Chrome，1440×900，浅色）：**11 项全部通过**。覆盖粘贴 SVG 后成为 `Rect / Ellipse / Vector` 编组且不新增 svg 资源、填充与圆角（`rgb(53, 106, 240)` / `8px`）、路径 `d` 与描边宽度、插入尺寸 `48px`、导出 SVG 为真矢量（无 `foreignObject`、尺寸 48×48）、导出 2x PNG（96×96）、JPG 选中后倍率仍可用、导出 JPG 合法。
+- 整页 SVG 导出人工复核：内置示例首页 1440×960 重建出 47 个 `<text>`、25 个 `<rect>` 与全部图标路径，渲染结果与画布肉眼一致。
+
+**未覆盖 / 待补**
+
+- SVG 导出的文字基线在跨字体环境可能有 1px 级偏差（用 canvas 字体度量推算），多行自动换行依赖 Range 行盒，复杂富文本未覆盖。
+- 投影、滤镜、渐变背景不进入 SVG 导出（位图导出不受影响），未做「哪些装饰被省略」的界面提示。
+- 多轮廓镂空图形只能整体编辑，不能逐轮廓改节点；未覆盖 `<text>` / `<image>` / `<use>` / 蒙版 / 裁切的导入。
+- 桌面版（Tauri）的保存对话框路径只有浏览器下载路径被 CDP 覆盖，系统保存面板未做真机验证。
