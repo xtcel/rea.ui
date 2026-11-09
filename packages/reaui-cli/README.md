@@ -8,7 +8,7 @@
 [![license](https://img.shields.io/npm/l/@xtcel/reaui-cli.svg)](https://www.npmjs.com/package/@xtcel/reaui-cli)
 [![node](https://img.shields.io/node/v/@xtcel/reaui-cli.svg)](https://www.npmjs.com/package/@xtcel/reaui-cli)
 
-[简体中文](README.zh-CN.md)
+[简体中文](https://github.com/xtcel/rea.ui/blob/main/packages/reaui-cli/README.zh-CN.md)
 
 ## Why this exists
 

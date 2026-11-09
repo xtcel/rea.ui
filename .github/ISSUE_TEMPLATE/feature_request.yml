@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an addition or a behaviour change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: Describe the situation you are in, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you would like it to work. Alternatives you considered are welcome.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Editor and canvas
+        - Design format (.reaui)
+        - CLI
+        - AI generation
+        - Desktop app
+        - Web app
+        - Documentation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: The README lists directions that are intentionally out of scope for now.
+      options:
+        - label: I checked that this is not one of the "not accepted as PRs" directions in the README
+          required: true

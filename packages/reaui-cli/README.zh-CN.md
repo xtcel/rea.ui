@@ -4,7 +4,7 @@
 
 `reaui` 是 **REA UI** 的命令行工具。REA UI 是一个开源设计编辑器，设计源就是普通的 React TSX + Tailwind。CLI 负责创建、校验、打包、解包 `.reaui` 设计文档，并生成自包含的 HTML 预览。不需要浏览器，不需要 Rust 工具链，没有运行时依赖。
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[English](https://github.com/xtcel/rea.ui/blob/main/packages/reaui-cli/README.md) · 简体中文
 
 ## 为什么需要它
 
