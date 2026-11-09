@@ -720,10 +720,10 @@ P0 通过后冻结 v1 语法与支持矩阵。未通过时修正相关契约或�
 
 ### 14.1 本项目直接依据
 
-1. [会话：调研 Figcraft 项目架构 (2)](codex://threads/01a19b71-f391-7623-9eab-86a59237e45d)：单源文档原则；专业 UI 与矢量两类能力、分阶段建设。
-2. [React 节点与命令草案 v0.1](/Users/user/.gemini/antigravity/brain/5a9995d9-93bc-4a9d-a193-98a8f1edc688/node-schema-and-commands.md)：本提案的文档模型基础。
-3. [既有单源研究报告](/Users/user/Documents/Codex/2026-10-30/ni/outputs/web-native-design-research.md)：架构论证与九类场景。
-4. [既有实验结果](/Users/user/Documents/Codex/2026-10-30/ni/outputs/single-document-spike/results.json)：记录 15 项通过、0 项失败；使用 XML-compatible HTML AST。本次已读取记录，未重新运行实验。它不证明 TSX 打印、专业 UI、IME、渲染性能或多人协作已实现。
+1. 会话「调研 Figcraft 项目架构 (2)」（内部记录）：单源文档原则；专业 UI 与矢量两类能力、分阶段建设。
+2. React 节点与命令草案 v0.1（内部稿）：本提案的文档模型基础。
+3. 既有单源研究报告（内部稿）：架构论证与九类场景。
+4. 既有实验结果（内部稿）：记录 15 项通过、0 项失败；使用 XML-compatible HTML AST。本次已读取记录，未重新运行实验。它不证明 TSX 打印、专业 UI、IME、渲染性能或多人协作已实现。
 5. 本次用户确认：独立编辑器；最新补充进一步限定 **FigCraft 只用于 UI 参考，文档模型遵循 React 草案**。最新约束优先于之前泛称的“模块借鉴”。
 
 ### 14.2 已核对的外部技术依据

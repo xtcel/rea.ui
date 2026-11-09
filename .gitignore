@@ -12,3 +12,5 @@ test-results/
 target/
 src-tauri/gen/schemas/
 packages/geometry/generated/
+.workbuddy/
+.tmp-probe/

@@ -38,7 +38,7 @@
   ],
   "guidelines": "依据DESIGN.md、apps/web/src/theme.css与apps/web/src/home.css提取。background对应默认画布底色，surface对应面板底色，primary对应操作强调色；spacing为4px基础步长，radius为4px控件基准，尺寸单位为px。\n正文13px、字重400、行高1.5；工具标签12px，分区标题12px且字重600，辅助信息11px，对话框标题16px。代码使用等宽字体，字号11px、行高24px。\n间距常用4、8、12、16、20px；紧凑元素圆角3px，控件4px，菜单6px，对话框8px。选中背景使用#eaf0ff，悬停背景使用#f1f3f6，字段背景使用#fafbfc。\n蓝色表达当前工具、选择、焦点和操作反馈；状态同时通过底色、边线、字重或图标表达。常驻工具栏和侧栏通过1px分隔线组织，阴影用于临时浮层。\n编辑器桌面顶栏高44px，左栏默认240px、右栏280px，两栏可在200–400px内调整。宽度小于900px时使用互斥抽屉，优先保留中央画布及工具入口；首页在宽度不超过760px时收起侧栏。\n交互控件保留可见键盘焦点，图标按钮提供可访问名称，动态效果尊重prefers-reduced-motion。画布文档的颜色和字体由其TSX决定，外壳令牌以主题样式为准。",
   "published": true,
-  "sourceProject": "/Users/user/workspace/rea.ui/",
+  "sourceProject": "/path/to/project/",
   "color": "#356af0",
   "colors": [
     "#356af0",
