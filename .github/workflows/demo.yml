@@ -38,7 +38,8 @@ jobs:
       - name: Build static site
         run: pnpm build
         env:
-          REA_BASE: /${{ github.event.repository.name }}/
+          # 自定义域名 reaui.xtcel.com 是根路径部署；若改回 project page 子路径，设为 /<repo>/
+          REA_BASE: /
       - run: touch apps/web/dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

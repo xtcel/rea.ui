@@ -7,6 +7,7 @@ REA UI is an open-source, self-hostable design editor where the design source is
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.18.0-339933)
 ![Status](https://img.shields.io/badge/status-early%20preview-orange)
+[![Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://reaui.xtcel.com/#demo)
 
 [简体中文](README.zh-CN.md)
 
@@ -26,7 +27,7 @@ The difference is that **`.reaui` is an open exchange format**: any agent that f
 
 ### 1. Try it in a browser
 
-No install. Open the site at `/#demo` to land straight in the editor with the built-in sample design loaded: drag layers, change properties, export TSX. The sample is imported on first visit and edits persist locally in the browser.
+No install. Open **[reaui.xtcel.com/#demo](https://reaui.xtcel.com/#demo)** to land straight in the editor with the built-in sample design loaded: drag layers, change properties, export TSX. The sample is imported on first visit and edits persist locally in the browser.
 
 Run it locally:
 

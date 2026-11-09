@@ -9,6 +9,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.18.0-339933)
 ![Status](https://img.shields.io/badge/status-early%20preview-orange)
+[![Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://reaui.xtcel.com/#demo)
 
 ![编辑器预览](docs/assets/editor-preview.jpg)
 
@@ -26,7 +27,7 @@
 
 ### 1. 在线 demo：浏览器里直接改
 
-不安装任何东西，打开站点访问 `/#demo` 即可进入内置示例设计稿的编辑器：拖动图层、改属性、导出 TSX。首次访问会自动导入示例，编辑结果存在浏览器本地。
+不安装任何东西，打开 **[reaui.xtcel.com/#demo](https://reaui.xtcel.com/#demo)** 即可进入内置示例设计稿的编辑器：拖动图层、改属性、导出 TSX。首次访问会自动导入示例，编辑结果存在浏览器本地。
 
 本地跑一遍：
 

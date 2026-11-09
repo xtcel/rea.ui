@@ -26,9 +26,11 @@ pnpm --filter @rea/web preview   # http://127.0.0.1:4173
 
 ### GitHub Pages
 
-`.github/workflows/demo.yml` 在 `main` 分支推送后自动构建并部署。首次使用需要在仓库 **Settings → Pages → Source** 选择 **GitHub Actions**。
+`.github/workflows/demo.yml` 在 `main` 分支推送后自动构建并部署，站点地址为 `https://reaui.xtcel.com/`（自定义域名，根路径）。首次使用需要在仓库 **Settings → Pages** 确认 Source 为 **GitHub Actions**。
 
-子路径部署需要 base 前缀，workflow 已通过 `REA_BASE` 传入仓库名：
+DNS 需要一条记录：`reaui` CNAME → `xtcel.github.io`。
+
+如果改回项目站点子路径（`<user>.github.io/<repo>/`），构建时传入 base 前缀：
 
 ```bash
 REA_BASE=/<repo>/ pnpm build
