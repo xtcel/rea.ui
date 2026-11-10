@@ -1,0 +1,4 @@
+interface:
+  display_name: ReaUI Designer
+  short_description: 生成可编辑的 ReaUI 设计稿
+  default_prompt: 用 ReaUI 根据我的需求创建 UI 页面，并输出已校验的 .reaui 文件。
