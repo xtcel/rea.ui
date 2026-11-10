@@ -71,7 +71,7 @@
 .rs-about-list { margin:18px 0 0; display:grid; }
 .rs-about-list > div { display:flex; justify-content:space-between; gap:20px; padding:11px 0; border-bottom:1px solid var(--rea-border); font-size:11px; }
 .rs-about-list dt { color:var(--rea-muted); }
-.rs-about-list dd { margin:0; max-width:62%; text-align:right; }
+.rs-about-list dd { margin:0; max-width:62%; text-align:right; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .rs-overlay { position:fixed; inset:0; z-index:60; display:flex; background:var(--rea-surface); box-shadow:var(--rea-shadow-dialog); }
 .rs-overlay > .rs-shell { flex:1; min-width:0; }
 @media (max-width:720px) {

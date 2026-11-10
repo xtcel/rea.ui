@@ -478,7 +478,7 @@ CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图�
 
 - 解析（`packages/design/src/svg.ts`，纯文本、无 DOM）：自写 XML tokenizer；`transform` 叠乘并烘焙进坐标；路径归一化为绝对 `M/L/C/Z`（`H/V`→`L`、`S/T` 反射、`Q`→`C`、`A`→每段 ≤90° 的三次贝塞尔）。单轮廓转结构化 `path` 供钢笔编辑，多轮廓保留归一化 `d`，与 `expandPath()` 既有口径一致。
 - 落源（`packages/editor/src/session/svgImport.ts`）：按 `viewBox` 等比缩放，颜色写成 `fill-[#…]` / `stroke-[#…]` / `[stroke-width:Npx]`、圆角 `rounded-[Npx]`；整次导入是一个事务。
-- 未支持特性计数汇报（文字、内嵌位图、引用、蒙版、裁切、滤镜、图案；渐变按首个色标近似）。
+- 未支持特性计数汇报（沿路径排版的文字、内嵌位图、引用、蒙版、裁切、滤镜、图案；渐变按首个色标近似）。
 - 位图导出：克隆真实渲染 + 内联 `getComputedStyle()`，`<foreignObject>` 交由 `<img>` → `<canvas>` → `toBlob()`；跳过 `inset*` 系列，SVG 外壳用 `data:` URL 避免 canvas 污染。
 - 矢量导出：按 `data-design-kind` 重建 `<rect>` / `<ellipse>` / `<path>` / `<text>` / `<image>`，容器 `<g>`、`overflow:hidden` → `<clipPath>`，文字按 Range 行盒拆行。
 - 多文件用 `zipArchive()` 打包，只弹一次保存框。
@@ -496,3 +496,58 @@ CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图�
 - 投影、滤镜、渐变背景不进入 SVG 导出（位图导出不受影响），未做「哪些装饰被省略」的界面提示。
 - 多轮廓镂空图形只能整体编辑，不能逐轮廓改节点；未覆盖 `<text>` / `<image>` / `<use>` / 蒙版 / 裁切的导入。
 - 桌面版（Tauri）的保存对话框路径只有浏览器下载路径被 CDP 覆盖，系统保存面板未做真机验证。
+
+### 补充：SVG 文字导入（2026-11-10）
+
+用户以设备二维码标签（`<text text-anchor="middle" dominant-baseline="middle" font-size="56" …>出料泵</text>`）实测后反馈文字丢失，随后把 `<text>` 从「未导入」升级为正式能力。
+
+- `<text>` 解析为 `SvgTextShape`（字号 / 字重 / 字体族 / `text-anchor` / `dominant-baseline` 按 SVG 规则继承，transform 烘焙锚点与字号）；落源成 `Text` 图层，canvas 度量宽度与上下伸、`leading-[1]` 固定行高换算基线锚点。
+- `npx vitest run`：528 通过 / 2 跳过（`svg.test.ts` 18 项、`svgImport.test.ts` 7 项含新增文字用例）；`pnpm typecheck`、`pnpm build`、`openspec validate add-svg-vector-import-and-image-export --strict` 通过。
+- `node scripts/verify-svg-import-export.mjs` 增至 **15 项全部通过**：粘贴带文字的 SVG 后编组含 2 个 `Text` 图层（「出料泵」「位号：P-0602」），计算样式 56px / 700 / `rgb(46, 159, 117)` / 行高 56px，文字视觉中心落在 viewBox (250, 75) ±0.1，类名无 `w-[…]`（保持自动宽度）；既有图标导入与 PNG / JPG / SVG 导出断言不受影响。
+- 真实文件复核：`设备二维码_出料泵_P-0602.svg` 整份导入后 500×680 编组，两处文字与二维码图形渲染与源文件一致（截图人工比对）。
+- 已知近似：文字宽度与基线用 canvas `fontBoundingBox` 度量，跨字体环境可能有 1px 级偏差；直接文本与 tspan 混排时不保留交错顺序（字符不丢）；旋转 / 镜像文字与 `textPath` 不导入并如实提示。
+
+## 关于页版本信息（2026-11-10）
+
+关于页从「一行硬编码 `v0.1.0`」改为可核对的版本清单。编辑器版本与配套 reaui-cli 版本由 `apps/web/vite.config.ts` 在构建时从两个 `package.json` 注入；清单版本与设计系统版本只读取自共享 IndexedDB 里最近打开的文档。变更见 `openspec/changes/add-about-version-info/`。
+
+**命令结果**
+
+- `pnpm typecheck`、`pnpm build` 通过；`openspec validate add-about-version-info --strict` 通过；`git diff --check` 通过。
+- `npx vitest run`：535 通过 / 2 跳过（64 个测试文件通过、2 个跳过）。新增 `packages/editor/src/settings/about.test.ts`（7 项）：v4 + 固定系统、未固定、损坏 / 篡改快照、清单损坏、空库、优先最近文档且不改写 meta、无 meta 回退、未注入构建常量时显示占位符。
+- 构建产物复核：`apps/web/dist/assets/index-*.js` 中「reaui-cli」行的 `dd` 已内联为 `["v","0.1.3"]`，产物中无未替换的 `__REAUI_*` 常量。
+- `node scripts/verify-about-version-info.mjs`（CDP + headless Chrome，1000×720，静态托管 `apps/web/dist`）：**11 项全部通过**。覆盖空工作空间冷启动（`v0.1.0` / `v0.1.3` / `.reaui（ZIP）` /「未固定」、无错误横幅）、写入 v4 文档后重进关于页显示「清单 v4」、`lastOpenedId` 未被改写、损坏快照显示「快照无效」且清单版本仍可见。
+
+**未覆盖 / 待补**
+
+- `packages/reaui-cli/src/cli.ts` 的 `VERSION` 常量与 `packages/reaui-cli/package.json` 仍是两份手写来源，发版流程未做一致性校验；若只改其一，`reaui --version` 会与关于页的「配套版本」不一致。
+- 独立设置窗口读到的是已落盘文档（`AutoSaver` 有延迟），未做实时跨窗口订阅；已在每次进入关于页时重新读取。
+- 按本次确认的范围，不探测用户本机安装的 `reaui` CLI 版本，也不显示文档名。
+
+## 设计系统 v2 与 DESIGN.md 通道（2026-11-10）
+
+把设计系统从「生成提示词里的 10 个字段」扩展为可表达语义层与排版阶梯的契约，并把「选择」提前到创建文档的那一刻。变更见 `openspec/changes/align-design-system-with-design-md/`。
+
+**命令结果**
+
+- `pnpm typecheck`、`pnpm build`（wasm + web）通过；`openspec validate align-design-system-with-design-md --strict` 通过。
+- `pnpm exec vitest run`：548 通过 / 2 跳过（65 个测试文件通过、2 个真实 Agent 冒烟按环境跳过）。
+- `packages/design-system/test/system.test.ts` 25 项：type ramp 变量与兼容别名、颜色别名解析与环、动效值域、v1 包可读、扁平旧记录保持 v1 哈希。
+- `packages/design-system/test/designMd.test.ts` 4 项：导出→导入 hash 相同、二次导出字节一致、八个正文小节、真实 `DESIGN.md` 导入（三位 hex、`tight/control/popup/dialog` 映射、缺少 `primary` 补默认值并 warning）、无 frontmatter 报错。
+- `packages/storage/test/systems.test.ts` 新增 2 项：`ensureSystemVersion` 幂等注册并可直接固定（清单 v4）；已有版本时按下一 revision 注册。
+- `packages/editor/src/agent/designSystem.test.ts` 新增 1 项：`bound` 只在系统非草稿且被文档固定时为真。
+- `packages/editor/src/agent/generation.test.ts`：已固定提示词含「只能引用 var(--rea-ds-*)」，未固定提示词含「未固定设计系统」并要求字面量。
+
+**实现要点**
+
+- 创建文档先注册 / 发布系统再固定：`HomeApp.systemVersion()` → `ensureSystemVersion()` / `publishSystem()` → `model.create(name, version)` → `systemTransaction`，首次保存即为清单 v4。
+- `DesignAgentPanel` 优先读 `DocumentSession.system`；`AgentTurn.system` 与提示词使用同一份包。
+- 编辑器内文档已固定时，composer 的系统下拉变为只读「名称 · vN」，切换走「设计系统」对话框的固定 / 升级事务。
+- DESIGN.md 以 frontmatter 为机器层、正文仅供人读；导入的自有命名按数值映射并报告 warning。
+
+**未覆盖 / 待补**
+
+- 未运行 CDP + headless Chrome 真机复核：首页创建后菜单版本、composer 只读态、语义角色 / 排版阶梯编辑、DESIGN.md 导入导出往返的界面表现仍待 8.4 补测。
+- v2 包的编辑约束依赖工作台表单；直接手改 `localStorage['rea-home:systems']` 写入非法令牌会在下次读取时被 `isSystems()` 丢弃（保存路径已加校验）。
+- DESIGN.md 正文不参与导入；手写文件的指南若只写在正文，导入后 `guidelines` 为空。
+- 动效只表达 duration / easing，不包含 keyframes 与 spring 参数。

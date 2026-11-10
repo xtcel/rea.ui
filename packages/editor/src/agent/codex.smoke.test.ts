@@ -6,7 +6,7 @@ import { expect, it } from 'vitest';
 import { DocumentSession } from '@rea/document';
 import { exportReaui } from '@rea/storage';
 import { attachmentContext, generatedDocument, uiPrompt, uiSchema } from './generation';
-import { parseGeneratedSystem, systemSchema } from './designSystem';
+import { agentSystem, parseGeneratedSystem, systemSchema } from './designSystem';
 import type { AgentInfo, AgentStatus, ProjectContext } from './client';
 
 it.skipIf(process.env.REA_CODEX_SMOKE !== '1')('generates a design system and editable UI with real local Codex and ReaUI_App.reaui', async () => {
@@ -42,7 +42,7 @@ it.skipIf(process.env.REA_CODEX_SMOKE !== '1')('generates a design system and ed
     const systemResult = await generate(`提取 REA UI 项目的设计系统。仅输出 JSON，不修改文件。使用中文，颜色六位 hex，fontSize 10-32、spacing 2-24、radius 0-40，组件覆盖按钮、输入框、卡片与导航。名称为 REA UI 本地生成。参考：${context.context}`, systemSchema);
     const system = parseGeneratedSystem(systemResult, root); system.published = true;
     const reference = await attachmentContext([new File([await readFile(`${root}/ReaUI_App.reaui`)], 'ReaUI_App.reaui')]);
-    const result = await generate(uiPrompt('参考 REA UI 应用设计稿，为 REA UI 设计一个 1440×1024 的「AI 设计任务」工作台页面：左侧导航、顶部标题与新建任务按钮、一个设计需求输入区、三个最近任务列表。选择设计系统和关联本地项目的入口必须清晰。仅一页，约 40-65 个图层，保持参考稿紧凑清晰的风格。', system, context, reference), uiSchema);
+    const result = await generate(uiPrompt('参考 REA UI 应用设计稿，为 REA UI 设计一个 1440×1024 的「AI 设计任务」工作台页面：左侧导航、顶部标题与新建任务按钮、一个设计需求输入区、三个最近任务列表。选择设计系统和关联本地项目的入口必须清晰。仅一页，约 40-65 个图层，保持参考稿紧凑清晰的风格。', agentSystem(system), context, reference), uiSchema);
     const generated = generatedDocument(result);
     const session = new DocumentSession(generated.document.files);
     expect(session.pages.size).toBe(1);

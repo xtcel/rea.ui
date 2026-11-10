@@ -1,29 +1,30 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "reaui-designer",
-  "version": "0.1.0",
-  "description": "Create and edit UI pages as validated, editable .reaui design files with the bundled ReaUI MCP server.",
+  "version": "0.2.0",
+  "description": "Create and edit validated, editable .reaui design documents with the bundled ReaUI CLI and local MCP server.",
   "author": {
     "name": "xtcel"
   },
   "homepage": "https://github.com/xtcel/rea.ui",
+  "repository": "https://github.com/xtcel/rea.ui",
   "license": "Apache-2.0",
-  "keywords": ["ReaUI", "UI design", "design files", "MCP"],
+  "keywords": ["ReaUI", "UI design", "design files", "MCP", "CLI", "design system"],
   "extensions": {
     "com.openai": {
       "interface": {
         "displayName": "ReaUI Designer",
-        "shortDescription": "生成可编辑的 .reaui 设计稿",
-        "longDescription": "根据需求创建单页或多页 UI 设计，使用 ReaUI 校验并输出可继续编辑的 .reaui 文件，也可修改已有设计稿并生成离线预览。",
+        "shortDescription": "生成可校验可编辑的 .reaui 设计稿",
+        "longDescription": "根据需求创建单页或多页 UI 设计，或修改已有 .reaui。插件内置 reaui CLI 与本地 MCP：用 reaui init 创建文档、逐页写入静态 TSX、用 CLI 校验并修复错误、可选固定 v4 设计系统，最后打包为可在 REA UI 编辑器中继续编辑的 .reaui，并生成离线预览。",
         "developerName": "xtcel",
         "category": "Creativity",
-        "capabilities": ["Create UI designs", "Edit .reaui files", "Validate and preview"],
+        "capabilities": ["Create UI designs", "Edit .reaui files", "Validate and preview", "Pin v4 design systems"],
         "logo": "./assets/reaui.png",
         "composerIcon": "./assets/reaui.png",
         "defaultPrompt": [
-          "用 ReaUI 设计一个后台工作台页面，输出 .reaui 文件。",
-          "用 ReaUI 设计一个移动应用首页，输出 .reaui 文件。",
-          "修改现有 .reaui 设计稿并生成预览。"
+          "用 ReaUI 设计一个后台工作台页面，校验并输出 .reaui 文件。",
+          "用 ReaUI 设计一个移动应用首页，输出已校验的 .reaui 文件。",
+          "修改现有 .reaui 设计稿，校验通过后重新打包并生成预览。"
         ]
       }
     }

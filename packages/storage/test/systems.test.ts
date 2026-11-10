@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { DEFAULT_TOKENS, serializeSystem } from '@rea/design-system';
 import { DocumentSession, SYSTEM_FILE } from '@rea/document';
 import { emptyDocument, StorageService } from '../src/idb';
-import { pinSystem, previewSystemUpdate, publishSystem, systemChanges, systemTransaction, systemVersions, unpinSystem, unpinTransaction } from '../src/systems';
+import { ensureSystemVersion, pinSystem, previewSystemUpdate, publishSystem, systemChanges, systemTransaction, systemVersions, unpinSystem, unpinTransaction } from '../src/systems';
 
 let storage: StorageService;
 beforeEach(() => { storage = new StorageService(new IDBFactory()); });
@@ -107,4 +107,30 @@ describe('upgrade preview', () => {
     const version = { id: 'rea', revision: 2, hash: '', publishedAt: '', payload: { format: 'reaui-design-system' as const, schemaVersion: 1 as const, id: 'rea', hash: '', revision: 2, name: 'x', guidelines: '', tokens: structuredClone(DEFAULT_TOKENS), components: [{ key: 'card', name: '卡片', description: '' }] } };
     expect(systemChanges(null, version.payload).filter(change => change.path.startsWith('components.'))).toEqual([{ path: 'components.card', label: '新增组件' }]);
   });
+
+  it('registers a built-in snapshot once so it can be pinned', async () => {
+    const { createSystem } = await import('@rea/design-system');
+    const pkg = createSystem(input());
+    const first = await ensureSystemVersion(storage, pkg, 1);
+    const second = await ensureSystemVersion(storage, pkg, 1);
+    expect(first.revision).toBe(1);
+    expect(second.hash).toBe(first.hash);
+    expect(await systemVersions(storage)).toHaveLength(1);
+    const pinned = pinSystem(emptyDocumentSession(), first);
+    expect(pinned.manifest.version).toBe(4);
+    expect(pinned.system?.hash).toBe(pkg.hash);
+  });
+
+  it('publishes the next revision when a newly registered system already has versions', async () => {
+    const { createSystem } = await import('@rea/design-system');
+    await publishSystem(storage, input());
+    const changed = createSystem({ ...input('#00AA00'), revision: 9 });
+    const registered = await ensureSystemVersion(storage, changed, 9);
+    expect(registered.revision).toBe(2);
+    // Re-hashed after the revision bump, otherwise parsing the pinned snapshot would fail.
+    expect(registered.payload.hash).toBe(registered.hash);
+    expect(() => pinSystem(emptyDocumentSession(), registered)).not.toThrow();
+  });
 });
+
+function emptyDocumentSession() { return new DocumentSession(emptyDocument('新建').files); }

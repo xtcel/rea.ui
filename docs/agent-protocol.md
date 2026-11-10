@@ -139,15 +139,31 @@ $REAUI pack ./design --out ./design.reaui --force
 
 ## 10. 设计系统与设计令牌
 
-文档可以固定一套设计系统：`design/system.json` 保存自包含快照，清单同时为 `version: 4`。快照结构为 `{ format: "reaui-design-system", schemaVersion: 1, id, revision, hash, name, tokens, components, guidelines }`，`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256。
+文档可以固定一套设计系统：`design/system.json` 保存自包含快照，清单同时为 `version: 4`。快照结构为 `{ format: "reaui-design-system", schemaVersion, id, revision, hash, name, tokens, components, guidelines }`，`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256。`schemaVersion` 1 与 2 都可读，新发布的版本为 2。
 
-固定后：
+### 10.1 令牌模型
 
-- 颜色、间距、圆角、阴影只能引用 `var(--rea-ds-*)`，例如 `bg-[var(--rea-ds-color-surface)]`、`rounded-[var(--rea-ds-radius-md)]`、`p-[var(--rea-ds-space-24)]`、`shadow-[var(--rea-ds-shadow-card)]`。
-- 位置与尺寸（`left` / `top` / `right` / `bottom` / `w-` / `h-`）继续使用设计 px，不使用间距令牌。
-- 字号与行高可写 `text-[length:var(--rea-ds-typography-body-size)]` 或等价的 px 字面量；本期不强制。
+- `color`：`primary/background/surface/text/muted/border` 必需；其余为语义角色（`card`、`cardForeground`、`ring`、`onPrimary` 等），可以用任意小写标识符。v2 的颜色值可以是六位十六进制或 `var(--rea-ds-color-*)` 别名，别名必须指向已声明的角色且不能成环。
+- `typography`：`family` 加 `roles`。`body` 必需，推荐 `display/heading/title/label/caption/code`；每个角色为 `{ size, lineHeight, weight }`，可选 `letterSpacing` 与 `family`。
+- `space`：`unit` 加升序 `scale`。
+- `radius`：`sm/md/lg` 必需，可选 `xl/full`。
+- `shadow`：命名的静态 `box-shadow` 值。
+- `motion`：`duration`（毫秒整数）与 `easing`（`linear` / `ease*` / `cubic-bezier` / `steps`）。
+
+变量命名：颜色 `--rea-ds-color-*`，排版 `--rea-ds-type-<role>-size/-line/-weight/-tracking/-family`，兼容别名 `--rea-ds-typography-body|heading|caption-*`，间距 `--rea-ds-space-<n>`，圆角 `--rea-ds-radius-*`，阴影 `--rea-ds-shadow-*`，动效 `--rea-ds-motion-duration-*` / `--rea-ds-motion-easing-*`。
+
+### 10.2 生成规则
+
+提示词与校验共用同一个「是否已固定」判断：
+
+- 文档已固定（`design/system.json` 存在）：颜色、间距、圆角、阴影只能引用 `var(--rea-ds-*)`，例如 `bg-[var(--rea-ds-color-surface)]`、`rounded-[var(--rea-ds-radius-md)]`、`p-[var(--rea-ds-space-24)]`、`shadow-[var(--rea-ds-shadow-card)]`；字号与行高优先写 `text-[length:var(--rea-ds-type-body-size)]`。
+- 文档未固定：颜色、间距、圆角与字号使用十六进制与 px 字面量，**不得**写 `var(--rea-ds-*)`；令牌 JSON 只作为取值参考。
+- 位置与尺寸（`left` / `top` / `right` / `bottom` / `w-` / `h-`）始终使用设计 px，不使用间距令牌。
 - 组件规范按 `key` 引用；条目声明了 `component` 时优先写 `<Instance component="…" />`（full profile），不要重画矩形与文字。
-- 不固定系统时，页面不得出现 `var(--rea-ds-*)`；写十六进制字面量仍然合法。
+
+### 10.3 DESIGN.md 通道
+
+`exportDesignMarkdown()` 把包写成 DESIGN.md：frontmatter 是机器层（`colors` / `typography` / `rounded` / `spacing` / `shadow` / `motion` / `components` / `guidelines`），正文按 Overview、Colors、Typography、Layout、Elevation、Motion、Components、Guidance 生成，仅供人阅读。`importDesignMarkdown()` 只读 frontmatter，接受三位 hex、`Npx` 字符串与 `tight/control/popup/dialog`、`one/two/...` 这类自有命名，按数值映射到契约并返回 warning；正文不参与解析。往返（导出→导入→导出）保持 hash 与字节稳定。
 
 校验：
 

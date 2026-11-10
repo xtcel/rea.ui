@@ -19,7 +19,25 @@ export interface SvgStyle {
 }
 export interface SvgPathShape { kind: 'path'; d: string; path?: PathData; style: SvgStyle }
 export interface SvgBoxShape { kind: 'rect' | 'ellipse'; x: number; y: number; width: number; height: number; radii: [number, number, number, number]; style: SvgStyle }
-export type SvgShape = SvgPathShape | SvgBoxShape;
+/**
+ * 文字：x/y 是 transform 烘焙后的基线锚点（viewBox 坐标系），anchor/baseline 描述锚点语义。
+ * 宽度与字体度量交给编辑层用 canvas 测量，设计层保持纯文本、可在 node 里测试。
+ */
+export interface SvgTextShape {
+  kind: 'text';
+  content: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  fontWeight: number;
+  /** 首个字体族名（已去引号）；generic 族（sans-serif 等）原样保留。 */
+  fontFamily: string | null;
+  anchor: 'start' | 'middle' | 'end';
+  baseline: 'alphabetic' | 'middle';
+  fill: SvgPaint | null;
+  opacity: number;
+}
+export type SvgShape = SvgPathShape | SvgBoxShape | SvgTextShape;
 
 export interface ImportedSvg {
   /** 设计空间：所有图形坐标都落在 viewBox 内。 */
@@ -346,6 +364,12 @@ interface InheritedStyle {
   strokeOpacity: string | undefined;
   fillRule: string | undefined;
   color: string;
+  /** 文字属性按 SVG 规则继承；字号以 px 计。 */
+  fontSize: number;
+  fontWeight: number;
+  fontFamily: string | null;
+  textAnchor: 'start' | 'middle' | 'end';
+  dominantBaseline: string | undefined;
 }
 type LocalStyle = InheritedStyle & { opacity?: string; display?: string; visibility?: string };
 
@@ -353,9 +377,47 @@ const INLINE_KEYS: Record<string, keyof LocalStyle> = {
   fill: 'fill', stroke: 'stroke', 'stroke-width': 'strokeWidth', 'fill-opacity': 'fillOpacity',
   'stroke-opacity': 'strokeOpacity', 'fill-rule': 'fillRule', opacity: 'opacity',
   display: 'display', visibility: 'visibility', color: 'color',
+  'font-size': 'fontSize', 'font-weight': 'fontWeight', 'font-family': 'fontFamily',
+  'text-anchor': 'textAnchor', 'dominant-baseline': 'dominantBaseline',
 };
 
-function localStyle(node: XmlNode): LocalStyle {
+const FONT_WEIGHT_NAMES: Record<string, number> = { normal: 400, bold: 700, bolder: 700, lighter: 300 };
+
+/** font-size 支持 px / 无单位 / em / %；em 与 % 按继承字号折算。 */
+function parseFontSize(value: string | undefined, inherited: number): number | undefined {
+  if (!value) return undefined;
+  const match = /^\s*([-+]?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?)\s*(px|em|%)?\s*$/i.exec(value);
+  if (!match) return undefined;
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  const unit = (match[2] ?? '').toLowerCase();
+  if (unit === 'em' || unit === '%') return parsed * inherited;
+  return parsed;
+}
+
+function parseFontWeight(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const text = value.trim().toLowerCase();
+  if (FONT_WEIGHT_NAMES[text] !== undefined) return FONT_WEIGHT_NAMES[text];
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 1000 ? Math.round(parsed / 100) * 100 : undefined;
+}
+
+/** 取字体列表的第一个族名并去引号；generic 族原样返回，交给编辑层映射。 */
+function parseFontFamily(value: string | undefined): string | null | undefined {
+  if (!value) return undefined;
+  const first = value.split(',')[0]?.trim().replace(/^['"]|['"]$/g, '');
+  return first || undefined;
+}
+
+const collapseWhitespace = (text: string) => text.replace(/\s+/g, ' ');
+
+/** 文字属性把继承值当兜底，因此 localStyle 需要拿到外层样式；根节点用默认值。 */
+const DEFAULT_TEXT_STYLE: Pick<InheritedStyle, 'fontSize' | 'fontWeight' | 'fontFamily' | 'textAnchor' | 'dominantBaseline'> = {
+  fontSize: 16, fontWeight: 400, fontFamily: null, textAnchor: 'start', dominantBaseline: undefined,
+};
+
+function localStyle(node: XmlNode, base: Pick<InheritedStyle, 'fontSize' | 'fontWeight' | 'fontFamily' | 'textAnchor' | 'dominantBaseline'>): LocalStyle {
   const style: LocalStyle = {
     fill: node.attrs.fill ?? null,
     stroke: node.attrs.stroke ?? null,
@@ -367,13 +429,27 @@ function localStyle(node: XmlNode): LocalStyle {
     display: node.attrs.display,
     visibility: node.attrs.visibility,
     color: node.attrs.color ?? '#000000',
+    fontSize: parseFontSize(node.attrs['font-size'], base.fontSize) ?? base.fontSize,
+    fontWeight: parseFontWeight(node.attrs['font-weight']) ?? base.fontWeight,
+    fontFamily: parseFontFamily(node.attrs['font-family']) ?? base.fontFamily,
+    textAnchor: (['start', 'middle', 'end'].includes(node.attrs['text-anchor'] ?? '') ? node.attrs['text-anchor'] : base.textAnchor) as 'start' | 'middle' | 'end',
+    dominantBaseline: node.attrs['dominant-baseline'] ?? base.dominantBaseline,
   };
   if (!node.attrs.style) return style;
   for (const declaration of node.attrs.style.split(';')) {
     const colon = declaration.indexOf(':');
     if (colon < 0) continue;
-    const target = INLINE_KEYS[declaration.slice(0, colon).trim().toLowerCase()];
-    if (target) (style as unknown as Record<string, string>)[target] = declaration.slice(colon + 1).trim();
+    const key = declaration.slice(0, colon).trim().toLowerCase();
+    const value = declaration.slice(colon + 1).trim();
+    if (key === 'font-size') style.fontSize = parseFontSize(value, style.fontSize) ?? style.fontSize;
+    else if (key === 'font-weight') style.fontWeight = parseFontWeight(value) ?? style.fontWeight;
+    else if (key === 'font-family') style.fontFamily = parseFontFamily(value) ?? style.fontFamily;
+    else if (key === 'text-anchor' && ['start', 'middle', 'end'].includes(value)) style.textAnchor = value as 'start' | 'middle' | 'end';
+    else if (key === 'dominant-baseline') style.dominantBaseline = value;
+    else {
+      const target = INLINE_KEYS[key];
+      if (target) (style as unknown as Record<string, string>)[target] = value;
+    }
   }
   return style;
 }
@@ -396,10 +472,47 @@ function gradientStops(root: XmlNode): Map<string, string> {
 }
 
 const UNSUPPORTED: Record<string, string> = {
-  text: '文字（未导入）', tspan: '文字（未导入）', textpath: '文字（未导入）',
+  textpath: '文字沿路径排版（未导入）',
   image: '内嵌位图（未导入）', use: '引用（未导入）', mask: '蒙版（未应用）',
   clippath: '裁切（未应用）', filter: '滤镜（未应用）', pattern: '图案（未导入）', marker: '标记（未导入）',
 };
+
+/** 收集 <text> 的内容：直接文本拼接；带 x/y 的 tspan 视为独立的一段（多行标签常见写法）。 */
+function textSegments(node: XmlNode, report: (feature: string) => void): { content: string; x?: number; y?: number }[] {
+  const preserve = (node.attrs['xml:space'] ?? '').trim().toLowerCase() === 'preserve';
+  const normalize = (text: string) => (preserve ? text.trim() : collapseWhitespace(text).trim());
+  const segments: { content: string; x?: number; y?: number }[] = [];
+  let current = normalize(node.text);
+  for (const child of node.children) {
+    const tag = localName(child.tag);
+    if (tag === 'textpath') { report('文字沿路径排版（未导入）'); continue; }
+    if (tag !== 'tspan') { if (child.text.trim()) report('文字内的非 tspan 子元素（忽略）'); continue; }
+    // 注：解析器不保留直接文本与 tspan 的交错顺序（直接文本在前），
+    // 混排内容在实际 SVG 里几乎不存在，出现时顺序可能不同但字符不丢。
+    if (child.attrs.dx || child.attrs.dy || child.attrs.rotate || child.attrs['text-length'] || child.attrs.textLength) report('tspan 微调参数（忽略）');
+    const hasPosition = child.attrs.x !== undefined || child.attrs.y !== undefined;
+    if (hasPosition) {
+      if (current) segments.push({ content: current });
+      current = normalize(child.text);
+      const x = child.attrs.x !== undefined ? number(child.attrs.x, NaN) : undefined;
+      const y = child.attrs.y !== undefined ? number(child.attrs.y, NaN) : undefined;
+      segments.push({ content: current, x: Number.isFinite(x as number) ? x : undefined, y: Number.isFinite(y as number) ? y : undefined });
+      current = '';
+      continue;
+    }
+    current += normalize(child.text);
+  }
+  if (current) segments.push({ content: current });
+  return segments.filter(segment => segment.content);
+}
+
+/** dominant-baseline 收敛：middle/central 用中心对齐，其余按默认基线并提示。 */
+function textBaseline(value: string | undefined, report: (feature: string) => void): 'alphabetic' | 'middle' {
+  const text = (value ?? '').trim().toLowerCase();
+  if (text === 'middle' || text === 'central') return 'middle';
+  if (text && !['auto', 'alphabetic', 'ideographic', 'hanging', 'mathematical'].includes(text)) report('无法识别的基线（按默认处理）');
+  return 'alphabetic';
+}
 
 /** 解析一份 SVG 文本，返回可编辑图形、设计空间尺寸与未支持特性的统计。 */
 export function importSvg(source: string): ImportedSvg {
@@ -459,7 +572,7 @@ export function importSvg(source: string): ImportedSvg {
   const visit = (node: XmlNode, matrix: Matrix, inherited: InheritedStyle, opacity: number) => {
     const tag = localName(node.tag);
     if (['defs', 'symbol', 'clippath', 'mask', 'filter', 'lineargradient', 'radialgradient', 'pattern', 'marker', 'style', 'title', 'desc', 'metadata', 'stop'].includes(tag)) return;
-    const own = localStyle(node);
+    const own = localStyle(node, inherited);
     if (own.display === 'none' || own.visibility === 'hidden' || own.visibility === 'collapse') return;
     const childMatrix = multiply(matrix, parseTransform(node.attrs.transform));
     const childOpacity = opacity * clamp01(number(own.opacity, 1));
@@ -473,7 +586,16 @@ export function importSvg(source: string): ImportedSvg {
       strokeOpacity: own.strokeOpacity ?? inherited.strokeOpacity,
       fillRule: own.fillRule ?? inherited.fillRule,
       color: own.color ?? inherited.color,
+      fontSize: own.fontSize,
+      fontWeight: own.fontWeight,
+      fontFamily: own.fontFamily,
+      textAnchor: own.textAnchor,
+      dominantBaseline: own.dominantBaseline,
     };
+    if (tag === 'text') {
+      pushText(shapes, node, style, childMatrix, paint(style, childOpacity), report);
+      return;
+    }
     if (tag === 'svg' || tag === 'g' || tag === 'a' || tag === 'switch' || node.children.length && !['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon'].includes(tag)) {
       for (const child of node.children) visit(child, childMatrix, style, childOpacity);
       return;
@@ -522,13 +644,13 @@ export function importSvg(source: string): ImportedSvg {
     for (const child of node.children) visit(child, childMatrix, style, childOpacity);
   };
 
-  visit(root, IDENTITY, { fill: '#000000', stroke: null, strokeWidth: undefined, fillOpacity: undefined, strokeOpacity: undefined, fillRule: undefined, color: '#000000' }, 1);
+  visit(root, IDENTITY, { fill: '#000000', stroke: null, strokeWidth: undefined, fillOpacity: undefined, strokeOpacity: undefined, fillRule: undefined, color: '#000000', ...DEFAULT_TEXT_STYLE }, 1);
 
   // 没有 viewBox 时用图形实际范围兜底，避免插入一张空白画布。
   if (!declared && shapes.length) {
     let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity;
     for (const shape of shapes) {
-      const box = shape.kind === 'path' ? pathBounds(shape.d) : shape;
+      const box = shape.kind === 'path' ? pathBounds(shape.d) : shape.kind === 'text' ? textBoxBounds(shape) : shape;
       if (!box) continue;
       x = Math.min(x, box.x); y = Math.min(y, box.y);
       right = Math.max(right, box.x + box.width); bottom = Math.max(bottom, box.y + box.height);
@@ -549,8 +671,41 @@ export function importSvg(source: string): ImportedSvg {
   };
 }
 
-function pushPath(shapes: SvgShape[], commands: Command[], style: SvgStyle, report: (feature: string) => void) {
-  if (!style.fill && !style.stroke) return;
+/** 文字宽度的保守估计（CJK 一字一 em，其余 0.55em）：只在没有 viewBox 需要兜底包围盒时使用。 */
+function textBoxBounds(shape: SvgTextShape): { x: number; y: number; width: number; height: number } {
+  const width = [...shape.content].reduce((sum, char) => sum + (char.charCodeAt(0) > 0x2e7f ? 1 : 0.55), 0) * shape.fontSize;
+  const left = shape.anchor === 'middle' ? shape.x - width / 2 : shape.anchor === 'end' ? shape.x - width : shape.x;
+  const ascent = shape.fontSize * 0.88, descent = shape.fontSize * 0.12;
+  const baseline = shape.baseline === 'middle' ? shape.y + (ascent - descent) / 2 : shape.y;
+  return { x: left, y: baseline - ascent, width, height: ascent + descent };
+}
+
+/** <text> 落成文字形状：只接受轴对齐的均匀/非均匀正缩放，旋转、镜像与描边文字如实汇报不导入。 */
+function pushText(shapes: SvgShape[], node: XmlNode, style: InheritedStyle, matrix: Matrix, paint: SvgStyle, report: (feature: string) => void) {
+  const segments = textSegments(node, report);
+  if (!segments.length) return;
+  if (!axisAligned(matrix)) { report('旋转的文字（未导入）'); return; }
+  if (matrix[0] < 0 || matrix[3] < 0) { report('镜像的文字（未导入）'); return; }
+  if (Math.abs(matrix[0] - matrix[3]) > 1e-9) report('非均匀缩放的文字（字号按纵向近似）');
+  if (paint.stroke && paint.strokeWidth > 0) report('文字描边（忽略）');
+  const fill = paint.fill;
+  if (!fill) return;
+  const fontSize = style.fontSize * matrix[3];
+  if (!(fontSize > 0)) return;
+  const anchor = style.textAnchor;
+  const baseline = textBaseline(style.dominantBaseline, report);
+  const x = number(node.attrs.x, 0), y = number(node.attrs.y, 0);
+  for (const segment of segments) {
+    const [px, py] = apply(matrix, segment.x ?? x, segment.y ?? y);
+    shapes.push({
+      kind: 'text', content: segment.content, x: px, y: py, fontSize,
+      fontWeight: style.fontWeight, fontFamily: style.fontFamily,
+      anchor, baseline, fill: { color: fill.color, opacity: fill.opacity }, opacity: paint.opacity,
+    });
+  }
+}
+
+function pushPath(shapes: SvgShape[], commands: Command[], style: SvgStyle, report: (feature: string) => void) {  if (!style.fill && !style.stroke) return;
   const contours = contoursOf(commands);
   if (!contours.length) return;
   const d = serializePath(commands);

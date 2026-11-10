@@ -2,6 +2,11 @@
 
 没有品牌约束时使用这套 tokens。它是中性、偏产品工具的视觉语言，与 ReaUI 自身界面一致。
 
+> **这不是 `design/system.json` 快照。** 本文件是写页面 `className` 时使用的
+> “默认视觉语言”（直接写 16 进制颜色与 px 尺寸）。只有用户明确要求固定设计系统 /
+> 提供品牌令牌时，才生成 `reaui-design-system` 快照并用 `pin-system.mjs` 固定为 v4，
+> 见 `protocol.md` §9 与 `cli.md` §4。
+
 ## 颜色
 
 | 语义 | 值 | 用途 |
@@ -78,3 +83,39 @@
 - 正文与背景对比度 ≥ 4.5:1；辅助文字 ≥ 3:1。
 - 不只靠颜色表达状态，配文字或图形。
 - 可点击区域不小于 32×32px（静态稿用尺寸体现）。
+
+## 与 v4 固定设计系统的区别
+
+| | 默认 tokens（本文件） | 固定设计系统（v4） |
+|---|---|---|
+| 存放 | 无文件，直接写进 `className` | `design/system.json` 快照 + 清单 `version: 4` |
+| 颜色 | `bg-[#356af0]` | `bg-[var(--rea-ds-color-primary)]` |
+| 间距/圆角/阴影 | `p-6`、`rounded-lg`、`shadow-sm` | `p-[var(--rea-ds-space-24)]`、`rounded-[var(--rea-ds-radius-md)]`、`shadow-[var(--rea-ds-shadow-card)]` |
+| 位置/尺寸 | px | 仍是设计 px（不使用间距令牌） |
+| 校验 | 普通 `validate` | `validate --system <system.json>`，v4 编辑器才可打开 |
+| 生成方式 | 直接写页面 | `scripts/pin-system.mjs`（自动算 hash、写 v4、校验、失败回滚） |
+
+固定系统的快照结构（由 `pin-system.mjs` 校验）：
+
+```json
+{
+  "format": "reaui-design-system",
+  "schemaVersion": 1,
+  "id": "brand",
+  "revision": 1,
+  "name": "品牌设计系统",
+  "tokens": {
+    "color": { "primary": "#5B55D6", "background": "#F7F8FB", "surface": "#FFFFFF", "text": "#253047", "muted": "#59677A", "border": "#E2E6EE" },
+    "typography": { "family": "system-ui, sans-serif", "body": { "size": 14, "lineHeight": 1.5, "weight": 400 }, "heading": { "size": 30, "lineHeight": 1.27, "weight": 500 }, "caption": { "size": 12, "lineHeight": 1.5, "weight": 400 } },
+    "space": { "unit": 8, "scale": [4, 8, 12, 16, 24, 32, 48, 64] },
+    "radius": { "sm": 4, "md": 8, "lg": 12 },
+    "shadow": { "card": "0 1px 2px rgba(16,24,40,0.06)" }
+  },
+  "components": [{ "key": "button", "name": "按钮", "description": "主要操作使用主色。" }],
+  "guidelines": "蓝色只表达操作状态。"
+}
+```
+
+`hash` 可省略，脚本会按“除 hash 外全部字段按键排序、无空白 JSON”的 SHA-256 计算并写入。
+令牌变量名规则：`color.primaryHover` → `--rea-ds-color-primary-hover`，
+`space.24` → `--rea-ds-space-24`，`typography.body.size` → `--rea-ds-typography-body-size`。

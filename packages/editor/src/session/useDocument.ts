@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { DocumentSession } from '@rea/document';
 import type { SourceOperation, Transaction } from '@rea/document';
-import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2 } from '@rea/storage';
+import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2, systemTransaction } from '@rea/storage';
 import { withDocumentMetadata } from './metadata';
 import { applyAgentSnapshot } from './agent';
-import type { AssetRecord, DocumentRecord, SaveStatus } from '@rea/storage';
+import type { AssetRecord, DocumentRecord, LocalSystemVersion, SaveStatus } from '@rea/storage';
 import { isDesktop } from '../platform';
 
 export function useDocument() {
@@ -92,7 +92,16 @@ export function useDocument() {
     catch (error) { setNotice(error instanceof Error ? error.message : String(error)); return false; }
   }
   async function open(id: string) { await saver.current?.flush(); activate(await storage.openDocument(id)); }
-  async function create(name?: string) { await saver.current?.flush(); const doc = await storage.createDocument(name); await storage.setMeta('lastOpenedId', doc.id); activate(doc); return doc; }
+  /** A document can be born pinned: the snapshot is committed before the first save, so the workspace never starts unbound. */
+  async function create(name?: string, system?: LocalSystemVersion) {
+    await saver.current?.flush();
+    let doc = await storage.createDocument(name);
+    if (system) {
+      const pinned = new DocumentSession(doc.files).commit(systemTransaction(system));
+      doc = await storage.saveDocument({ ...doc, files: { ...pinned.files }, manifest: pinned.manifest, revision: pinned.rev });
+    }
+    await storage.setMeta('lastOpenedId', doc.id); activate(doc); return doc;
+  }
   function applyAgentFiles(documentId: string, expectedRev: number, files: Record<string, string>, turnId: string): number {
     const session = latest.current;
     if (!session) throw new Error('文档尚未加载。');

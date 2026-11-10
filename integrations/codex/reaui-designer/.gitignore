@@ -1,2 +1,6 @@
+# Bundled runtimes are part of the plugin and must be committed even though the
+# repository root ignores dist/ output.
 !server/reaui-cli/dist/
+!server/reaui-cli/dist/**
 !server/reaui-mcp/dist/
+!server/reaui-mcp/dist/**

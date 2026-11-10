@@ -50,13 +50,21 @@
 ## 通用与关于
 
 - **通用**：界面主题、发送快捷键、显示标尺 / 参考线、关联项目代码目录。
-- **关于**：运行平台、文档格式、存储说明与当前模型调用方。
+- **关于**：配套 reaui-cli 版本、运行平台、文档格式（含 rea.json 清单版本）、当前文档固定的设计系统版本、存储说明与当前模型调用方。
+
+## 关于页的版本口径
+
+- 编辑器版本取自根 `package.json`，reaui-cli 版本取自 `packages/reaui-cli/package.json`，由 `apps/web/vite.config.ts` 在构建时注入；界面不硬编码版本号。
+- 清单版本与设计系统版本来自最近打开的文档：只读 `rea.json` 与 `design/system.json`，不改写 `lastOpenedId`；未固定显示「未固定」，快照校验失败显示「快照无效」。
+- 显示的是随构建发布的配套版本，不是用户本机安装的 `reaui` CLI 版本。
 
 ## 代码位置
 
 | 作用 | 文件 |
 |---|---|
 | 设置页 UI | `packages/editor/src/settings/SettingsApp.tsx` |
+| 版本常量与文档版本读取 | `packages/editor/src/settings/about.ts` |
+| 构建时版本注入 | `apps/web/vite.config.ts` |
 | 提供商预设、校验、持久化、跨窗口同步 | `packages/editor/src/settings/providers.ts` |
 | 打开独立窗口与回退判断 | `packages/editor/src/settings/window.ts` |
 | 样式 | `apps/web/src/settings.css` |

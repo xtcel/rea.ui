@@ -1,4 +1,4 @@
-import { canonicalJson, createSystem, serializeSystem, systemVariables, SYSTEM_REGISTRY } from '@rea/design-system';
+import { canonicalJson, createSystem, serializeSystem, systemHash, systemVariables, SYSTEM_REGISTRY } from '@rea/design-system';
 import type { DesignSystemPackage } from '@rea/design-system';
 import type { DocumentSession, Transaction } from '@rea/document';
 import type { StorageService } from './idb';
@@ -35,6 +35,28 @@ export function systemTransaction(version: LocalSystemVersion): Transaction {
     label: `固定设计系统 ${version.payload.name} v${version.revision}`,
     ops: [{ type: 'system', source: serializeSystem(version.payload) }],
   };
+}
+
+/**
+ * Register a snapshot so it can be pinned. Built-ins and other code-constant systems
+ * are seeded at their declared revision; identical content is never duplicated.
+ */
+export async function ensureSystemVersion(storage: StorageService, snapshot: DesignSystemPackage, revision = 1): Promise<LocalSystemVersion> {
+  const existing = (await systemVersions(storage)).find(version => version.id === snapshot.id && version.hash === snapshot.hash);
+  if (existing) return existing;
+  let created: LocalSystemVersion | undefined;
+  await storage.updateMeta<LocalSystemVersion[]>(SYSTEM_REGISTRY, previous => {
+    const versions = previous ?? [];
+    const same = versions.find(version => version.id === snapshot.id && version.hash === snapshot.hash);
+    if (same) { created = same; return versions; }
+    const highest = versions.filter(version => version.id === snapshot.id).reduce((max, version) => Math.max(max, version.revision), 0);
+    const next = highest === 0 ? Math.max(1, revision) : highest + 1;
+    // The payload hash covers revision, so changing it must re-hash before it can be pinned.
+    const payload = next === snapshot.revision ? snapshot : { ...snapshot, revision: next, hash: systemHash({ ...snapshot, revision: next }) };
+    created = { id: payload.id, revision: next, hash: payload.hash, publishedAt: new Date().toISOString(), payload };
+    return [...versions, created];
+  });
+  return created!;
 }
 export function unpinTransaction(): Transaction {
   return { label: '取消固定设计系统', ops: [{ type: 'system', source: null }] };

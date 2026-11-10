@@ -2,18 +2,26 @@ import { AGENT_SESSIONS_FILE, createManifest, DocumentSession, COMPONENT_FILE } 
 import { decodeReaui, recordFromFiles } from '@rea/storage';
 import type { DocumentRecord } from '@rea/storage';
 import { serializeSystem } from '@rea/design-system';
-import { systemSnapshot } from './designSystem';
-import type { DesignSystem } from './designSystem';
+import type { AgentSystemInput } from './designSystem';
 import type { ProjectContext } from './client';
 
-/** The pinned package (not the editor's convenience shape) is what the Agent sees. */
-function systemContext(system: DesignSystem): string {
-  const { pkg, ref } = systemSnapshot(system);
+/**
+ * The package the turn consumes, not the editor's convenience shape. `bound` decides whether
+ * token references are legal: an unpinned document would reject `var(--rea-ds-*)` at validation,
+ * so the prompt must ask for literals instead of pretending the system is enforced.
+ */
+function systemContext(system: AgentSystemInput): string {
+  const { pkg, ref, bound } = system;
+  const rules = bound
+    ? `- 颜色、间距、圆角与阴影只能引用 var(--rea-ds-*)，例如 bg-[var(--rea-ds-color-surface)]、rounded-[var(--rea-ds-radius-md)]、p-[var(--rea-ds-space-24)]；不要写十六进制字面量。
+- 字号与行高优先引用排版角色，例如 text-[length:var(--rea-ds-type-body-size)]；不要为字号另造间距令牌。`
+    : `- 本文档未固定设计系统：颜色、间距、圆角与字号使用十六进制与 px 字面量，不要写 var(--rea-ds-*)。
+- 上面的令牌是取值参考，请直接采用其中的具体数值，保持同一份配色与节奏。`;
   return `${ref.draft ? '草稿版本' : `v${ref.revision}`} · ${ref.id} · ${ref.hash.slice(0, 12)}
 ${serializeSystem(pkg)}
 
 令牌规则：
-- 颜色、间距、圆角与阴影只能引用 var(--rea-ds-*)，例如 bg-[var(--rea-ds-color-surface)]、rounded-[var(--rea-ds-radius-md)]、p-[var(--rea-ds-space-24)]；不要写十六进制字面量。
+${rules}
 - 位置与尺寸（left/top/right/bottom/w-/h-）继续使用设计 px，不要使用间距令牌。
 - 组件规范按 key 引用；条目声明 component 时优先写 <Instance component="…" />，不要重画矩形与文字。`;
 }
@@ -48,7 +56,7 @@ export function designSources(files: Readonly<Record<string, string>>): Record<s
   return result;
 }
 
-export function workspacePrompt(prompt: string, system: DesignSystem, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
+export function workspacePrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
   return `${uiPrompt(prompt, system, project, references).replace('不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。', '在宿主提供的临时设计目录中直接编辑设计源文件。')}
 
 本轮使用设计文件交互协议，优先遵循以下工作方式：
@@ -84,7 +92,7 @@ ${selectionContext}
  * API 提供商走 HTTP 而非本地 CLI，没有文件工具与 AGENTS.md，
  * 因此把当前设计源直接放进上下文，要求一次返回完整的文件内容。
  */
-export function apiWorkspacePrompt(prompt: string, system: DesignSystem, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
+export function apiWorkspacePrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
   const sources = Object.entries(designSources(files)).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n\n');
   return `你是 REA UI 的界面设计 Agent。根据需求修改当前设计工作区，并返回完整的文件内容。使用中文内容，遵循给定设计系统。
 
@@ -156,7 +164,7 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
   return context;
 }
 
-export function uiPrompt(prompt: string, system: DesignSystem, project: ProjectContext | null, references = '', previous = ''): string {
+export function uiPrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references = '', previous = ''): string {
   return `你是 REA UI 的界面设计 Agent。根据需求设计完成度高的可编辑界面，使用中文内容，遵循给定设计系统。不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。\n
 需求：${prompt}\n
 设计系统：

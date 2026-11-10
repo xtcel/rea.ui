@@ -16,7 +16,7 @@ interface ComposerProps {
   inputRef: RefObject<HTMLTextAreaElement | null>;
   prompt: string; onPrompt: (value: string) => void; onSend: () => void; onStop: () => void;
   sendKey: 'enter' | 'command'; running: boolean; preparing: boolean; busy: boolean;
-  systems: DesignSystem[]; selectedSystem: string; onSystem: (id: string) => void;
+  systems: DesignSystem[]; selectedSystem: string; onSystem: (id: string) => void; lockedSystem?: string;
   config: AgentConfig; onAgentSettings: () => void; project: ProjectContext | null; onProject: () => void;
   attachments: File[]; onAttach: () => void; onRemoveAttachment: (index: number) => void;
   references: DocumentSummary[]; onReferences: () => void; onRemoveReference: (id: string) => void;
@@ -70,7 +70,7 @@ function AddContextMenu({ anchor, onClose, onAttach, onReferences, onProject }: 
 }
 
 export function HomeComposer(props: ComposerProps) {
-  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, onSystem, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement, onToggleElement } = props;
+  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, onSystem, lockedSystem, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement, onToggleElement } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [connection, setConnection] = useState<'checking' | 'connected' | 'signed-out' | 'unavailable'>('checking');
   const [connectionError, setConnectionError] = useState('');
@@ -114,7 +114,7 @@ export function HomeComposer(props: ComposerProps) {
         <div className="home-composer-toolbar">
           <div className="home-composer-context">
             <button ref={addButton} type="button" className="composer-add-button" aria-label="添加设计上下文" title="添加设计上下文" aria-haspopup="menu" aria-expanded={menuOpen} disabled={running || preparing} onClick={() => setMenuOpen(value => !value)} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setMenuOpen(true); } }}><Plus size={21} /></button>
-            <label className="composer-system-picker" htmlFor={systemId} title="选择设计系统"><Palette size={19} /><select id={systemId} aria-label="选择设计系统" value={selectedSystem} disabled={running || preparing} onChange={event => onSystem(event.currentTarget.value)}>{systems.map(system => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>
+            {lockedSystem ? <label className="composer-system-picker" title="本文档已固定设计系统"><Palette size={19} /><select aria-label="本文档的设计系统" value={lockedSystem} disabled><option>{lockedSystem}</option></select></label> : <label className="composer-system-picker" htmlFor={systemId} title="选择设计系统"><Palette size={19} /><select id={systemId} aria-label="选择设计系统" value={selectedSystem} disabled={running || preparing} onChange={event => onSystem(event.currentTarget.value)}>{systems.map(system => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>}
           </div>
           <div className="home-composer-send">
             <button type="button" className="composer-agent-button" aria-label={`${agentName}：${connectionLabel}，打开设置`} title={`${agentName} · ${connectionLabel}\n模型：${agentModel}${connectionError ? `\n${connectionError}` : ''}`} onClick={onAgentSettings}><span className={`composer-agent-status is-${connection}`} aria-hidden="true" /><span className="composer-agent-icon" aria-hidden="true"><SquareTerminal size={20} /></span></button>

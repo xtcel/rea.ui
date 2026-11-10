@@ -47,6 +47,13 @@ const ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" vie
   <g transform="translate(6 6)"><path d="M0 6 L6 0 L12 6" fill="none" stroke="#ffffff" stroke-width="2"/></g>
 </svg>`;
 
+// 设备二维码式样：带 <text>（居中锚点 + dominant-baseline + 字体族）的标签。
+const LABEL = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="680" viewBox="0 0 500 680">
+  <rect x="0" y="0" width="500" height="680" fill="#ffffff"/>
+  <text x="250" y="75" text-anchor="middle" dominant-baseline="middle" font-size="56" font-weight="700" fill="#2E9F75" font-family="'PingFang SC','Microsoft YaHei',sans-serif">出料泵</text>
+  <text x="250" y="630" text-anchor="middle" dominant-baseline="middle" font-size="30" font-weight="700" fill="#ffffff">位号：P-0602</text>
+</svg>`;
+
 async function waitForFile(extension, timeout = 15000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -167,6 +174,45 @@ try {
     const bytes = readFileSync(jpgPath);
     check('JPG 合法且不透明', bytes.subarray(0, 3).toString('hex') === 'ffd8ff', `${bytes.length} bytes`);
   }
+
+  // 5. 粘贴带文字的 SVG：<text> 必须变成 Text 图层（不是丢失，也不是图片）。
+  // 先点空白清空选区：否则标签会插进仍被选中的图标编组里被整体缩小。
+  await evalJs(`(() => { const canvas = document.querySelector('.rea-canvas'); const box = canvas.getBoundingClientRect(); canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: box.left + 8, clientY: box.bottom - 8, bubbles: true, pointerId: 21, button: 0 })); canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: box.left + 8, clientY: box.bottom - 8, bubbles: true, pointerId: 21, button: 0 })); return true; })()`);
+  await sleep(400);
+  const labeled = await evalJs(`(async () => {
+    const file = new File([${JSON.stringify(LABEL)}], 'label.svg', { type: 'image/svg+xml' });
+    const data = new DataTransfer();
+    data.items.add(file);
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 1800));
+    const root = document.querySelector('[data-shadow-canvas]').shadowRoot;
+    const group = [...root.querySelectorAll('[data-design-kind="Group"]')].at(-1);
+    if (!group) return { failed: '没有插入编组' };
+    const texts = [...group.querySelectorAll('[data-design-kind="Text"]')];
+    const first = texts[0];
+    const box = first?.getBoundingClientRect();
+    const groupBox = group.getBoundingClientRect();
+    if (!first || !box) return { failed: '编组里没有 Text 图层', kinds: [...group.querySelectorAll('[data-design-kind]')].map(n => n.getAttribute('data-design-kind')) };
+    const style = getComputedStyle(first);
+    return {
+      count: texts.length,
+      contents: texts.map(node => node.textContent),
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      color: style.color,
+      lineHeight: style.lineHeight,
+      // 编组把 500 单位画到 groupBox.width 像素：换算回 viewBox 坐标比对锚点。
+      centerX: (box.left + box.width / 2 - groupBox.left) * 500 / groupBox.width,
+      centerY: (box.top + box.height / 2 - groupBox.top) * 680 / groupBox.height,
+      hasWidthClass: (first.getAttribute('class') ?? '').match(/w-\\[|w-[0-9]/) !== null,
+    };
+  })()`);
+  console.log('text import:', JSON.stringify(labeled));
+  if (labeled.failed) throw new Error(labeled.failed);
+  check('文字导入为 Text 图层', labeled.count === 2 && labeled.contents.includes('出料泵') && labeled.contents.includes('位号：P-0602'), JSON.stringify(labeled.contents));
+  check('文字保留字号 / 字重 / 颜色 / 行高 1', labeled.fontSize === '56px' && labeled.fontWeight === '700' && labeled.color === 'rgb(46, 159, 117)' && labeled.lineHeight === '56px', `${labeled.fontSize} / ${labeled.fontWeight} / ${labeled.color} / ${labeled.lineHeight}`);
+  check('文字锚点落在 (250, 75)（±2）', Math.abs(labeled.centerX - 250) <= 2 && Math.abs(labeled.centerY - 75) <= 2, `(${labeled.centerX.toFixed(1)}, ${labeled.centerY.toFixed(1)})`);
+  check('文字保持自动宽度（无 w-[…]）', labeled.hasWidthClass === false, String(labeled.hasWidthClass));
 
   const shot = await cdp.send('Page.captureScreenshot', {});
   writeFileSync('/tmp/rea-svg-import-export.png', Buffer.from(shot.result.data, 'base64'));

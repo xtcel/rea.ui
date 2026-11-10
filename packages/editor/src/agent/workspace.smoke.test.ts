@@ -6,6 +6,7 @@ import { expect, it } from 'vitest';
 import { DocumentSession } from '@rea/document';
 import { emptyDocument, exportReaui } from '@rea/storage';
 import { builtInSystems } from '../home/data';
+import { agentSystem } from './designSystem';
 import { designSources, workspacePrompt, workspaceSchema } from './generation';
 import type { AgentInfo, AgentStatus } from './client';
 
@@ -30,7 +31,7 @@ it.skipIf(process.env.REA_WORKSPACE_SMOKE !== '1')('edits a real Codex file work
     const info = await request<AgentInfo>('detect'); expect(info.loggedIn).toBe(true);
     const document = emptyDocument('AI 文件工作区验证');
     let session = new DocumentSession(document.files), liveUpdates = 0, signature = '';
-    const prompt = workspacePrompt('设计一个中文登录页，1440×1024，10–20 个图层。必须分两次保存：先完成画框和标题并立即写入页面，再完成表单和按钮后第二次保存。保留现有 Page designId，使用静态设计原语。', builtInSystems[0], null, '', '', document.files);
+    const prompt = workspacePrompt('设计一个中文登录页，1440×1024，10–20 个图层。必须分两次保存：先完成画框和标题并立即写入页面，再完成表单和按钮后第二次保存。保留现有 Page designId，使用静态设计原语。', agentSystem(builtInSystems[0], true), null, '', '', document.files);
     jobId = (await request<{ id: string }>('start', { prompt, schema: workspaceSchema, files: designSources(document.files) })).id;
     const started = Date.now();
     for (;;) {

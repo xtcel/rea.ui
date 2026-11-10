@@ -66,7 +66,7 @@ describe('SVG 导入', () => {
     expect(result.width).toBe(24);
     const [rect, circle] = result.shapes;
     expect(rect).toMatchObject({ kind: 'rect', x: 2, y: 3, width: 10, height: 8 });
-    expect(rect.style.fill).toEqual({ color: '#ff0000', opacity: 1 });
+    expect(rect.kind === 'rect' && rect.style.fill).toEqual({ color: '#ff0000', opacity: 1 });
     expect(rect.kind === 'rect' && rect.radii[0]).toBe(2);
     expect(circle.kind).toBe('ellipse');
     expect(circle.kind === 'ellipse' && circle.width).toBe(8);
@@ -80,10 +80,10 @@ describe('SVG 导入', () => {
   it('填充与描边从组继承，opacity 逐层相乘', () => {
     const result = importSvg(svg('<g fill="#123456" stroke="#abcdef" stroke-width="2" opacity="0.5"><path d="M0 0 L4 0 L4 4 Z"/></g>'));
     const shape = result.shapes[0];
-    expect(shape.style.fill).toEqual({ color: '#123456', opacity: 1 });
-    expect(shape.style.stroke).toEqual({ color: '#abcdef', opacity: 1 });
-    expect(shape.style.strokeWidth).toBe(2);
-    expect(shape.style.opacity).toBeCloseTo(0.5);
+    expect(shape.kind === 'path' && shape.style.fill).toEqual({ color: '#123456', opacity: 1 });
+    expect(shape.kind === 'path' && shape.style.stroke).toEqual({ color: '#abcdef', opacity: 1 });
+    expect(shape.kind === 'path' && shape.style.strokeWidth).toBe(2);
+    expect(shape.kind === 'path' && shape.style.opacity).toBeCloseTo(0.5);
   });
 
   it('单轮廓转结构化路径，多轮廓保留原始 d', () => {
@@ -101,13 +101,44 @@ describe('SVG 导入', () => {
     expect(result.issues.some(issue => issue.feature.includes('旋转'))).toBe(true);
   });
 
-  it('渐变按首色近似，文字与位图记为未导入', () => {
+  it('渐变按首色近似，文字变成可导入形状，位图记为未导入', () => {
     const result = importSvg(`<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#ff8800"/><stop stop-color="#0088ff"/></linearGradient></defs><rect width="4" height="4" fill="url(#g)"/><text x="0" y="0">hi</text><image href="a.png" width="1" height="1"/></svg>`);
-    expect(result.shapes[0].style.fill).toEqual({ color: '#ff8800', opacity: 1 });
+    expect(result.shapes[0].kind === 'rect' && result.shapes[0].style.fill).toEqual({ color: '#ff8800', opacity: 1 });
+    expect(result.shapes[1]).toMatchObject({ kind: 'text', content: 'hi' });
     const features = result.issues.map(issue => issue.feature).join('|');
     expect(features).toContain('渐变');
-    expect(features).toContain('文字');
     expect(features).toContain('位图');
+    expect(features).not.toContain('文字');
+  });
+
+  it('文字解析：字号 / 字重 / 字体族 / 锚点 / 基线，fill 缺省为黑', () => {
+    const result = importSvg(svg('<text x="6" y="12" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" font-family="\'PingFang SC\',sans-serif" fill="#2e9f75">出料泵</text>'));
+    expect(result.shapes[0]).toMatchObject({
+      kind: 'text', content: '出料泵', x: 6, y: 12, fontSize: 8, fontWeight: 700,
+      fontFamily: 'PingFang SC', anchor: 'middle', baseline: 'middle', fill: { color: '#2e9f75', opacity: 1 },
+    });
+    const black = importSvg(svg('<text>默认</text>'));
+    expect(black.shapes[0]).toMatchObject({ kind: 'text', x: 0, y: 0, fontSize: 16, fontWeight: 400, fill: { color: '#000000', opacity: 1 }, anchor: 'start', baseline: 'alphabetic' });
+  });
+
+  it('文字属性从组继承，transform 烘焙坐标与字号', () => {
+    const result = importSvg(svg('<g font-size="10" font-family="serif" fill="#123456"><g transform="translate(2 3) scale(2)"><text x="1" y="1">Hi</text></g></g>'));
+    expect(result.shapes[0]).toMatchObject({ kind: 'text', x: 4, y: 5, fontSize: 20, fontFamily: 'serif' });
+  });
+
+  it('带定位的 tspan 拆成多段文字，普通 tspan 拼接内容', () => {
+    const plain = importSvg(svg('<text x="2" y="4">A<tspan>B</tspan></text>'));
+    expect(plain.shapes.map(shape => shape.kind === 'text' && shape.content)).toEqual(['AB']);
+    const multi = importSvg(svg('<text x="2" y="4"><tspan x="2" y="4">一</tspan><tspan x="2" y="10">二</tspan></text>'));
+    expect(multi.shapes.map(shape => shape.kind === 'text' && [shape.y, shape.content])).toEqual([[4, '一'], [10, '二']]);
+  });
+
+  it('旋转与镜像的文字如实记为未导入，textpath 不支持', () => {
+    const rotated = importSvg(svg('<text x="1" y="1" transform="rotate(45)">A</text>'));
+    expect(rotated.shapes).toHaveLength(0);
+    expect(rotated.issues.some(issue => issue.feature.includes('旋转的文字'))).toBe(true);
+    const pathed = importSvg(svg('<text><textPath href="#p">A</textPath></text>'));
+    expect(pathed.issues.some(issue => issue.feature.includes('文字沿路径'))).toBe(true);
   });
 
   it('display:none 的图层不产生内容，缺少 viewBox 时用图形范围兜底', () => {

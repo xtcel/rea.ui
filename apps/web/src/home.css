@@ -43,6 +43,14 @@
 .system-color-fields input { appearance:none; width:32px; height:34px; border:1px solid var(--rea-border); border-radius:5px; padding:3px; background:var(--rea-surface); cursor:pointer; }
 .system-color-fields small { display:block; font-size:10px; color:var(--rea-muted); margin-top:2px; font-variant-numeric:tabular-nums; }
 .system-numeric-fields { display:grid; grid-template-columns:1fr 1fr 1fr; gap:9px; }
+.system-role-rows,.system-type-rows { display:grid; gap:8px; }
+.system-role-row { display:grid; grid-template-columns:88px 32px 1fr 28px; gap:8px; align-items:center; }
+.system-role-row code { font-size:11px; color:var(--rea-muted); overflow:hidden; text-overflow:ellipsis; }
+.system-role-row input[type=color] { appearance:none; width:32px; height:30px; border:1px solid var(--rea-border); border-radius:5px; padding:3px; background:var(--rea-surface); cursor:pointer; }
+.system-type-row { display:grid; grid-template-columns:60px repeat(3,1fr) 28px; gap:8px; align-items:end; }
+.system-type-row code { font-size:11px; color:var(--rea-muted); align-self:center; overflow:hidden; text-overflow:ellipsis; }
+.system-type-row label { display:grid; gap:4px; font-size:10px; color:var(--rea-muted); }
+.system-type-row input { width:100%; }
 .system-component-config { display:grid; gap:12px; padding-bottom:16px; border-bottom:1px solid var(--rea-border); }
 .system-delete { padding:20px 0; border-top:1px solid var(--rea-border); color:var(--rea-danger); }
 .system-version-list { list-style:none; margin:0; padding:0; border-top:1px solid var(--rea-border); }

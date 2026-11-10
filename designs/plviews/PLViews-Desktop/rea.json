@@ -1,0 +1,57 @@
+{
+  "format": "reaui",
+  "version": 4,
+  "id": "doc_bc54a932-60f3-45e9-bde7-5b6749c29938",
+  "name": "PLViews 桌面端 App 设计",
+  "pages": [
+    {
+      "id": "design-system",
+      "file": "pages/design-system.page.tsx"
+    },
+    {
+      "id": "dashboard",
+      "file": "pages/dashboard.page.tsx"
+    },
+    {
+      "id": "project-detail",
+      "file": "pages/project-detail.page.tsx"
+    },
+    {
+      "id": "project-flow",
+      "file": "pages/project-flow.page.tsx"
+    },
+    {
+      "id": "files",
+      "file": "pages/files.page.tsx"
+    },
+    {
+      "id": "template-editor",
+      "file": "pages/template-editor.page.tsx"
+    },
+    {
+      "id": "datasource",
+      "file": "pages/datasource.page.tsx"
+    },
+    {
+      "id": "admin",
+      "file": "pages/admin.page.tsx"
+    },
+    {
+      "id": "login",
+      "file": "pages/login.page.tsx"
+    },
+    {
+      "id": "project-discovery",
+      "file": "pages/project-discovery.page.tsx"
+    },
+    {
+      "id": "template-preview",
+      "file": "pages/template-preview.page.tsx"
+    },
+    {
+      "id": "field-mapping",
+      "file": "pages/field-mapping.page.tsx"
+    }
+  ],
+  "createdAt": "2026-11-10T03:28:43.352Z"
+}

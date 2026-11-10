@@ -7,7 +7,8 @@
 - [x] 1.3 实现 `normalizePathData()`：相对转绝对、`H/V`→`L`、`S/T` 反射控制点、`Q`→`C`、隐式重复坐标
 - [x] 1.4 实现 `arcToCubics()`：椭圆弧 → 每段 ≤90° 的三次贝塞尔；退化半径按直线处理
 - [x] 1.5 实现 `importSvg()`：填充/描边/透明度/`fill-rule` 继承，基础形状轴对齐判定（旋转则转路径），无 `viewBox` 时用图形范围兜底
-- [x] 1.6 未支持特性计数：文字、内嵌位图、引用、蒙版、裁切、滤镜、图案、渐变（按首色近似）
+- [x] 1.6 未支持特性计数：沿路径排版的文字、内嵌位图、引用、蒙版、裁切、滤镜、图案、渐变（按首色近似）
+- [x] 1.8 `<text>` 解析为 `SvgTextShape`：字号 / 字重 / 字体族 / `text-anchor` / `dominant-baseline` 继承，transform 烘焙锚点与字号；带定位的 tspan 拆多段，旋转 / 镜像文字记为未导入
 - [x] 1.7 测试 `packages/design/src/svg.test.ts`：XML 边界、路径归一化、圆弧端点、变换叠乘、颜色、形状映射、旋转降级、缺 `viewBox` 兜底、缺根元素报错
 
 ## 2. 落成可编辑图层（editor）
@@ -16,7 +17,8 @@
 - [x] 2.2 单轮廓转结构化 `path`（钢笔可编辑），多轮廓保留归一化 `d`；无填充显式写 `fill-none`
 - [x] 2.3 `EditorApp.insertImages()` 分流 SVG 与位图：一次事务插入、一个撤销步，特性提示合并成一条 notice
 - [x] 2.4 插入入口文案改为「插入图片或 SVG…」；拖放与剪贴板走同一条分流
-- [x] 2.5 测试 `packages/editor/src/session/svgImport.test.ts`：片段能通过 `DocumentSession` 校验、类名符合属性面板写法、`fill-none`、特性汇总、空 SVG 报错
+- [x] 2.6 文字落源成 `Text` 图层：canvas 度量宽度与上下伸、`leading-[1]` 换算基线锚点为 `left/top`、`text-[Npx]` / `font-bold` / `font-['Font_Name']` / `text-[#色]` 类名
+- [x] 2.7 测试 `packages/editor/src/session/svgImport.test.ts`：片段能通过 `DocumentSession` 校验、类名符合属性面板写法、`fill-none`、特性汇总、空 SVG 报错、纯文字 SVG 可导入
 
 ## 3. 位图导出
 

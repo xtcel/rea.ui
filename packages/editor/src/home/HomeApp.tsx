@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';import type { FormEvent, MouseEventHandler, ReactNode } from 'react';
 import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Moon, Plus, Search, Settings2, Shapes, SlidersHorizontal, Sun, X } from 'lucide-react';
-import type { DocumentSummary } from '@rea/storage';
+import type { DocumentSummary, LocalSystemVersion } from '@rea/storage';
+import { ensureSystemVersion, publishSystem } from '@rea/storage';
 import { EditorWorkspace } from '../EditorApp';
 import { useDocument } from '../session/useDocument';
 import { Dialog } from '../ui';
@@ -17,7 +18,7 @@ import { ProjectDialog } from '../agent/ProjectDialog';
 import { SystemWorkbench } from '../agent/SystemWorkbench';
 import { agentRequest } from '../agent/client';
 import type { ProjectContext } from '../agent/client';
-import { defaultTokens, resolvedSystem, withTokens } from '../agent/designSystem';
+import { defaultTokens, resolvedSystem, systemSnapshot, withTokens } from '../agent/designSystem';
 import { DesignAgentPanel } from '../agent/DesignAgentPanel';
 import type { DesignRequest } from '../agent/DesignAgentPanel';
 
@@ -110,6 +111,20 @@ export function HomeApp() {
     });
   }, [model.current?.manifest.id]);
   useEffect(() => { writeStored('selected-system', selectedSystem); }, [selectedSystem]);
+  // Built-ins ship as code constants; register them once so a document can pin them like any published version.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      for (const item of [...builtInSystems, ...customSystems]) {
+        if (!active) return;
+        try {
+          const snapshot = systemSnapshot(item);
+          if (!snapshot.ref.draft) await ensureSystemVersion(model.storage, snapshot.pkg, snapshot.ref.revision ?? 1);
+        } catch { /* A malformed local record must not block the workspace. */ }
+      }
+    })();
+    return () => { active = false; };
+  }, [model.storage, customSystems]);
   useEffect(() => {
     if (!/^(\/|[a-z]:\\)/i.test(preferences.directory)) return;
     let active = true;
@@ -173,18 +188,35 @@ export function HomeApp() {
   function showCreate(kind: 'project' | 'system') {
     if (kind === 'system') {
       navigate('systems');
-      setActiveSystem(withTokens({ id: crypto.randomUUID(), name: '新设计系统', description: '', color: defaultTokens.primary, colors: [], published: false }, defaultTokens));
+      setActiveSystem(withTokens({ id: crypto.randomUUID(), name: '新设计系统', description: '', color: defaultTokens.color.primary, colors: [], published: false }, defaultTokens));
     } else { setNewName(''); setDialog('project'); }
   }
   function createProject(event: FormEvent) {
     event.preventDefault(); if (!newName.trim()) return;
-    void run(async () => { await model.create(newName.trim()); setDialog(null); setInEditor(true); });
+    void run(async () => {
+      let version: LocalSystemVersion | undefined;
+      try { version = await systemVersion(); } catch { version = undefined; }
+      await model.create(newName.trim(), version);
+      setDialog(null); setInEditor(true);
+    });
   }
   function saveSystem(system: DesignSystem) {
+    if (!isSystems([system])) throw new Error('设计系统令牌不合法，请检查颜色是否为六位十六进制、排版与圆角是否在允许范围内。');
     const next = [...customSystems.filter(item => item.id !== system.id), system];
     if (!writeStored('systems', next)) throw new Error('未能保存设计系统，请检查本地存储后重试。');
     setCustomSystems(next); setActiveSystem(system);
     if (!system.published && selectedSystem === system.id) setSelectedSystem('rea');
+  }
+  /** Choosing a system is the act that binds it: drafts are published first, published versions are registered as-is. */
+  async function systemVersion(): Promise<LocalSystemVersion> {
+    const snapshot = systemSnapshot(currentSystem);
+    if (snapshot.ref.draft) {
+      return publishSystem(model.storage, {
+        id: snapshot.pkg.id, name: snapshot.pkg.name, description: snapshot.pkg.description,
+        tokens: snapshot.pkg.tokens, components: snapshot.pkg.components, guidelines: snapshot.pkg.guidelines,
+      });
+    }
+    return ensureSystemVersion(model.storage, snapshot.pkg, snapshot.ref.revision ?? 1);
   }
   async function send() {
     if (!prompt.trim() || sending.current || busy) return;
@@ -192,7 +224,8 @@ export function HomeApp() {
     const text = prompt.trim();
     setError('');
     try {
-      const document = await model.create(text.split('\n')[0].slice(0, 48));
+      const version = await systemVersion();
+      const document = await model.create(text.split('\n')[0].slice(0, 48), version);
       setDesignRequest({ documentId: document.id, request: { id: crypto.randomUUID(), text, attachments, references: referenceProjects, system: currentSystem, project } });
       setPrompt(''); setAttachments([]); setReferenceProjects([]); setInEditor(true);
     } catch (error) {

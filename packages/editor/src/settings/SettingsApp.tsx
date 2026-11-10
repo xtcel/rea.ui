@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Check, ChevronDown, Cpu, Info, KeyRound, LoaderCircle, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
+import { StorageService } from '@rea/storage';
 import { agentRequest } from '../agent/client';
 import type { AgentInfo, ProjectContext } from '../agent/client';
 import { ProjectDialog } from '../agent/ProjectDialog';
@@ -9,6 +10,8 @@ import type { Preferences } from '../home/data';
 import { isDesktop } from '../platform';
 import { useTheme } from '../session/theme';
 import type { ThemePreference } from '../session/theme';
+import { CLI_VERSION, EDITOR_VERSION, emptyVersions, loadDocumentVersions } from './about';
+import type { DocumentVersions } from './about';
 import { isApiReady, isCliReady, loadProviders, notifyProvidersChanged, saveProviders } from './providers';
 import type { ApiProvider, CliProvider, ProvidersState } from './providers';
 
@@ -26,8 +29,6 @@ const COPY: Record<Page, { title: string; lead: string }> = {
   general: { title: '通用', lead: '调整工作空间的外观与操作习惯。' },
   about: { title: '关于', lead: '关于这个工作空间。' },
 };
-
-const VERSION = '0.1.0';
 
 function platformName(): string {
   const platform = navigator.platform || navigator.userAgent;
@@ -66,6 +67,8 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const [error, setError] = useState('');
   const [directory, setDirectory] = useState(false);
+  const [storage] = useState(() => new StorageService());
+  const [versions, setVersions] = useState<DocumentVersions>(emptyVersions);
 
   useEffect(() => { document.title = '设置 · REA UI'; }, []);
   useEffect(() => {
@@ -73,6 +76,14 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
   }, []);
+  // 每次进入关于页重新读取，避免独立窗口拿到打开时点的旧快照。
+  useEffect(() => {
+    if (page !== 'about') return;
+    let active = true;
+    void loadDocumentVersions(storage).then(next => { if (active) setVersions(next); })
+      .catch(() => { if (active) setVersions(emptyVersions); });
+    return () => { active = false; };
+  }, [page, storage]);
   function select(next: Page) {
     setPage(next);
     history.replaceState(null, '', `#settings/${next}`);
@@ -123,6 +134,9 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
   }
 
   const target = providers.cli.find(item => item.id === providers.activeId) ?? providers.api.find(item => item.id === providers.activeId);
+  const systemLabel = versions.systemInvalid ? '快照无效'
+    : versions.system ? `${versions.system.name} · r${versions.system.revision} · ${versions.system.hash.slice(0, 12)}`
+    : '未固定';
 
   return <div className="rs-shell">
     <aside className="rs-nav">
@@ -135,7 +149,7 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
           <Icon size={16} /><span>{label}</span>
         </button>)}
       </nav>
-      <footer className="rs-nav-foot">REA UI · v{VERSION}</footer>
+      <footer className="rs-nav-foot">REA UI · v{EDITOR_VERSION}</footer>
     </aside>
 
     <main className="rs-main">
@@ -227,11 +241,13 @@ export function SettingsApp({ onClose }: { onClose?: () => void }) {
         {page === 'about' && <section className="rs-section" aria-label="关于">
           <div className="rs-about">
             <div className="rs-about-mark" aria-hidden="true">R</div>
-            <div><strong>REA UI</strong><small>React 单源设计编辑器 · v{VERSION}</small></div>
+            <div><strong>REA UI</strong><small>React 单源设计编辑器 · v{EDITOR_VERSION}</small></div>
           </div>
           <dl className="rs-about-list">
+            <div><dt>reaui-cli</dt><dd>v{CLI_VERSION}</dd></div>
             <div><dt>运行平台</dt><dd>{isDesktop() ? `桌面版 · ${platformName()}` : `浏览器 · ${platformName()}`}</dd></div>
-            <div><dt>文档格式</dt><dd>.reaui（ZIP）</dd></div>
+            <div><dt>文档格式</dt><dd>.reaui（ZIP）{versions.formatVersion ? ` · 清单 v${versions.formatVersion}` : ''}</dd></div>
+            <div><dt>设计系统</dt><dd title={versions.system?.hash}>{systemLabel}</dd></div>
             <div><dt>本地存储</dt><dd>项目保存在本地工作空间，可导出 .reaui 备份</dd></div>
             <div><dt>模型调用</dt><dd>{target ? `${target.name}${target.model ? ` · ${target.model}` : ''}` : '未配置'}</dd></div>
           </dl>

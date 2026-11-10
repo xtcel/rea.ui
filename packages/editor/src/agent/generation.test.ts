@@ -4,7 +4,7 @@ import { DocumentSession, AGENT_SESSIONS_FILE } from '@rea/document';
 import { createDefaultV2Document, decodeReaui, exportReaui } from '@rea/storage';
 import { builtInSystems, isSystems } from '../home/data';
 import { attachmentContext, designSources, generatedDocument, uiPrompt, workspacePrompt } from './generation';
-import { defaultTokens, parseGeneratedSystem, resolvedSystem, withTokens } from './designSystem';
+import { agentSystem, defaultTokens, parseGeneratedSystem, resolvedSystem, withTokens } from './designSystem';
 
 const page = `import { Page, Frame, Text } from '@rea/design';
 export default <Page id="main" designId="page-root"><Frame designId="main-frame" className="absolute left-0 top-0 w-[1440px] h-[1024px] bg-white"><Text designId="hero-title" className="absolute left-8 top-8 text-2xl">生成设计</Text></Frame></Page>;`;
@@ -12,7 +12,7 @@ describe('local agent generation contract', () => {
   it('injects a file-editing protocol, stable identities and the current design system', () => {
     const generated = generatedDocument({ name: '项目', summary: '', pages: [{ id: 'main', source: page }] });
     const files = { ...generated.document.files, 'assets/photo.png': 'asset index', 'notes.txt': 'not a design source' };
-    const prompt = workspacePrompt('把标题改成蓝色', builtInSystems[0], null, '附件资料', '用户：生成首页', files);
+    const prompt = workspacePrompt('把标题改成蓝色', agentSystem(builtInSystems[0], true), null, '附件资料', '用户：生成首页', files);
     expect(prompt).toContain('保留已有 designId');
     expect(prompt).toContain('立即保存语法完整');
     expect(prompt).toContain('assets/photo.png');
@@ -20,7 +20,7 @@ describe('local agent generation contract', () => {
     expect(prompt).toContain('附件资料');
     expect(prompt).not.toContain('不要修改任何本地文件');
     expect(prompt).toContain('--rea-ds-color-surface');
-    expect(prompt).toContain('"schemaVersion": 1');
+    expect(prompt).toContain('"schemaVersion": 2');
     expect(prompt).toContain('v1 · rea');
     expect(prompt).not.toContain('#1D9E75');
     expect(Object.keys(designSources(files))).toEqual(['rea.json', 'pages/main.page.tsx']);
@@ -49,11 +49,11 @@ describe('local agent generation contract', () => {
   });
   it('scopes a turn to referenced canvas elements and keeps session metadata out of reference files', async () => {
     const generated = generatedDocument({ name: '项目', summary: '', pages: [{ id: 'main', source: page }] });
-    const scoped = workspacePrompt('把标题改成蓝色', builtInSystems[0], null, '', '', generated.document.files, '[1] 标题 · Text · designId=hero-title · 仅自身');
+    const scoped = workspacePrompt('把标题改成蓝色', agentSystem(builtInSystems[0], true), null, '', '', generated.document.files, '[1] 标题 · Text · designId=hero-title · 仅自身');
     expect(scoped).toContain('画布引用范围');
     expect(scoped).toContain('designId=hero-title');
     expect(scoped).toContain('只修改上面列出的节点');
-    expect(workspacePrompt('把标题改成蓝色', builtInSystems[0], null, '', '', generated.document.files)).not.toContain('画布引用范围');
+    expect(workspacePrompt('把标题改成蓝色', agentSystem(builtInSystems[0], true), null, '', '', generated.document.files)).not.toContain('画布引用范围');
     const doc = createDefaultV2Document();
     const withSessions = { files: { ...doc.files, [AGENT_SESSIONS_FILE]: JSON.stringify({ version: 2, activeId: 'a', sessions: [{ id: 'a', title: '私密会话标题', turns: [] }] }) } };
     const reference = new File([new Uint8Array(await exportReaui(withSessions))], 'reference.reaui');
@@ -62,14 +62,16 @@ describe('local agent generation contract', () => {
     expect(context).toContain('pages/main.page.tsx');
   });
   it('migrates palette-only systems and passes edited tokens and code context to the agent', () => {
-    expect(resolvedSystem(builtInSystems[0]).tokens.primary).toBe('#356af0');
-    const system = withTokens(builtInSystems[0], { ...defaultTokens, primary: '#39725a', radius: 12 });
-    const context = uiPrompt('界面需求', system, { name: 'project', path: '/tmp/project', files: ['DESIGN.md'], context: '真实项目规范', truncated: false }, '参考页面');
+    expect(resolvedSystem(builtInSystems[0]).tokens.color.primary).toBe('#356af0');
+    const system = withTokens(builtInSystems[0], { ...defaultTokens, color: { ...defaultTokens.color, primary: '#39725a' }, radius: { ...defaultTokens.radius, md: 12 } });
+    const context = uiPrompt('界面需求', agentSystem(system), { name: 'project', path: '/tmp/project', files: ['DESIGN.md'], context: '真实项目规范', truncated: false }, '参考页面');
     expect(context).toContain('#39725a'); expect(context).toContain('真实项目规范'); expect(context).toContain('参考页面');
     // Editing a published system invalidates its stored hash, so the prompt must fall back to a draft.
     expect(context).toContain('草稿版本');
     expect(isSystems([system])).toBe(true);
-    expect(isSystems([{ ...system, tokens: { ...system.tokens, radius: -1 } }])).toBe(false);
+    expect(isSystems([{ ...system, tokens: { ...system.tokens!, radius: { ...system.tokens!.radius, md: -1 } } }])).toBe(false);
+    expect(context).toContain('未固定设计系统');
+    expect(uiPrompt('界面需求', agentSystem(builtInSystems[0], true), null)).toContain('只能引用 var(--rea-ds-*)');
     expect(() => parseGeneratedSystem({ name: 'bad', tokens: { primary: 'red' } })).toThrow();
   });
 });

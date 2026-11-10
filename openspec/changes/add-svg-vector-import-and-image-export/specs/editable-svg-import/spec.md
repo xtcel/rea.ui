@@ -2,7 +2,7 @@
 
 ### Requirement: SVG 导入为可编辑矢量
 
-插入或粘贴 `.svg` 文件时编辑器 SHALL 解析为矢量图层，而不是写入 `assets/` 再渲染成 `<img>`。导入结果 SHALL 是一个 `Group`，其子层为 `Rect` / `Ellipse` / `Vector`；整次导入 SHALL 是一个事务、一个撤销步骤。填充与描边 SHALL 使用属性面板同一套类名写法，例如 `bg-[#356af0]`、`rounded-[8px]`、`border-[2px] border-[#ffffff] border-solid`、`fill-none`、`stroke-[#ffffff]`、`[stroke-width:4px]`、`opacity-[0.6]`。
+插入或粘贴 `.svg` 文件时编辑器 SHALL 解析为矢量图层，而不是写入 `assets/` 再渲染成 `<img>`。导入结果 SHALL 是一个 `Group`，其子层为 `Rect` / `Ellipse` / `Vector` / `Text`；整次导入 SHALL 是一个事务、一个撤销步骤。填充与描边 SHALL 使用属性面板同一套类名写法，例如 `bg-[#356af0]`、`rounded-[8px]`、`border-[2px] border-[#ffffff] border-solid`、`fill-none`、`stroke-[#ffffff]`、`[stroke-width:4px]`、`opacity-[0.6]`。
 
 #### Scenario: 插入图标
 
@@ -42,14 +42,28 @@
 - **WHEN** 导入含两条子路径、`fill-rule="evenodd"` 的字母 O
 - **THEN** 图层保留完整 `d` 且镂空可见，并提示多轮廓按独立子路径导入
 
+### Requirement: SVG 文字导入为文字图层
+
+`<text>` SHALL 解析为 `Text` 图层：字号、字重、字体族（取首个族名）、填充色、组透明度、`text-anchor` 与 `dominant-baseline` SHALL 保留；宽度与基线 SHALL 用真实字体（canvas 度量）测量，行高 SHALL 固定为字号（`leading-[1]`），从而把基线锚点换算为图层 `left/top`。文字 SHALL NOT 写入 `width` / `height`（保持自动宽度）。带定位的 `tspan` SHALL 拆成多段文字；旋转或镜像的文字、`textPath` SHALL 记为未导入并如实提示。
+
+#### Scenario: 居中的中文标签
+
+- **WHEN** 导入 `<text x="250" y="75" text-anchor="middle" dominant-baseline="middle" font-size="56" font-weight="700" fill="#2E9F75">出料泵</text>`，插入尺寸等于 viewBox
+- **THEN** 编组里出现一个 `Text` 子层，类名含 `text-[56px]`、`font-bold`、`text-[#2e9f75]`、`leading-[1]` 且不含 width/height，文字视觉中心落在 (250, 75)
+
+#### Scenario: 只有文字的 SVG
+
+- **WHEN** 导入一个只含 `<text>`、没有任何图形的 SVG
+- **THEN** 正常产出文字图层，不因「没有矢量图形」报错
+
 ### Requirement: 未支持特性显式汇报
 
-解析 SHALL 统计并汇报未导入或未应用的特性，插入后一次性提示，不得静默失真：渐变按首个 stop 近似、蒙版 / 裁切路径 / 滤镜不应用、`text` / `image` / `use` 不导入。
+解析 SHALL 统计并汇报未导入或未应用的特性，插入后一次性提示，不得静默失真：渐变按首个 stop 近似、蒙版 / 裁切路径 / 滤镜不应用、`image` / `use` 不导入、沿路径排版的文字不导入。
 
-#### Scenario: 含文字与渐变的 SVG
+#### Scenario: 含位图与渐变的 SVG
 
-- **WHEN** 导入同时包含 `<text>`、`<image>` 与 `linearGradient` 的文件
-- **THEN** 图形部分照常导入，提示里写明「渐变（按首色近似）」「文字（未导入）」「内嵌位图（未导入）」及各自数量
+- **WHEN** 导入同时包含 `<image>` 与 `linearGradient` 的文件
+- **THEN** 图形部分照常导入，提示里写明「渐变（按首色近似）」「内嵌位图（未导入）」及各自数量
 
 #### Scenario: 没有可用图形
 

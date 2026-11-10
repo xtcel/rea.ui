@@ -90,12 +90,12 @@ SVG 不走资源存储：文件被解析成 `Group + Rect / Ellipse / Vector` �
 
 ## 设计系统快照
 
-固定设计系统时，文档在 `design/system.json` 保存一份自包含快照，结构为 `{ format: "reaui-design-system", schemaVersion: 1, id, revision, hash, name, tokens, components, guidelines }`。`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256；`revision` 是来源系统的已发布版本。
+固定设计系统时，文档在 `design/system.json` 保存一份自包含快照，结构为 `{ format: "reaui-design-system", schemaVersion, id, revision, hash, name, tokens, components, guidelines }`。`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256；`revision` 是来源系统的已发布版本。`schemaVersion` 1 与 2 都可读：新发布的版本为 2（`typography.roles`、可选 `motion` 与 `radius.xl/full`），已固定的 v1 快照保持原字节。
 
 ```json
 {
   "format": "reaui-design-system",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "rea",
   "revision": 3,
   "hash": "9f2c…",
@@ -104,19 +104,22 @@ SVG 不走资源存储：文件被解析成 `Group + Rect / Ellipse / Vector` �
     "color": { "primary": "#356AF0", "background": "#FAFBFC", "surface": "#FFFFFF", "text": "#30343B", "muted": "#656D79", "border": "#E5E7EB" },
     "typography": {
       "family": "-apple-system, …",
-      "body": { "size": 14, "lineHeight": 1.5, "weight": 400 },
-      "heading": { "size": 30, "lineHeight": 1.27, "weight": 500 },
-      "caption": { "size": 12, "lineHeight": 1.5, "weight": 400 }
+      "roles": {
+        "body": { "size": 14, "lineHeight": 1.5, "weight": 400 },
+        "heading": { "size": 30, "lineHeight": 1.27, "weight": 500 },
+        "caption": { "size": 12, "lineHeight": 1.5, "weight": 400 }
+      }
     },
     "space": { "unit": 8, "scale": [4, 8, 12, 16, 24, 32, 48, 64] },
-    "radius": { "sm": 4, "md": 8, "lg": 12 }
+    "radius": { "sm": 4, "md": 8, "lg": 12, "xl": 16, "full": 9999 },
+    "motion": { "duration": { "fast": 120, "normal": 200 }, "easing": { "standard": "cubic-bezier(0.4, 0, 0.2, 1)" } }
   },
   "components": [{ "key": "button", "name": "按钮", "description": "主要操作使用主色。" }],
   "guidelines": "蓝色只表达操作状态。"
 }
 ```
 
-每个令牌派生 `--rea-ds-<group>-<path>` 变量（`color.primaryHover` → `--rea-ds-color-primary-hover`，`space.24` → `--rea-ds-space-24`，`typography.body.size` → `--rea-ds-typography-body-size`）。页面 `className` 通过 `var(--rea-ds-*)` 引用；画布在 Shadow DOM 的 `:host` 注入这些变量，预览在 `:root` 注入同一组，外壳 `--rea-*` 不受影响。
+每个令牌派生 `--rea-ds-<group>-<path>` 变量（`color.primaryHover` → `--rea-ds-color-primary-hover`，`space.24` → `--rea-ds-space-24`，`type.body.size` → `--rea-ds-type-body-size`）。`body/heading/caption` 另外保留 `--rea-ds-typography-*` 兼容别名，v1 快照的变量集合不变。页面 `className` 通过 `var(--rea-ds-*)` 引用；画布在 Shadow DOM 的 `:host` 注入这些变量，预览在 `:root` 注入同一组，外壳 `--rea-*` 不受影响。
 
 固定、升级与取消固定都是文档事务，进入撤销历史。取消固定时若仍有令牌引用会被拒绝。旧文档没有该文件时按未固定系统处理。
 

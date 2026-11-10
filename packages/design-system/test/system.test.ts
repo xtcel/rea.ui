@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   canonicalJson, conformance, createSystem, cssVariables, DEFAULT_TOKENS, DesignSystemError,
-  extractTokenRefs, legacySystemToPackage, parseSystem, serializeSystem, sha256Hex, systemHash,
-  systemVariables, validateSystem,
+  extractTokenRefs, legacySystemToPackage, parseSystem, resolveColor, serializeSystem, sha256Hex, systemHash,
+  systemVariables, upgradeSystem, validateSystem,
 } from '../src';
 import type { DesignSystemPackage } from '../src';
 
@@ -49,7 +49,7 @@ describe('package', () => {
 
   it('rejects a future schema version', () => {
     const value = system();
-    const future = { ...value, schemaVersion: 2 };
+    const future = { ...value, schemaVersion: 3 };
     expect(() => parseSystem(future)).toThrowError(DesignSystemError);
     try { parseSystem(future); } catch (error) { expect((error as DesignSystemError).code).toBe('DS_SCHEMA_UNSUPPORTED'); }
   });
@@ -73,7 +73,7 @@ describe('package', () => {
     const conflicting = {
       ...value,
       tokens: { ...value.tokens, color: { ...value.tokens.color, primaryHover: '#111111', 'primary-hover': '#222222' } },
-    } as DesignSystemPackage;
+    } as unknown as DesignSystemPackage;
     const issues = validateSystem(conflicting);
     expect(issues.some(issue => issue.code === 'DS_TOKEN_NAME')).toBe(true);
   });
@@ -105,7 +105,8 @@ describe('package', () => {
     expect(css).toContain('--rea-ds-typography-heading-size:30px');
     expect(css).toContain('--rea-ds-typography-heading-line:1.27');
     expect(css).toContain('--rea-ds-typography-heading-weight:500');
-    const absolute = { ...value.tokens, typography: { ...value.tokens.typography, body: { size: 14, lineHeight: 20, weight: 400 } } };
+    const absolute = structuredClone(value.tokens) as typeof value.tokens;
+    if ('roles' in absolute.typography) absolute.typography.roles.body = { size: 14, lineHeight: 20, weight: 400 };
     expect(cssVariables(absolute, ':root')).toContain('--rea-ds-typography-body-line:20px');
     expect(css).not.toContain('--rea-ds-radius-md:8;');
   });
@@ -127,7 +128,7 @@ describe('migration', () => {
     expect(migrated.id).toBe('legacy');
     expect(migrated.revision).toBe(1);
     expect(migrated.tokens.color.primary).toBe('#123456');
-    expect(migrated.tokens.typography.body.size).toBe(13);
+    expect((migrated.tokens.typography as { roles: Record<string, { size: number }> }).roles.body.size).toBe(13);
     expect(migrated.tokens.radius.md).toBe(6);
     expect(migrated.components.map(entry => entry.key)).toEqual(['button', 'component-2']);
     expect(migrated.tokens.color.success).toBeUndefined();
@@ -177,5 +178,103 @@ describe('conformance', () => {
       'pages/main.page.tsx': 'className="bg-[var(--rea-ds-color-surface)] text-[var(--rea-ds-color-text)] rounded-[var(--rea-ds-radius-md)] p-[var(--rea-ds-space-24)]"',
     }, system());
     expect(issues).toEqual([]);
+  });
+});
+
+describe('v2 tokens', () => {
+  it('derives a named type ramp and keeps typography.* compatibility aliases', () => {
+    const tokens = structuredClone(DEFAULT_TOKENS);
+    tokens.typography.roles.title = { size: 24, lineHeight: 1.3, weight: 600, letterSpacing: -0.2 };
+    const names = systemVariables(tokens).map(variable => variable.name);
+    expect(names).toContain('--rea-ds-type-title-size');
+    expect(names).toContain('--rea-ds-type-title-tracking');
+    expect(names).toContain('--rea-ds-type-title-weight');
+    expect(names).toContain('--rea-ds-typography-body-size');
+    expect(cssVariables(tokens, ':root')).toContain('--rea-ds-type-title-tracking:-0.2px');
+  });
+
+  it('accepts colour aliases and rejects cycles or unknown targets', () => {
+    const aliased = structuredClone(DEFAULT_TOKENS);
+    aliased.color.card = 'var(--rea-ds-color-surface)';
+    aliased.color.cardForeground = 'var(--rea-ds-color-text)';
+    expect(validateSystem({ ...system(), tokens: aliased, hash: '' }, false).length).toBe(0);
+    expect(resolveColor(aliased, 'card')).toBe('#FFFFFF');
+
+    const cycle = structuredClone(DEFAULT_TOKENS);
+    cycle.color.card = 'var(--rea-ds-color-popover)';
+    cycle.color.popover = 'var(--rea-ds-color-card)';
+    expect(validateSystem({ ...system(), tokens: cycle, hash: '' }, false).some(issue => issue.message.includes('循环'))).toBe(true);
+
+    const missing = structuredClone(DEFAULT_TOKENS);
+    missing.color.card = 'var(--rea-ds-color-nope)';
+    expect(validateSystem({ ...system(), tokens: missing, hash: '' }, false).some(issue => issue.message.includes('未声明'))).toBe(true);
+  });
+
+  it('validates motion duration and easing', () => {
+    const bad = structuredClone(DEFAULT_TOKENS);
+    bad.motion = { duration: { fast: 4000 }, easing: { standard: 'wobble' } };
+    const issues = validateSystem({ ...system(), tokens: bad, hash: '' }, false);
+    expect(issues.some(issue => issue.path === 'tokens.motion.duration.fast')).toBe(true);
+    expect(issues.some(issue => issue.path === 'tokens.motion.easing.standard')).toBe(true);
+  });
+
+  it('keeps v1 packages readable without inventing type.* variables', () => {
+    const v1 = {
+      format: 'reaui-design-system' as const, schemaVersion: 1, id: 'legacy-pkg', revision: 1, hash: '',
+      name: '旧包', tokens: {
+        color: structuredClone(DEFAULT_TOKENS.color),
+        typography: {
+          family: DEFAULT_TOKENS.typography.family,
+          body: { size: 14, lineHeight: 1.5, weight: 400 },
+          heading: { size: 30, lineHeight: 1.27, weight: 500 },
+          caption: { size: 12, lineHeight: 1.5, weight: 400 },
+        },
+        space: structuredClone(DEFAULT_TOKENS.space),
+        radius: { sm: 4, md: 8, lg: 12 },
+      },
+      components: [{ key: 'button', name: '按钮', description: '主按钮' }],
+      guidelines: '',
+    };
+    v1.hash = systemHash(v1);
+    const parsed = parseSystem(v1);
+    expect(parsed.schemaVersion).toBe(1);
+    expect(systemVariables(parsed.tokens).map(variable => variable.name)).not.toContain('--rea-ds-type-title-size');
+    expect(upgradeSystem(parsed).schemaVersion).toBe(2);
+  });
+});
+
+describe('v1 record compatibility', () => {
+  it('keeps the published hash of a stored v1 token set', () => {
+    const tokensV1 = {
+      color: structuredClone(DEFAULT_TOKENS.color),
+      typography: {
+        family: DEFAULT_TOKENS.typography.family,
+        body: { size: 13, lineHeight: 1.5, weight: 400 },
+        heading: { size: 28, lineHeight: 1.2, weight: 500 },
+        caption: { size: 11, lineHeight: 1.5, weight: 400 },
+      },
+      space: { unit: 4, scale: [4, 8, 16] },
+      radius: { sm: 3, md: 4, lg: 6 },
+    };
+    const record = { id: 'stored', name: '旧记录', description: '', components: [{ name: '按钮', description: '主按钮' }], guidelines: '', tokens: tokensV1 };
+    const pkg = legacySystemToPackage(record);
+    expect(pkg.schemaVersion).toBe(1);
+    expect(legacySystemToPackage({ ...record, hash: pkg.hash, revision: 2 }).hash).toBe(pkg.hash);
+  });
+});
+
+describe('legacy published records', () => {
+  it('rebuilds the v1 shape from flat tokens so stored hashes still match', () => {
+    const flat = {
+      id: 'custom', name: '自定义', description: '', color: '#356AF0',
+      colors: ['#356AF0', '#FAFBFC', '#30343B', '#656D79', '#E5E7EB'],
+      tokens: { primary: '#356AF0', background: '#FAFBFC', surface: '#FFFFFF', text: '#30343B', muted: '#656D79', border: '#E5E7EB', fontFamily: 'Inter', fontSize: 14, spacing: 8, radius: 8 },
+      components: [{ name: '按钮', description: '主按钮' }], guidelines: '',
+    };
+    expect(legacySystemToPackage(flat).schemaVersion).toBe(2);
+    const published = legacySystemToPackage({ ...flat, revision: 2, hash: 'f'.repeat(64) });
+    expect(published.schemaVersion).toBe(1);
+    expect(published.hash).toHaveLength(64);
+    expect(legacySystemToPackage({ ...flat, revision: 2, hash: published.hash }).hash).toBe(published.hash);
   });
 });

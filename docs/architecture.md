@@ -64,7 +64,7 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 
 ## 矢量导入与图片导出
 
-插入与粘贴按内容分流：位图进入 `assets/` 成为 `Image` 图层，SVG 走矢量解析成为 `Group + Rect / Ellipse / Vector`。解析在 `@rea/design` 的 `svg.ts`，纯文本、无 DOM：自写 XML tokenizer，`transform` 按 SVG 顺序叠乘并烘焙进坐标，路径归一化为绝对 `M/L/C/Z`（`H/V`→`L`、`S/T` 反射控制点、`Q`→`C`、`A`→每段 ≤90° 的三次贝塞尔）。单轮廓路径交给既有 `expandPath()` 得到可编辑锚点，多轮廓保留归一化 `d` 靠 `fill-rule` 表达镂空——与 `expandPath()` 拒绝多轮廓/圆弧的口径一致。落源在 `editor/session/svgImport.ts`：坐标乘 `viewBox` 缩放，颜色写成 `fill-[#…]` / `stroke-[#…]` / `[stroke-width:Npx]`，圆角 `rounded-[Npx]`，整次导入是一个事务。未支持的特性（文字、内嵌位图、蒙版、裁切、滤镜）计数汇报，渐变按首个色标近似，不静默失真。
+插入与粘贴按内容分流：位图进入 `assets/` 成为 `Image` 图层，SVG 走矢量解析成为 `Group + Rect / Ellipse / Vector / Text`。解析在 `@rea/design` 的 `svg.ts`，纯文本、无 DOM：自写 XML tokenizer，`transform` 按 SVG 顺序叠乘并烘焙进坐标，路径归一化为绝对 `M/L/C/Z`（`H/V`→`L`、`S/T` 反射控制点、`Q`→`C`、`A`→每段 ≤90° 的三次贝塞尔）。单轮廓路径交给既有 `expandPath()` 得到可编辑锚点，多轮廓保留归一化 `d` 靠 `fill-rule` 表达镂空——与 `expandPath()` 拒绝多轮廓/圆弧的口径一致。文字也走解析：`<text>` 落成 `SvgTextShape`（锚点、字号、字重、字体族、基线语义），落源时编辑层用 canvas 按真实字体测量宽度与上下伸，`leading-[1]` 让行高与字号相等，从而把基线锚点换算成图层 `left/top`；带定位的 tspan 拆成多段文字，旋转 / 镜像的文字如实记为未导入。落源在 `editor/session/svgImport.ts`：坐标乘 `viewBox` 缩放，颜色写成 `fill-[#…]` / `stroke-[#…]` / `[stroke-width:Npx]`，圆角 `rounded-[Npx]`，文字颜色 `text-[#…]`，整次导入是一个事务。未支持的特性（沿路径排版的文字、内嵌位图、蒙版、裁切、滤镜）计数汇报，渐变按首个色标近似，不静默失真。
 
 导出的两条路刻意不同。位图（PNG / JPG，1x–3x）克隆画布上真实渲染的节点并逐节点内联 `getComputedStyle()`，资源换 data URL，外层用 `<foreignObject>` 交给 `<img>` → `<canvas>` → `toBlob()`；阴影、渐变、滤镜因此不需要重新解释。两处必须遵守的细节：内联时跳过 `inset` 系列（它把「用了哪个边」解析成数值，与显式 `left/top` 叠加会把克隆节点推出可见区），以及承载 SVG 的图片必须用 `data:` URL 而不是 blob URL（后者会让 canvas 受污染，`toBlob()` 抛 `SecurityError`）。矢量（SVG）走另一条路：按 `data-design-kind` 读几何与计算样式重建 `<rect>` / `<ellipse>` / `<path>` / `<text>` / `<image>`，容器落成 `<g>`、`overflow:hidden` 落成 `<clipPath>`，文字用 Range 行盒拆行、canvas 字体度量算基线；投影与滤镜不进 SVG。范围是「选中优先，否则当前页所有画框」，多文件由 `@rea/storage` 的 `zipArchive()` 打成一个 ZIP。
 
@@ -149,6 +149,10 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 作者层只允许 `var(--rea-ds-*)`：`@rea/tailwind` 的候选过滤放行该前缀并继续拒绝其它 `var()`、`calc()`、`env()`；`ShadowCanvas` 在 `:host` 注入变量，`reaui preview` 在 `:root` 注入同一组，二者共用 `systemVariables()`。外壳令牌 `--rea-*` 与文档令牌互不覆盖。字面量仍被接受，但由 conformance 报 warning；`reaui validate --system/--strict` 决定是否阻断，`pack` 在存在 warning 时要求 `--force`。生成溯源记在 `AgentTurn.system`（发布版本带 `revision`，草稿为 `null` + `draft: true`）。
 
 发布与绑定分成两个面：工作台（首页）只负责作者与 `publishSystem()`，编辑器只负责 `pinSystem` / `previewSystemUpdate` / 取消固定，后者通过 `model.transact()` 提交，因此与其它编辑共享撤销栈。`localStorage['rea-home:systems']` 的记录带可选 `revision` / `hash`，只有 hash 与当前令牌一致时才被当作已发布，改令牌后自动降级为草稿；内置系统以只读 `revision: 1` 参与解析，发布时先分叉副本。
+
+`align-design-system-with-design-md` 在其上补了三件事。**令牌 v2**：`typography.roles` 取代固定三角色（`body` 必需），颜色新增任意语义角色与 `var(--rea-ds-color-*)` 别名，`radius` 增加 `xl/full`，新增 `motion.duration/easing`；变量按 `--rea-ds-type-<role>-*` 派生，`body/heading/caption` 保留 `--rea-ds-typography-*` 兼容别名。v1 与 v2 是并列 schema，`parseSystem()` 都接受，已固定 v1 快照的字节与 hash 不变；记录新增 `schemaVersion`，只有「有 revision/hash 且未声明 2」的旧记录才按 v1 形状重建，避免已发布系统被误降级为草稿。**绑定时机**：首页创建文档时先 `publishSystem()`（草稿）或 `ensureSystemVersion()`（已发布）拿到 `LocalSystemVersion`，再交给 `model.create(name, version)` 在首次保存前提交 `systemTransaction`，所以新文档不会经历「未固定但已被生成」的窗口；内置系统在应用启动时以只读 v1 注册进 `design-system-versions`，因而可以直接固定。**生成同源**：`DesignAgentPanel` 优先读 `DocumentSession.system`，提示词按 `bound` 分支——已固定才要求 `var(--rea-ds-*)`，未固定明确要求字面量；`AgentTurn.system` 记录同一份包，不再出现「画布按 v2 上色、提示词按 v5 生成、溯源记 v5」的错位。
+
+`@rea/design-system/designMd` 是 DESIGN.md 的双向通道：导出把完整契约写进 frontmatter（含指南与组件槽位），正文按八个小节生成供人阅读；导入只读 frontmatter，接受三位 hex、`Npx` 与 `tight/control/popup/dialog` 这类自有命名，按数值映射到契约并返回 warning。往返保持 hash 与字节稳定；正文不参与解析，避免自由排版带来的脆弱性。
 
 ## 外部 Agent 与 reaui CLI
 

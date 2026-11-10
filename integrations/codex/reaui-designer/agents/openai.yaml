@@ -1,4 +1,6 @@
 interface:
   display_name: ReaUI Designer
-  short_description: 生成可编辑的 ReaUI 设计稿
-  default_prompt: 用 ReaUI 根据我的需求创建 UI 页面，并输出已校验的 .reaui 文件。
+  short_description: 生成可校验可编辑的 .reaui 设计稿
+  default_prompt: 用 ReaUI 根据我的需求创建 UI 页面，先用 reaui CLI 校验通过，再输出 .reaui 文件。
+policy:
+  allow_implicit_invocation: true
