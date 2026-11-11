@@ -1,23 +1,18 @@
-import { COMPONENT_TOKEN_SLOTS, REQUIRED_COLOR_ROLES, REQUIRED_TYPE_ROLE } from './types';
+import { COMPONENT_TOKEN_SLOTS, OPTIONAL_COLOR_ROLES, REQUIRED_COLOR_ROLES } from './types';
 import type {
   DesignSystemTokens, DesignSystemTokensV1, SystemIssue, SystemMotionTokens, SystemRadiusTokens,
   SystemTokens, SystemVariable, TokenRef,
 } from './types';
 
 export const TOKEN_VAR_PATTERN = /var\(\s*(--rea-ds-[a-z0-9-]+)\s*\)/g;
-const HEX = /^#[0-9a-f]{6}$/i;
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const HEX_V1 = /^#[0-9a-f]{6}$/i;
 const ALIAS = /^var\(\s*(--rea-ds-color-[a-z0-9-]+)\s*\)$/;
-const KEY = /^[a-z][a-z0-9-]*$/;
+const KEY = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const SHADOW_FORBIDDEN = /[;@{}]|url\(|var\(/i;
 const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|cubic-bezier\([-\d.,\s]{7,80}\)|steps\(\d{1,3}(,\s*(start|end|jump-start|jump-end))?\))$/;
 
-const COLOR_OPTIONAL = [
-  'primaryHover', 'onPrimary', 'selected', 'hover', 'success', 'warning', 'danger',
-  'foreground', 'onSurface', 'surfaceRaised', 'overlay', 'focusRing',
-  'disabled', 'disabledText', 'card', 'cardForeground', 'popover', 'popoverForeground',
-  'secondary', 'secondaryForeground', 'accent', 'accentForeground',
-  'destructive', 'destructiveForeground', 'inverse', 'inverseText',
-] as const;
+const COLOR_OPTIONAL = OPTIONAL_COLOR_ROLES;
 const TYPE_ROLES_V1 = ['body', 'heading', 'caption'] as const;
 const COMPAT_TYPE_ROLES = new Set<string>(TYPE_ROLES_V1);
 const RADIUS_KEYS_V1 = ['sm', 'md', 'lg'] as const;
@@ -26,7 +21,7 @@ const TYPE_FIELDS = ['size', 'lineHeight', 'weight', 'letterSpacing', 'family'] 
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-export const kebab = (value: string) => value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+export const kebab = (value: string) => value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/_+/g, '-').toLowerCase();
 
 export function isV2Tokens(tokens: SystemTokens): tokens is DesignSystemTokens {
   return record(tokens.typography) && 'roles' in tokens.typography;
@@ -70,7 +65,7 @@ export function resolveColor(tokens: { color: object }, key: string): string | u
   return undefined;
 }
 
-const lineValue = (value: number) => value <= 3 ? String(value) : `${value}px`;
+const lineValue = (value: number) => value < 4 ? String(value) : `${value}px`;
 
 /** Paths that can be referenced from component specs, mapped to their CSS variable names. */
 export function systemVariables(tokens: SystemTokens): SystemVariable[] {
@@ -82,21 +77,22 @@ export function systemVariables(tokens: SystemTokens): SystemVariable[] {
   if (isV2Tokens(tokens)) {
     for (const role of Object.keys(tokens.typography.roles).sort()) {
       const value = tokens.typography.roles[role];
+      const roleKey = kebab(role);
       variables.push(
-        { name: `--rea-ds-type-${role}-size`, value: `${value.size}px`, path: `type.${role}.size` },
-        { name: `--rea-ds-type-${role}-line`, value: lineValue(value.lineHeight), path: `type.${role}.lineHeight` },
-        { name: `--rea-ds-type-${role}-weight`, value: String(value.weight), path: `type.${role}.weight` },
+        { name: `--rea-ds-type-${roleKey}-size`, value: `${value.size}px`, path: `type.${role}.size` },
+        { name: `--rea-ds-type-${roleKey}-line`, value: lineValue(value.lineHeight), path: `type.${role}.lineHeight` },
+        { name: `--rea-ds-type-${roleKey}-weight`, value: String(value.weight), path: `type.${role}.weight` },
       );
       if (value.letterSpacing !== undefined) {
-        variables.push({ name: `--rea-ds-type-${role}-tracking`, value: `${value.letterSpacing}px`, path: `type.${role}.letterSpacing` });
+        variables.push({ name: `--rea-ds-type-${roleKey}-tracking`, value: `${value.letterSpacing}px`, path: `type.${role}.letterSpacing` });
       }
-      if (value.family) variables.push({ name: `--rea-ds-type-${role}-family`, value: value.family, path: `type.${role}.family` });
+      if (value.family) variables.push({ name: `--rea-ds-type-${roleKey}-family`, value: value.family, path: `type.${role}.family` });
       // Compatibility aliases so existing --rea-ds-typography-* references keep resolving.
-      if (COMPAT_TYPE_ROLES.has(role)) {
+      if (COMPAT_TYPE_ROLES.has(roleKey)) {
         variables.push(
-          { name: `--rea-ds-typography-${role}-size`, value: `${value.size}px`, path: `typography.${role}.size` },
-          { name: `--rea-ds-typography-${role}-line`, value: lineValue(value.lineHeight), path: `typography.${role}.lineHeight` },
-          { name: `--rea-ds-typography-${role}-weight`, value: String(value.weight), path: `typography.${role}.weight` },
+          { name: `--rea-ds-typography-${roleKey}-size`, value: `${value.size}px`, path: `typography.${role}.size` },
+          { name: `--rea-ds-typography-${roleKey}-line`, value: lineValue(value.lineHeight), path: `typography.${role}.lineHeight` },
+          { name: `--rea-ds-typography-${roleKey}-weight`, value: String(value.weight), path: `typography.${role}.weight` },
         );
       }
     }
@@ -111,10 +107,12 @@ export function systemVariables(tokens: SystemTokens): SystemVariable[] {
     }
   }
   for (const value of tokens.space.scale) variables.push({ name: `--rea-ds-space-${value}`, value: `${value}px`, path: `space.${value}` });
-  const radiusKeys: readonly string[] = isV2Tokens(tokens) ? RADIUS_KEYS : RADIUS_KEYS_V1;
+  const radiusKeys: readonly string[] = isV2Tokens(tokens)
+    ? [...RADIUS_KEYS, ...Object.keys(tokens.radius).filter(key => !(RADIUS_KEYS as readonly string[]).includes(key)).sort()]
+    : RADIUS_KEYS_V1;
   for (const key of radiusKeys) {
     const value = (tokens.radius as unknown as Record<string, unknown>)[key];
-    if (typeof value === 'number') variables.push({ name: `--rea-ds-radius-${key}`, value: `${value}px`, path: `radius.${key}` });
+    if (typeof value === 'number') variables.push({ name: `--rea-ds-radius-${kebab(key)}`, value: `${value}px`, path: `radius.${key}` });
   }
   for (const [key, value] of Object.entries(tokens.shadow ?? {})) variables.push({ name: `--rea-ds-shadow-${kebab(key)}`, value, path: `shadow.${key}` });
   if (isV2Tokens(tokens) && tokens.motion) {
@@ -149,21 +147,24 @@ export function cssVariables(tokens: SystemTokens, selector = ':host'): string {
 
 function colorIssues(color: unknown, issues: SystemIssue[], v2: boolean) {
   if (!record(color)) { issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.color', message: 'color 必须是对象。' }); return; }
+  const entries = Object.entries(color);
+  if (entries.length > 48) issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.color', message: '颜色角色最多 48 项。' });
   for (const key of REQUIRED_COLOR_ROLES) {
     if (!(key in color)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: `缺少必需颜色 ${key}。` });
   }
   const allowed = new Set<string>([...REQUIRED_COLOR_ROLES, ...COLOR_OPTIONAL]);
-  for (const [key, value] of Object.entries(color)) {
+  const hexPattern = v2 ? HEX : HEX_V1;
+  for (const [key, value] of entries) {
     const known = allowed.has(key);
-    if (!known && !/^[a-z][a-zA-Z0-9-]*$/.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: `颜色令牌名不合法：${key}。` });
-    else if (typeof value !== 'string') issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: '颜色必须是六位十六进制或别名 var(--rea-ds-color-*)。' });
-    else if (HEX.test(value)) continue;
+    if (!known && !KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: `颜色令牌名不合法：${key}。` });
+    else if (typeof value !== 'string') issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: '颜色必须是十六进制或别名 var(--rea-ds-color-*)。' });
+    else if (hexPattern.test(value)) continue;
     else if (v2 && ALIAS.test(value)) continue;
-    else issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: v2 ? '颜色必须是六位十六进制或别名 var(--rea-ds-color-*)。' : '颜色必须是六位十六进制，例如 #356AF0。' });
+    else issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.color.${key}`, message: v2 ? '颜色必须是十六进制（#RGB / #RRGGBB / #RRGGBBAA）或别名 var(--rea-ds-color-*)。' : '颜色必须是六位十六进制，例如 #356AF0。' });
   }
   if (v2) {
     const names = new Set(Object.keys(color).map(name => `--rea-ds-color-${kebab(name)}`));
-    for (const [key, value] of Object.entries(color)) {
+    for (const [key, value] of entries) {
       if (typeof value !== 'string') continue;
       const alias = ALIAS.exec(value);
       if (!alias) continue;
@@ -183,15 +184,15 @@ function typographyIssues(typography: unknown, issues: SystemIssue[], v2: boolea
   const role = (name: string, value: unknown, path: string) => {
     if (!record(value)) { issues.push({ code: 'DS_TOKEN_INVALID', path, message: `${name} 必须是 { size, lineHeight, weight }。` }); return; }
     for (const key of Object.keys(value)) if (!(TYPE_FIELDS as readonly string[]).includes(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.${key}`, message: `未知字段 ${key}。` });
-    if (!finite(value.size) || value.size < 8 || value.size > 96) issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.size`, message: '字号必须在 8–96 之间。' });
-    if (!finite(value.lineHeight) || !((value.lineHeight >= 1 && value.lineHeight <= 3) || (value.lineHeight >= 8 && value.lineHeight <= 96))) {
-      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.lineHeight`, message: '行高必须是 1–3 的倍数或 8–96 的 px 值。' });
+    if (!finite(value.size) || value.size < 4 || value.size > 240) issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.size`, message: '字号必须在 4–240 之间。' });
+    if (!finite(value.lineHeight) || !((value.lineHeight >= 0.5 && value.lineHeight <= 4) || (value.lineHeight >= 4 && value.lineHeight <= 300))) {
+      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.lineHeight`, message: '行高必须是 0.5–4 的倍数或 4–300 的 px 值。' });
     }
-    if (!finite(value.weight) || value.weight < 100 || value.weight > 900 || value.weight % 100 !== 0) {
-      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.weight`, message: '字重必须是 100–900 的整百数。' });
+    if (!finite(value.weight) || !Number.isInteger(value.weight) || value.weight < 100 || value.weight > 900) {
+      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.weight`, message: '字重必须是 100–900 的整数。' });
     }
-    if (value.letterSpacing !== undefined && (!finite(value.letterSpacing) || value.letterSpacing < -10 || value.letterSpacing > 10)) {
-      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.letterSpacing`, message: '字距必须在 -10–10 之间。' });
+    if (value.letterSpacing !== undefined && (!finite(value.letterSpacing) || value.letterSpacing < -16 || value.letterSpacing > 32)) {
+      issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.letterSpacing`, message: '字距必须在 -16–32 之间。' });
     }
     if (value.family !== undefined && (typeof value.family !== 'string' || !value.family.trim() || value.family.length > 240 || /[;@{}<>]/.test(value.family))) {
       issues.push({ code: 'DS_TOKEN_INVALID', path: `${path}.family`, message: '角色字体栈必须是 1–240 字符的静态 CSS 字体栈。' });
@@ -201,8 +202,7 @@ function typographyIssues(typography: unknown, issues: SystemIssue[], v2: boolea
     const roles = typography.roles;
     if (!record(roles)) { issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.typography.roles', message: 'typography.roles 必须是对象。' }); return; }
     const names = Object.keys(roles);
-    if (!names.length || names.length > 24) issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.typography.roles', message: '排版角色需要 1–24 项。' });
-    if (!names.includes(REQUIRED_TYPE_ROLE)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.typography.roles.${REQUIRED_TYPE_ROLE}`, message: `缺少必需排版角色 ${REQUIRED_TYPE_ROLE}。` });
+    if (!names.length || names.length > 48) issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.typography.roles', message: '排版角色需要 1–48 项。' });
     for (const name of names) {
       if (!KEY.test(name)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.typography.roles.${name}`, message: `排版角色名不合法：${name}。` });
       role(name, roles[name], `tokens.typography.roles.${name}`);
@@ -234,13 +234,24 @@ function spaceIssues(space: unknown, issues: SystemIssue[]) {
 
 function radiusIssues(radius: unknown, issues: SystemIssue[], v2: boolean) {
   if (!record(radius)) { issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.radius', message: 'radius 必须是对象。' }); return; }
-  const keys: readonly string[] = v2 ? RADIUS_KEYS : RADIUS_KEYS_V1;
-  const allowed = new Set<string>(keys);
-  for (const key of Object.keys(radius)) if (!allowed.has(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: `未知圆角令牌 ${key}。` });
-  for (const key of keys) {
+  if (!v2) {
+    const allowed = new Set<string>(RADIUS_KEYS_V1);
+    for (const key of Object.keys(radius)) if (!allowed.has(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: `未知圆角令牌 ${key}。` });
+    for (const key of RADIUS_KEYS_V1) {
+      const value = (radius as Record<string, unknown>)[key];
+      if (!finite(value) || value < 0 || value > 9999) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: '圆角必须是 0–9999 的有限数字。' });
+    }
+    return;
+  }
+  for (const key of RADIUS_KEYS_V1) {
     const value = (radius as Record<string, unknown>)[key];
-    if (v2 && key !== 'sm' && key !== 'md' && key !== 'lg' && value === undefined) continue;
     if (!finite(value) || value < 0 || value > 9999) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: '圆角必须是 0–9999 的有限数字。' });
+  }
+  for (const [key, value] of Object.entries(radius)) {
+    if ((RADIUS_KEYS_V1 as readonly string[]).includes(key)) continue;
+    if (value === undefined) continue;
+    if (!KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: `圆角令牌名不合法：${key}。` });
+    else if (!finite(value) || value < 0 || value > 9999) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.radius.${key}`, message: '圆角必须是 0–9999 的有限数字。' });
   }
 }
 
@@ -248,7 +259,7 @@ function shadowIssues(shadow: unknown, issues: SystemIssue[]) {
   if (shadow === undefined) return;
   if (!record(shadow)) { issues.push({ code: 'DS_TOKEN_INVALID', path: 'tokens.shadow', message: 'shadow 必须是对象。' }); return; }
   for (const [key, value] of Object.entries(shadow)) {
-    if (!KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.shadow.${key}`, message: '阴影名必须是小写标识符。' });
+    if (!KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.shadow.${key}`, message: '阴影名必须是合法标识符。' });
     if (typeof value !== 'string' || !value.trim() || value.length > 200 || SHADOW_FORBIDDEN.test(value)) {
       issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.shadow.${key}`, message: '阴影必须是 1–200 字符的静态 box-shadow 值，不能包含 ; @ { } url() 或 var()。' });
     }
@@ -265,7 +276,7 @@ function motionIssues(motion: unknown, issues: SystemIssue[]) {
       return;
     }
     for (const [key, value] of Object.entries(values)) {
-      if (!KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.motion.${name}.${key}`, message: '动效名必须是小写标识符。' });
+      if (!KEY.test(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.motion.${name}.${key}`, message: '动效名必须是合法标识符。' });
       if (name === 'duration' && (!finite(value) || !Number.isInteger(value) || value < 0 || value > 2000)) {
         issues.push({ code: 'DS_TOKEN_INVALID', path: `tokens.motion.duration.${key}`, message: '时长必须是 0–2000 的整数毫秒。' });
       }
@@ -303,8 +314,8 @@ export function validateTokens(tokens: unknown, issues: SystemIssue[], schemaVer
 }
 
 export function validateComponentSpecs(value: unknown, tokens: SystemTokens, issues: SystemIssue[]) {
-  if (!Array.isArray(value) || !value.length || value.length > 24) {
-    issues.push({ code: 'DS_TOKEN_INVALID', path: 'components', message: '组件规范需要 1–24 项。' });
+  if (!Array.isArray(value) || value.length > 48) {
+    issues.push({ code: 'DS_TOKEN_INVALID', path: 'components', message: '组件规范需要 0–48 项。' });
     return;
   }
   const keys = new Set<string>();
@@ -313,12 +324,12 @@ export function validateComponentSpecs(value: unknown, tokens: SystemTokens, iss
     if (!record(entry)) { issues.push({ code: 'DS_TOKEN_INVALID', path: at, message: '组件规范必须是对象。' }); continue; }
     const allowed = new Set(['key', 'name', 'description', 'component', 'tokens', 'states', 'variants', 'guidelines']);
     for (const key of Object.keys(entry)) if (!allowed.has(key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.${key}`, message: `未知字段 ${key}。` });
-    if (typeof entry.key !== 'string' || !/^[a-z][a-z0-9-]{1,63}$/.test(entry.key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.key`, message: 'key 必须是小写字母开头、2–64 位的连字符标识。' });
+    if (typeof entry.key !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_-]{1,63}$/.test(entry.key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.key`, message: 'key 必须是字母开头、2–64 位的标识符。' });
     else if (keys.has(entry.key)) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.key`, message: `组件 key 重复：${entry.key}。` });
     else keys.add(entry.key);
     if (typeof entry.name !== 'string' || !entry.name.trim() || entry.name.length > 120) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.name`, message: '组件名称需要 1–120 字符。' });
     if (typeof entry.description !== 'string' || entry.description.length > 2000) issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.description`, message: '组件说明最长 2000 字符。' });
-    if (entry.component !== undefined && (typeof entry.component !== 'string' || !/^[a-z][a-z0-9-]{1,63}$/.test(entry.component))) {
+    if (entry.component !== undefined && (typeof entry.component !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_-]{1,63}$/.test(entry.component))) {
       issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.component`, message: 'component 必须是组件目录中的合法 id。' });
     }
     if (entry.guidelines !== undefined && (typeof entry.guidelines !== 'string' || entry.guidelines.length > 4000)) {
@@ -334,7 +345,7 @@ export function validateComponentSpecs(value: unknown, tokens: SystemTokens, iss
     if (entry.states !== undefined) {
       if (!Array.isArray(entry.states) || !entry.states.length || !entry.states.includes('default') ||
         !entry.states.every(state => typeof state === 'string' && KEY.test(state)) || new Set(entry.states).size !== entry.states.length) {
-        issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.states`, message: 'states 必须包含 default，取值为唯一的小写标识符。' });
+        issues.push({ code: 'DS_TOKEN_INVALID', path: `${at}.states`, message: 'states 必须包含 default，取值为唯一的标识符。' });
       }
     }
     if (entry.variants !== undefined) {
@@ -355,7 +366,7 @@ export function validateComponentSpecs(value: unknown, tokens: SystemTokens, iss
 const channel = (value: number) => { const s = value / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
 export function relativeLuminance(hex: string): number {
   const value = hex.replace('#', '');
-  const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value;
+  const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value.slice(0, 6);
   const [r, g, b] = [0, 2, 4].map(index => channel(parseInt(full.slice(index, index + 2), 16)));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }

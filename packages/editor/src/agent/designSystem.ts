@@ -56,10 +56,13 @@ export function resolvedSystem(system: DesignSystem): DesignSystem & { tokens: D
 export function withTokens(system: DesignSystem, tokens: DesignTokens): DesignSystem {
   // A generated system can be missing roles; the convenience fields must stay strings.
   const palette = (tokens.color ?? {}) as unknown as Record<string, unknown>;
-  const primary = typeof palette.primary === 'string' ? palette.primary : '';
+  const allColors = Object.values(palette).filter((color): color is string => typeof color === 'string' && color.length > 0);
+  const primary = typeof palette.primary === 'string' ? palette.primary : allColors[0] ?? '';
+  const preferred = [palette.primary, palette.background, palette.text, palette.muted, palette.border].filter((color): color is string => typeof color === 'string' && color.length > 0);
+  const colors = [...new Set([...preferred, ...allColors])].slice(0, 5);
   return {
     ...system, tokens, color: primary,
-    colors: [palette.primary, palette.background, palette.text, palette.muted, palette.border].filter((color): color is string => typeof color === 'string'),
+    colors,
   };
 }
 
@@ -103,17 +106,14 @@ export function parseGeneratedSystem(value: unknown, sourceProject = ''): Genera
   const description = typeof raw.description === 'string' ? raw.description : '';
   const guidelines = typeof raw.guidelines === 'string' ? raw.guidelines : '';
   const components: DesignComponent[] = [];
-  if (Array.isArray(raw.components)) raw.components.slice(0, 24).forEach((entry, index) => {
+  if (Array.isArray(raw.components)) raw.components.slice(0, 48).forEach((entry, index) => {
     if (!entry || typeof entry.name !== 'string' || typeof entry.description !== 'string') {
       warnings.push(`第 ${index + 1} 条组件规范不完整，未写入`);
       return;
     }
     components.push({ name: entry.name, description: entry.description });
   });
-  if (!components.length) warnings.push('AI 没有返回组件规范');
   if (!name.trim()) warnings.push('AI 没有返回系统名称');
-  if (!description.trim()) warnings.push('AI 没有返回系统描述');
-  if (!guidelines.trim()) warnings.push('AI 没有返回使用指南');
   warnings.push(...tokenWarnings(tokens));
   const palette = ((tokens as DesignTokens).color ?? {}) as unknown as Record<string, unknown>;
   const colors = Object.values(palette).filter((color): color is string => typeof color === 'string');

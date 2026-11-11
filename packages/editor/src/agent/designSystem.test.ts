@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { legacySystemToPackage } from '@rea/design-system';
-import { agentSystem, parseGeneratedSystem, systemSchema, systemSnapshot } from './designSystem';
+import { agentSystem, parseGeneratedSystem, resolvedSystem, systemSchema, systemSnapshot } from './designSystem';
+import { systemPrompt } from './DesignSystemPage';
 import { builtInSystems, isSystems } from '../home/data';
 import type { DesignSystem } from './designSystem';
 
@@ -87,23 +88,85 @@ describe('generated system contract', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('keeps what the model returned and reports the missing role instead of repairing', () => {
+  it('keeps what the model returned and reports missing primary instead of repairing', () => {
     const value = structuredClone(generated);
-    value.tokens.color = value.tokens.color.filter(entry => entry.role !== 'muted');
+    value.tokens.color = value.tokens.color.filter(entry => entry.role !== 'primary');
     const { system, warnings } = parseGeneratedSystem(value);
-    expect(system.tokens?.color.muted).toBeUndefined();
-    expect(system.tokens?.color.primary).toBe('#2563EB');
-    expect(warnings.join(' ')).toContain('muted');
+    expect(system.tokens?.color.primary).toBeUndefined();
+    expect(system.tokens?.color.background).toBe('#FFFFFF');
+    expect(warnings.join(' ')).toContain('primary');
+  });
+
+  it('accepts snake_case color and typography roles from reference design.md without false-positive warnings', () => {
+    const value = {
+      summary: '按参考 design.md 生成设计系统',
+      name: '暗色金融终端',
+      description: '高对比暗色系统',
+      guidelines: '保持层级清晰',
+      tokens: {
+        color: [
+          { role: 'primary', value: '#10B981' },
+          { role: 'on_primary', value: '#FFFFFF' },
+          { role: 'primary_hover', value: '#059669' },
+          { role: 'primary_focus', value: '#34D399' },
+          { role: 'surface_raised', value: '#18181B' },
+          { role: 'text_secondary', value: '#A1A1AA' },
+          { role: 'canvas_dark', value: '#09090B' },
+          { role: 'surface_dark_1', value: '#121215' },
+          { role: 'surface_dark_2', value: '#18181C' },
+          { role: 'surface_dark_3', value: '#222228' },
+          { role: 'surface_dark_4', value: '#2C2C34' },
+          { role: 'ink_on_dark', value: '#F4F4F5' },
+          { role: 'ink_muted_on_dark', value: '#A1A1AA' },
+          { role: 'ink_subtle_on_dark', value: '#71717A' },
+          { role: 'ink_tertiary_on_dark', value: '#52525B' },
+          { role: 'hairline_dark', value: '#27272A' },
+          { role: 'hairline_strong_dark', value: '#3F3F46' },
+          { role: 'hairline_tertiary_dark', value: '#1F1F23' },
+          { role: 'brand_secure', value: '#0EA5E9' },
+        ],
+        typography: {
+          family: 'Inter, sans-serif',
+          roles: [
+            { role: 'display_xl', size: 64, lineHeight: 1.05, weight: 700 },
+            { role: 'display_lg', size: 48, lineHeight: 1.1, weight: 600 },
+            { role: 'display_md', size: 36, lineHeight: 1.15, weight: 600 },
+            { role: 'card_title', size: 20, lineHeight: 1.3, weight: 500 },
+            { role: 'body_lg', size: 16, lineHeight: 1.6, weight: 400 },
+            { role: 'body_sm', size: 13, lineHeight: 1.5, weight: 400 },
+          ],
+        },
+        space: { unit: 8, scale: [4, 8, 12, 16, 24, 32] },
+        radius: { sm: 4, md: 8, lg: 12, xl: 16 },
+      },
+      components: [],
+    };
+    const { system, warnings } = parseGeneratedSystem(value);
+    expect(warnings).toEqual([]);
+    expect(system.tokens?.color.on_primary).toBe('#FFFFFF');
+    expect(system.tokens?.typography.roles.display_xl?.size).toBe(64);
+    expect(system.colors.length).toBe(5);
+  });
+
+  it('does not inject default blue-purple tokens into systemPrompt when blank is true', () => {
+    const draft = resolvedSystem({ id: 'new', name: '新设计系统', description: '', color: '#356AF0', colors: ['#356AF0'] });
+    const blankPrompt = systemPrompt('按附件 design.md 生成', draft, null, '参考 design.md: primary #10B981', [], true);
+    expect(blankPrompt).toContain('当前设计系统：无（新建空白设计系统）');
+    expect(blankPrompt).not.toContain('当前设计系统草稿');
+    expect(blankPrompt).not.toContain('在「当前设计系统」的基础上');
+    expect(blankPrompt).toContain('参考 design.md: primary #10B981');
+
+    const editPrompt = systemPrompt('把主色改亮一点', draft, null, '', [], false);
+    expect(editPrompt).toContain('当前设计系统草稿');
   });
 
   it('keeps invalid values verbatim and lists every problem for the user', () => {
     const value = structuredClone(generated);
-    value.components = [];
+    value.name = '';
     value.tokens.color = value.tokens.color.map(entry => entry.role === 'primary' ? { role: 'primary', value: 'blue' } : entry);
     const { system, warnings } = parseGeneratedSystem(value);
     expect(system.tokens?.color.primary).toBe('blue');
-    expect(system.components).toEqual([]);
-    expect(warnings.join(' ')).toContain('组件规范');
+    expect(warnings.join(' ')).toContain('系统名称');
     expect(warnings.join(' ')).toContain('primary');
     expect(warnings.length).toBeGreaterThanOrEqual(2);
   });

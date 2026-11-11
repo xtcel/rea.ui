@@ -210,6 +210,52 @@ describe('v2 tokens', () => {
     expect(validateSystem({ ...system(), tokens: missing, hash: '' }, false).some(issue => issue.message.includes('未声明'))).toBe(true);
   });
 
+  it('accepts snake_case colour and typography roles from DESIGN.md without requiring muted or literal body', () => {
+    const tokens = {
+      color: {
+        primary: '#10B981',
+        on_primary: '#FFFFFF',
+        primary_hover: '#059669',
+        primary_focus: '#34D399',
+        surface_raised: '#18181B',
+        text_secondary: '#A1A1AA',
+        canvas_dark: '#09090B',
+        surface_dark_1: '#121215',
+        surface_dark_2: '#18181C',
+        surface_dark_3: '#222228',
+        surface_dark_4: '#2C2C34',
+        ink_on_dark: '#F4F4F5',
+        ink_muted_on_dark: '#A1A1AA',
+        ink_subtle_on_dark: '#71717A',
+        ink_tertiary_on_dark: '#52525B',
+        hairline_dark: '#27272A',
+        hairline_strong_dark: '#3F3F46',
+        hairline_tertiary_dark: '#1F1F23',
+        brand_secure: '#0EA5E9',
+      },
+      typography: {
+        family: 'Inter, sans-serif',
+        roles: {
+          display_xl: { size: 64, lineHeight: 0.95, weight: 700 },
+          display_lg: { size: 48, lineHeight: 1.05, weight: 650 },
+          display_md: { size: 36, lineHeight: 1.1, weight: 600 },
+          card_title: { size: 20, lineHeight: 1.3, weight: 550 },
+          body_lg: { size: 16, lineHeight: 1.6, weight: 450 },
+          body_sm: { size: 13, lineHeight: 1.5, weight: 400 },
+        },
+      },
+      space: { unit: 8, scale: [4, 8, 16, 24, 32] },
+      radius: { sm: 4, md: 8, lg: 12, xl: 16 },
+    };
+    const issues = validateSystem({ ...system(), tokens, components: [], hash: '' }, false);
+    expect(issues).toEqual([]);
+    const names = systemVariables(tokens).map(variable => variable.name);
+    expect(names).toContain('--rea-ds-color-on-primary');
+    expect(names).toContain('--rea-ds-color-surface-dark-1');
+    expect(names).toContain('--rea-ds-type-display-xl-size');
+    expect(names).toContain('--rea-ds-type-body-sm-size');
+  });
+
   it('validates motion duration and easing', () => {
     const bad = structuredClone(DEFAULT_TOKENS);
     bad.motion = { duration: { fast: 4000 }, easing: { standard: 'wobble' } };

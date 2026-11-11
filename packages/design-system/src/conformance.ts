@@ -33,7 +33,7 @@ export function tokenUsage(files: Readonly<Record<string, string>>): { count: nu
 
 const rgb = (hex: string) => {
   const value = hex.replace('#', '');
-  const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value;
+  const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value.slice(0, 6);
   return [0, 2, 4].map(index => parseInt(full.slice(index, index + 2), 16));
 };
 function nearestColor(tokens: SystemTokens, hex: string): string | undefined {

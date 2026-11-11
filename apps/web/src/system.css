@@ -49,6 +49,13 @@
 .sys-user-message { justify-self:end; max-width:92%; }
 .sys-user-message p { padding:9px 11px; border:1px solid var(--rea-border); border-radius:10px 10px 2px 10px; background:var(--rea-surface); font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
 .sys-user-message small { display:block; margin-top:5px; color:var(--rea-muted); font-size:10px; text-align:right; overflow-wrap:anywhere; }
+.sys-user-resources { display:grid; gap:5px; margin-top:6px; }
+.sys-resource-chip { display:inline-flex; align-items:center; gap:5px; justify-self:end; padding:3px 8px; border:1px solid var(--rea-border); border-radius:6px; background:var(--rea-surface); color:var(--rea-muted); font-size:10px; }
+.sys-resource-card { border:1px solid var(--rea-border); border-radius:7px; background:var(--rea-surface); color:var(--rea-muted); font-size:11px; overflow:hidden; }
+.sys-resource-card summary { display:flex; align-items:center; gap:6px; padding:5px 8px; cursor:pointer; list-style:none; user-select:none; }
+.sys-resource-card summary::-webkit-details-marker { display:none; }
+.sys-resource-card summary > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--rea-text); font-size:11px; }
+.sys-resource-card pre { margin:0; max-height:200px; overflow:auto; padding:8px 10px; border-top:1px solid var(--rea-border); background:var(--rea-chrome); color:var(--rea-text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
 .sys-agent-message { display:grid; gap:7px; font-size:12px; line-height:1.75; }
 .sys-agent-message > header { display:flex; align-items:center; gap:6px; color:var(--rea-muted); font-size:11px; }
 .sys-agent-message > header strong { color:var(--rea-text); font-weight:600; }
@@ -64,6 +71,19 @@
 .sys-events ol { margin:6px 0 0; padding-left:16px; display:grid; gap:3px; line-height:1.7; }
 .sys-changed { display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 0; padding:0; list-style:none; }
 .sys-changed li { padding:2px 6px; border-radius:4px; background:var(--rea-selected); color:var(--rea-accent); font-size:10px; font-variant-numeric:tabular-nums; }
+.sys-doc-card { margin-top:4px; border:1px solid var(--rea-border); border-radius:8px; background:var(--rea-surface); overflow:hidden; }
+.sys-doc-head { display:flex; align-items:center; gap:8px; padding:8px 10px; }
+.sys-doc-head > svg { flex-shrink:0; color:var(--rea-accent); }
+.sys-doc-head > span { flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; }
+.sys-doc-head strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--rea-text); font-size:11px; font-weight:600; }
+.sys-doc-head small { color:var(--rea-muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; }
+.sys-doc-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.sys-doc-actions .home-text-button { font-size:10px!important; padding:2px 4px; }
+.sys-doc-preview { border-top:1px solid var(--rea-border); background:var(--rea-chrome); }
+.sys-doc-preview summary { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:6px 10px; color:var(--rea-muted); font-size:10px; cursor:pointer; list-style:none; user-select:none; }
+.sys-doc-preview summary::-webkit-details-marker { display:none; }
+.sys-doc-preview summary:hover { color:var(--rea-text); }
+.sys-doc-preview pre { margin:0; max-height:260px; overflow:auto; padding:10px; border-top:1px solid var(--rea-border); background:var(--rea-surface); color:var(--rea-text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
 .sys-error-text { color:var(--rea-danger); }
 .sys-warn { margin:4px 0 0; padding:7px 9px; border:1px solid var(--rea-warning-border); border-radius:6px; background:var(--rea-warning-bg); color:var(--rea-warning-text); font-size:11px; line-height:1.6; }
 .sys-warn strong { display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; }
@@ -183,7 +203,7 @@
 .sys-swatch-add { display:flex; align-items:center; justify-content:center; gap:5px; min-height:86px; border:1px dashed var(--rea-border); border-radius:6px; color:var(--rea-muted); font-size:11px; }
 .sys-swatch-add:hover { border-color:var(--rea-accent); color:var(--rea-accent); }
 .sys-types { display:grid; gap:2px; }
-.sys-type-row { display:grid; grid-template-columns:62px minmax(0,1fr) 158px; gap:12px; align-items:center; padding:6px 0; border-bottom:1px dashed var(--rea-border); }
+.sys-type-row { display:grid; grid-template-columns:minmax(72px,112px) minmax(0,1fr) 158px; gap:12px; align-items:center; padding:6px 0; border-bottom:1px dashed var(--rea-border); }
 .sys-type-row:last-child { border-bottom:0; }
 .sys-type-name { display:flex; align-items:center; gap:4px; min-width:0; }
 .sys-type-name code { color:var(--rea-muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; }
@@ -240,6 +260,11 @@
 .sys-version-meta small { color:var(--rea-muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sys-version-current { margin-left:auto; padding:1px 6px; border:1px solid var(--rea-accent); border-radius:3px; color:var(--rea-accent); font-size:9px; }
 .sys-versions li > .sys-version-meta:last-child { margin-left:auto; }
+.sys-source-tabs { display:inline-flex; padding:2px; border:1px solid var(--rea-border); border-radius:6px; background:var(--rea-chrome); }
+.sys-source-tabs button { padding:3px 9px; border-radius:4px; color:var(--rea-muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; }
+.sys-source-tabs button:hover { color:var(--rea-text); }
+.sys-source-tabs button.is-active { background:var(--rea-surface); color:var(--rea-text); font-weight:600; box-shadow:0 1px 2px #0000000f; }
+.sys-source-view { margin:0; max-height:520px; overflow:auto; padding:14px 16px; border:1px solid var(--rea-border); border-radius:6px; background:var(--rea-chrome); color:var(--rea-text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
 
 @media (max-width:1180px) {
   .sys-body { grid-template-columns:344px minmax(0,1fr); }

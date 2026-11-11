@@ -143,14 +143,14 @@ $REAUI pack ./design --out ./design.reaui --force
 
 ### 10.1 令牌模型
 
-- `color`：`primary/background/surface/text/muted/border` 必需；其余为语义角色（`card`、`cardForeground`、`ring`、`onPrimary` 等），可以用任意小写标识符。v2 的颜色值可以是六位十六进制或 `var(--rea-ds-color-*)` 别名，别名必须指向已声明的角色且不能成环。
-- `typography`：`family` 加 `roles`。`body` 必需，推荐 `display/heading/title/label/caption/code`；每个角色为 `{ size, lineHeight, weight }`，可选 `letterSpacing` 与 `family`。
+- `color`：`primary` 核心必需；`background/surface/text/muted/border` 为可选预置角色，其余为自定义语义角色（如 `on_primary`、`surface_dark_1`、`card`、`cardForeground`、`ring`、`onPrimary` 等），键名支持 `snake_case`、`kebab-case` 或 `camelCase`（匹配 `^[a-zA-Z][a-zA-Z0-9_-]*$`）。v2 的颜色值可以是 `#RGB` / `#RRGGBB` / `#RRGGBBAA` 十六进制或 `var(--rea-ds-color-*)` 别名，别名必须指向已声明的角色且不能成环。
+- `typography`：`family` 加 `roles`（至少 1 个角色，最多 48 个角色；不强制要求字面键名为 `body`，支持 `display_xl`、`body_lg`、`body_sm` 等 `snake_case` / `kebab-case` / `camelCase` 角色名）；每个角色为 `{ size, lineHeight, weight }`（`size` 为 `4–240`，`lineHeight` 为 `0.5–4` 倍数或 `4–300` px，`weight` 为 `100–900` 整数），可选 `letterSpacing` 与 `family`。
 - `space`：`unit` 加升序 `scale`。
-- `radius`：`sm/md/lg` 必需，可选 `xl/full`。
+- `radius`：`sm/md/lg` 必需，可选 `xl/full` 及其他扩展圆角键。
 - `shadow`：命名的静态 `box-shadow` 值。
 - `motion`：`duration`（毫秒整数）与 `easing`（`linear` / `ease*` / `cubic-bezier` / `steps`）。
 
-变量命名：颜色 `--rea-ds-color-*`，排版 `--rea-ds-type-<role>-size/-line/-weight/-tracking/-family`，兼容别名 `--rea-ds-typography-body|heading|caption-*`，间距 `--rea-ds-space-<n>`，圆角 `--rea-ds-radius-*`，阴影 `--rea-ds-shadow-*`，动效 `--rea-ds-motion-duration-*` / `--rea-ds-motion-easing-*`。
+变量命名：所有含下划线 `_` 或驼峰的令牌键名均通过 `kebab()` 统一转换为连字符 `-`（如 `on_primary` -> `--rea-ds-color-on-primary`，`display_xl` -> `--rea-ds-type-display-xl-size`）；颜色 `--rea-ds-color-*`，排版 `--rea-ds-type-<role>-size/-line/-weight/-tracking/-family`，兼容别名 `--rea-ds-typography-body|heading|caption-*`，间距 `--rea-ds-space-<n>`，圆角 `--rea-ds-radius-*`，阴影 `--rea-ds-shadow-*`，动效 `--rea-ds-motion-duration-*` / `--rea-ds-motion-easing-*`。
 
 ### 10.2 生成规则
 
@@ -163,7 +163,7 @@ $REAUI pack ./design --out ./design.reaui --force
 
 ### 10.3 DESIGN.md 通道
 
-`exportDesignMarkdown()` 把包写成 DESIGN.md：frontmatter 是机器层（`colors` / `typography` / `rounded` / `spacing` / `shadow` / `motion` / `components` / `guidelines`），正文按 Overview、Colors、Typography、Layout、Elevation、Motion、Components、Guidance 生成，仅供人阅读。`importDesignMarkdown()` 只读 frontmatter，接受三位 hex、`Npx` 字符串与 `tight/control/popup/dialog`、`one/two/...` 这类自有命名，按数值映射到契约并返回 warning；正文不参与解析。往返（导出→导入→导出）保持 hash 与字节稳定。
+`renderDesignMarkdown()` 与 `exportDesignMarkdown()` 把设计系统写成 DESIGN.md：frontmatter 是机器层（`colors` / `typography` / `rounded` / `spacing` / `shadow` / `motion` / `components` / `guidelines`），正文按 Overview、Colors、Typography、Layout、Elevation、Motion、Components、Guidance 生成，仅供人阅读。其中 `renderDesignMarkdown()` 支持对尚未发布或仍含待修项的草稿直接渲染 `DESIGN.md` 文本而不抛错，供对话内资源卡片与详情页「源文件」小节实时展示和导出。`importDesignMarkdown()` 只读 frontmatter，接受三位 hex、`Npx` 字符串与 `tight/control/popup/dialog`、`one/two/...` 这类自有命名，按数值映射到契约并返回 warning；正文不参与解析。往返（导出→导入→导出）保持 hash 与字节稳定。
 
 UI 的「导入 DESIGN.md / CSS」入口不直接调用 `importDesignMarkdown()`：选中的文件挂到输入框并预填提取指令，用户确认后才发送，由生成流程按 `systemSchema` 产出系统；散文型 DESIGN.md 因此在入口处不再报 `DS_MD_INVALID`。库函数仍服务 CLI、测试与精确往返。
 

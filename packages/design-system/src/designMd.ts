@@ -1,8 +1,8 @@
 import { createSystem } from './system';
 import { isV2Tokens, kebab, radiusOf, tokenVariable } from './tokens';
-import { DEFAULT_TOKENS, DesignSystemError } from './types';
+import { DEFAULT_TOKENS, DesignSystemError, REQUIRED_COLOR_ROLES } from './types';
 import type {
-  ComponentTokenSlot, DesignSystemPackage, DesignSystemPackageV2, DesignSystemTokens, SystemComponentSpec, TypeToken,
+  ComponentTokenSlot, DesignSystemPackage, DesignSystemPackageV2, DesignSystemTokens, SystemComponentSpec, SystemTokens, TypeToken,
 } from './types';
 
 /**
@@ -69,59 +69,106 @@ const designToRef = (value: string): { path?: string; warning?: string } => {
   return { warning: `无法识别的令牌分组：${group}` };
 };
 
-/** Render a package as DESIGN.md: frontmatter carries the contract, body explains it. */
-export function exportDesignMarkdown(pkg: DesignSystemPackage): string {
-  const tokens = pkg.tokens;
+export interface DesignMarkdownComponentInput {
+  key?: string;
+  name: string;
+  description?: string;
+  component?: string;
+  tokens?: Partial<Record<ComponentTokenSlot, string>>;
+  states?: string[];
+  variants?: { key: string; name: string }[];
+  guidelines?: string;
+}
+
+export interface DesignMarkdownInput {
+  name: string;
+  description?: string;
+  tokens: SystemTokens;
+  components?: DesignMarkdownComponentInput[];
+  guidelines?: string;
+}
+
+function componentKey(entry: DesignMarkdownComponentInput, index: number, taken: Set<string>): string {
+  if (entry.key && /^[a-zA-Z][a-zA-Z0-9_-]{1,63}$/.test(entry.key) && !taken.has(entry.key)) {
+    taken.add(entry.key);
+    return entry.key;
+  }
+  const base = (entry.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  let key = base.length >= 2 && /^[a-z]/.test(base) ? base.slice(0, 64) : `component-${index + 1}`;
+  while (taken.has(key)) key = `${key}-${index + 1}`;
+  taken.add(key);
+  return key;
+}
+
+/**
+ * Render any draft or published system into DESIGN.md without requiring full package validation,
+ * so the user can always inspect and export the raw DESIGN.md document.
+ */
+export function renderDesignMarkdown(input: DesignMarkdownInput): string {
+  const name = input.name.trim() || '未命名设计系统';
+  const tokens = input.tokens ?? DEFAULT_TOKENS;
   const v2 = isV2Tokens(tokens);
-  const colors = Object.fromEntries(Object.entries(tokens.color)
+  const rawColor = (tokens.color ?? {}) as unknown as Record<string, unknown>;
+  const colors = Object.fromEntries(Object.entries(rawColor)
     .filter(([, value]) => typeof value === 'string')
-    .map(([key, value]) => [kebab(key), value]));
-  const typography: Record<string, unknown> = { family: tokens.typography.family };
+    .map(([key, value]) => [key.includes('_') ? key : kebab(key), value]));
+  const family = typeof tokens.typography?.family === 'string' ? tokens.typography.family : '';
+  const typography: Record<string, unknown> = { family };
   if (v2) {
-    for (const [role, value] of Object.entries(tokens.typography.roles)) {
+    for (const [role, value] of Object.entries(tokens.typography?.roles ?? {})) {
+      if (!value || typeof value !== 'object') continue;
       typography[role] = {
         fontSize: `${value.size}px`, fontWeight: value.weight, lineHeight: value.lineHeight,
         ...(value.letterSpacing !== undefined ? { letterSpacing: `${value.letterSpacing}px` } : {}),
         ...(value.family ? { fontFamily: value.family } : {}),
       };
     }
-  } else {
+  } else if (tokens.typography) {
     for (const role of ['body', 'heading', 'caption'] as const) {
       const value = tokens.typography[role];
+      if (!value) continue;
       typography[role] = { fontSize: `${value.size}px`, fontWeight: value.weight, lineHeight: value.lineHeight };
     }
   }
-  const radius = radiusOf(tokens);
+  const radius = (tokens.radius ? radiusOf(tokens) : {}) as unknown as Record<string, unknown>;
   const rounded = Object.fromEntries(Object.entries(radius).filter(([, value]) => typeof value === 'number').map(([key, value]) => [key, `${value}px`]));
-  const spacing: Record<string, string> = { unit: `${tokens.space.unit}px` };
-  for (const step of tokens.space.scale) spacing[String(step)] = `${step}px`;
-  const components = Object.fromEntries(pkg.components.map(component => [component.key, {
+  const unit = typeof tokens.space?.unit === 'number' ? tokens.space.unit : 8;
+  const scale = Array.isArray(tokens.space?.scale) ? tokens.space.scale : [];
+  const spacing: Record<string, string> = { unit: `${unit}px` };
+  for (const step of scale) spacing[String(step)] = `${step}px`;
+  const list = Array.isArray(input.components) ? input.components : [];
+  const taken = new Set<string>();
+  const normalizedComponents = list.map((component, index) => ({
+    ...component,
+    key: componentKey(component, index, taken),
+  }));
+  const components = Object.fromEntries(normalizedComponents.map(component => [component.key, {
     name: component.name,
     ...(component.description ? { description: component.description } : {}),
     ...(component.component ? { component: component.component } : {}),
-    ...Object.fromEntries(Object.entries(component.tokens ?? {}).map(([slot, path]) => [SLOT_TO_CSS[slot as ComponentTokenSlot], refToDesign(path)])),
+    ...Object.fromEntries(Object.entries(component.tokens ?? {}).map(([slot, path]) => [SLOT_TO_CSS[slot as ComponentTokenSlot], refToDesign(String(path))])),
     ...(component.states ? { states: component.states } : {}),
     ...(component.variants ? { variants: Object.fromEntries(component.variants.map(variant => [variant.key, variant.name])) } : {}),
     ...(component.guidelines ? { guidelines: component.guidelines } : {}),
   }]));
   const frontmatter: Record<string, unknown> = {
-    name: pkg.name,
-    ...(pkg.description ? { description: pkg.description } : {}),
+    name,
+    ...(input.description ? { description: input.description } : {}),
     colors, typography, rounded, spacing,
     ...(tokens.shadow ? { shadow: tokens.shadow } : {}),
     ...(v2 && tokens.motion ? { motion: tokens.motion } : {}),
     components,
-    ...(pkg.guidelines ? { guidelines: pkg.guidelines } : {}),
+    ...(input.guidelines ? { guidelines: input.guidelines } : {}),
   };
-  const roleRows = Object.entries(typography).filter(([, value]) => typeof value === 'object') as [string, Record<string, unknown>][];
+  const roleRows = Object.entries(typography).filter(([, value]) => typeof value === 'object' && value !== null) as [string, Record<string, unknown>][];
   const body = [
-    `# ${pkg.name}`,
+    `# ${name}`,
     '',
-    pkg.description ?? '',
+    input.description ?? '',
     '',
     '## Overview',
     '',
-    pkg.description || '（在 frontmatter 中补充描述与指南，Agent 会按它们生成界面。）',
+    input.description || '（在 frontmatter 中补充描述与指南，Agent 会按它们生成界面。）',
     '',
     '## Colors',
     '',
@@ -137,24 +184,29 @@ export function exportDesignMarkdown(pkg: DesignSystemPackage): string {
     '',
     '## Layout',
     '',
-    `- 间距基数：${tokens.space.unit}px`,
-    `- 间距刻度：${tokens.space.scale.join(' / ')}px`,
+    `- 间距基数：${unit}px`,
+    `- 间距刻度：${scale.join(' / ')}px`,
     `- 圆角：${Object.entries(rounded).map(([key, value]) => `${key} ${String(value)}`).join(' / ')}`,
     '',
     ...(tokens.shadow ? ['## Elevation', '', ...Object.entries(tokens.shadow).map(([key, value]) => `- \`${key}\`：\`${value}\``), ''] : []),
     ...(v2 && tokens.motion ? ['## Motion', '', ...Object.entries(tokens.motion.duration).map(([key, value]) => `- \`${key}\`：${value}ms · \`${tokens.motion!.easing[Object.keys(tokens.motion!.easing)[0]] ?? 'linear'}\``), ''] : []),
     '## Components',
     '',
-    ...pkg.components.flatMap(component => [
+    ...normalizedComponents.flatMap(component => [
       `### ${component.name}`,
       '',
       component.description || component.guidelines || '',
       '',
       ...(component.tokens ? [Object.entries(component.tokens).map(([slot, path]) => `- ${SLOT_TO_CSS[slot as ComponentTokenSlot]}：\`${path}\``).join('\n'), ''] : []),
     ]),
-    ...(pkg.guidelines ? ['## Guidance', '', pkg.guidelines, ''] : []),
+    ...(input.guidelines ? ['## Guidance', '', input.guidelines, ''] : []),
   ].join('\n');
   return `---\n${blockYaml(frontmatter)}\n---\n\n${body}`;
+}
+
+/** Render a package as DESIGN.md: frontmatter carries the contract, body explains it. */
+export function exportDesignMarkdown(pkg: DesignSystemPackage): string {
+  return renderDesignMarkdown(pkg);
 }
 
 interface Line { indent: number; text: string }
@@ -265,9 +317,10 @@ export function importDesignMarkdown(source: string, options: { id: string; name
   for (const [key, value] of Object.entries(colorsIn as Record<string, unknown>)) {
     if (typeof value !== 'string') continue;
     const raw = value.trim();
-    color[camel(key)] = /^#[0-9a-f]{3}$/i.test(raw) ? `#${raw.slice(1).split('').map(char => char + char).join('')}` : raw;
+    const roleName = key.includes('_') ? key : camel(key);
+    color[roleName] = /^#[0-9a-f]{3}$/i.test(raw) ? `#${raw.slice(1).split('').map(char => char + char).join('')}` : raw;
   }
-  for (const key of ['primary', 'background', 'surface', 'text', 'muted', 'border'] as const) {
+  for (const key of REQUIRED_COLOR_ROLES) {
     if (!color[key]) {
       color[key] = DEFAULT_TOKENS.color[key];
       warnings.push(`colors 缺少 ${key}，已使用默认值 ${DEFAULT_TOKENS.color[key]}。`);
@@ -288,15 +341,16 @@ export function importDesignMarkdown(source: string, options: { id: string; name
     const lineHeight = px(role.lineHeight) ?? 1.5;
     const weight = px(role.fontWeight ?? role.weight) ?? 400;
     const letterSpacing = px(role.letterSpacing);
-    roles[kebab(key)] = {
+    const roleKey = /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(key) ? key : kebab(key);
+    roles[roleKey] = {
       size, lineHeight, weight,
       ...(letterSpacing !== undefined ? { letterSpacing } : {}),
       ...(typeof role.fontFamily === 'string' ? { family: role.fontFamily } : {}),
     };
   }
-  if (!roles.body) {
+  if (!Object.keys(roles).length) {
     roles.body = { ...DEFAULT_TOKENS.typography.roles.body };
-    warnings.push('typography 缺少 body 角色，已使用默认值。');
+    warnings.push('typography 缺少角色，已使用默认值。');
   }
   const radiusIn = (data.rounded ?? {}) as Record<string, unknown>;
   const radii: Record<string, number> = {};

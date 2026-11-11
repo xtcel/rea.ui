@@ -5,9 +5,10 @@ export const SYSTEM_FILE = 'design/system.json';
 export const SYSTEM_REGISTRY = 'design-system-versions';
 export const MAX_SYSTEM_BYTES = 256 * 1024;
 
-/** Six roles every system must declare; the rest are optional semantic roles. */
-export const REQUIRED_COLOR_ROLES = ['primary', 'background', 'surface', 'text', 'muted', 'border'] as const;
+/** Core role every system must declare; the rest are optional semantic roles. */
+export const REQUIRED_COLOR_ROLES = ['primary'] as const;
 export const OPTIONAL_COLOR_ROLES = [
+  'background', 'surface', 'text', 'muted', 'border',
   'primaryHover', 'onPrimary', 'selected', 'hover', 'success', 'warning', 'danger',
   'foreground', 'onSurface', 'surfaceRaised', 'overlay', 'focusRing',
   'disabled', 'disabledText', 'card', 'cardForeground', 'popover', 'popoverForeground',
@@ -26,7 +27,8 @@ export const CANONICAL_TYPE_ROLES = ['display', 'heading', 'title', 'body', 'lab
 export const REQUIRED_TYPE_ROLE = 'body' as const;
 
 export interface SystemColorTokens {
-  primary: string; background: string; surface: string; text: string; muted: string; border: string;
+  primary: string;
+  background?: string; surface?: string; text?: string; muted?: string; border?: string;
   primaryHover?: string; onPrimary?: string; selected?: string; hover?: string;
   success?: string; warning?: string; danger?: string;
   foreground?: string; onSurface?: string; surfaceRaised?: string; overlay?: string; focusRing?: string;
@@ -34,6 +36,7 @@ export interface SystemColorTokens {
   card?: string; cardForeground?: string; popover?: string; popoverForeground?: string;
   secondary?: string; secondaryForeground?: string; accent?: string; accentForeground?: string;
   destructive?: string; destructiveForeground?: string; inverse?: string; inverseText?: string;
+  [key: string]: string | undefined;
 }
 
 export interface TypeToken { size: number; lineHeight: number; weight: number; letterSpacing?: number; family?: string }
@@ -95,7 +98,9 @@ export class DesignSystemError extends Error {
   }
 }
 
-export const DEFAULT_TOKENS: DesignSystemTokens = {
+export const DEFAULT_TOKENS: DesignSystemTokens & {
+  color: Required<Pick<SystemColorTokens, 'primary' | 'background' | 'surface' | 'text' | 'muted' | 'border'>> & SystemColorTokens;
+} = {
   color: {
     primary: '#356AF0', primaryHover: '#2B5BD9', onPrimary: '#FFFFFF',
     background: '#FAFBFC', surface: '#FFFFFF', text: '#30343B', muted: '#656D79', border: '#E5E7EB',

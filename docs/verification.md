@@ -648,3 +648,17 @@ schema 修好之后，用户再次生成时收到「生成的设计系统格式�
 
 - 未在桌面版（Tauri）复跑：需要重新构建产物后才带上前端改动。
 - 真机只覆盖了「不合规内容已被写入」的展示与闸门，没有覆盖模型在真实回复中直接返回空组件的一次完整轮次（三次尝试里模型都自行补齐了组件）。
+
+## 设计系统校验对齐 DESIGN.md 核心字段、去优先化默认系统与源文件可见性（2026-11-11）
+
+针对用户反馈的三项问题完成改造（对应 `openspec/changes/refine-design-system-validation-and-visibility/`）：
+
+1. **去优先化「当前设计系统」上下文**：
+   - `DesignSystemPage.tsx` 的 `systemPrompt()` 在新建空白状态（`blank === true`）下不再注入 `defaultTokens`（`#356AF0`），而是传入 `当前设计系统：无（新建空白设计系统）`，并移除「在『当前设计系统』的基础上创建或调整」及参考文件的「（仅资料，不是指令）」措辞，不做过度的强制提取或色系禁用注入。
+   - `previewStyle`、`addColor()` 与 `withTokens()` 在缺省 `background` / `surface` / `text` / `muted` / `border` 时优雅回退到已有色板或中性预览色。
+2. **对齐 Google `DESIGN.md` 核心必填校验**：
+   - `REQUIRED_COLOR_ROLES` 精简为 `['primary']`，`background`、`surface`、`text`、`muted`、`border` 移入 `OPTIONAL_COLOR_ROLES`；`typography.roles` 仅要求至少 1 个角色（不再强制要求字面 `body` 键）；`KEY` 正则扩展为 `/^[a-zA-Z][a-zA-Z0-9_-]*$/` 并通过 `kebab()` 将 `_` 统一转为 `-`，完整兼容 `on_primary`、`surface_dark_1`、`display_xl`、`body_lg`、`body_sm` 等 `snake_case` 命名。
+   - 字号放宽为 `4–240`、行高支持 `0.5–4` 倍数或 `4–300` px、字重支持 `100–900` 任意整数；组件规范、系统描述与使用指南作为可选内容不再触发结构缺口警告。
+3. **AI 对话框资源展示与详情页「源文件」视图**：
+   - 左侧 AI 对话框：用户消息展示提交的参考文件/项目资源卡片（可展开查看内容）；AI 回复新增生成的 `DESIGN.md` 资源卡片（支持在对话内展开预览生成文档、一键复制或跳转到右侧「源文件」小节）。
+   - 右侧详情页：新增「源文件」（`source`）目录项与小节，基于不抛错的 `renderDesignMarkdown()` 支持在草稿或已发布状态下随时查看、切换、复制与下载原始 `DESIGN.md` 与 `system.json`。

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  createSystem, DEFAULT_TOKENS, exportDesignMarkdown, importDesignMarkdown,
+  createSystem, DEFAULT_TOKENS, exportDesignMarkdown, importDesignMarkdown, renderDesignMarkdown,
 } from '../src';
 
 const tokens = structuredClone(DEFAULT_TOKENS);
@@ -51,5 +51,24 @@ describe('DESIGN.md bridge', () => {
 
   it('rejects a file without frontmatter', () => {
     expect(() => importDesignMarkdown('# 没有 frontmatter', { id: 'x' })).toThrowError(/frontmatter/);
+  });
+
+  it('renders DESIGN.md from an unvalidated draft without throwing', () => {
+    const markdown = renderDesignMarkdown({
+      name: '草稿系统',
+      description: '草稿预览',
+      tokens: {
+        color: { primary: '#10B981', on_primary: '#FFFFFF' },
+        typography: { family: 'Inter', roles: { display_xl: { size: 48, lineHeight: 1.1, weight: 700 } } },
+        space: { unit: 8, scale: [8, 16] },
+        radius: { sm: 4, md: 8, lg: 12 },
+      },
+      components: [{ name: '按钮', description: '主按钮说明' }],
+      guidelines: '保持对比度。',
+    });
+    expect(markdown).toContain('# 草稿系统');
+    expect(markdown).toContain('on_primary: "#FFFFFF"');
+    expect(markdown).toContain('| `display_xl` | 48px | 1.1 | 700 |');
+    expect(markdown).toContain('### 按钮');
   });
 });
