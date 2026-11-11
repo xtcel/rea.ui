@@ -35,12 +35,15 @@
 
 ## 5. 导出入口
 
-- [x] 5.1 `packages/editor/src/export/targets.ts`：选中优先、否则当前页画框；同名补序号；文件名清洗
+- [x] 5.1 `packages/editor/src/export/targets.ts`：只导出当前选中的最外层图层，无选区报错；同名补序号；文件名清洗与后缀拼接
 - [x] 5.2 `packages/editor/src/export/run.ts`：按目标逐个导出，读取 `[data-coordinate-probe]` 换算设计像素，旋转图层用 `rotatedBounds()` 扩边
 - [x] 5.3 `packages/storage/src/archive.ts`：`zipArchive()`；多文件打包，只弹一次保存框
-- [x] 5.4 `components/ExportDialog.tsx`：格式（PNG / JPG / SVG）+ 倍率；SVG 时倍率禁用；按钮上直接写文件数
-- [x] 5.5 `CanvasApi.root()` 暴露影子根；主菜单新增「导出图片…」
-- [x] 5.6 测试 `packages/editor/src/export/targets.test.ts`：范围、同名、文件名清洗
+- [x] 5.4 `components/ExportDialog.tsx`：格式（PNG / JPG / WEBP / SVG）+ 倍率；SVG 时倍率禁用；按钮上直接写文件数
+- [x] 5.5 `CanvasApi.root()` 暴露影子根；主菜单「导出图片…」在有选区时可用，无选区置灰
+- [x] 5.6 测试 `packages/editor/src/export/targets.test.ts`：只导选中、无选区报错、隐藏图层、同名、后缀、文件名清洗
+- [x] 5.7 `inspector/ExportPanel.tsx`：右栏「设计」标签底部固定导出区（格式 + 倍率 + 后缀 + 导出按钮），只在有选区时渲染，不随属性滚动
+- [x] 5.8 `raster.ts` 增加 WEBP 编码；`EditorApp` 让右栏与菜单共用同一导出函数并应用后缀
+- [x] 5.9 测试 `packages/editor/src/inspector/ExportPanel.test.tsx`：格式列表、倍率、后缀占位与按钮文案
 
 ## 6. 文档与验证
 

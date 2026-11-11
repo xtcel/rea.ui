@@ -5,6 +5,7 @@ import type { ExportFormat } from '../export/targets';
 const FORMATS: { id: ExportFormat; label: string; detail: string }[] = [
   { id: 'png', label: 'PNG', detail: '透明背景' },
   { id: 'jpg', label: 'JPG', detail: '白色背景' },
+  { id: 'webp', label: 'WEBP', detail: '体积更小' },
   { id: 'svg', label: 'SVG', detail: '可编辑矢量' },
 ];
 const SCALES = [1, 2, 3] as const;

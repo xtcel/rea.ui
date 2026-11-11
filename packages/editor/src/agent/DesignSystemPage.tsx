@@ -64,7 +64,7 @@ const refinements = [
 ];
 
 /** Pre-filled when a design reference is imported; the user can edit it before sending. */
-const importPrompt = (name: string) => `按附件 ${name} 提取设计系统：优先沿用文件里的颜色、排版、圆角与组件规范。`;
+const importPrompt = (name: string) => `按附件 ${name} 提取设计系统：忠实提取文件里的颜色色值、令牌命名、排版阶梯、圆角与组件规范，不要替换为默认配色。`;
 const shortHash = (hash: string) => hash.slice(0, 8);
 const stamp = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 const hex = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
@@ -104,13 +104,17 @@ function summaryOf(result: unknown): string {
 
 /** A chat-oriented prompt: the model returns the whole system, so every turn is a full checkpoint. */
 export function systemPrompt(request: string, current: Draft, project: ProjectContext | null, references: string, history: Turn[], blank = false): string {
-  const conversation = history.slice(-4).map(turn => `用户：${turn.text}\nAgent：${turn.reply || '（进行中）'}`).join('\n');
-  const currentContext = blank
-    ? '当前设计系统：无（新建空白设计系统）'
+  const hasReferences = Boolean(references.trim());
+  const omitCurrent = blank || hasReferences;
+  const completed = omitCurrent ? [] : history.filter(turn => turn.state === 'completed');
+  const conversation = completed.slice(-4).map(turn => `用户：${turn.text}\nAgent：${turn.reply}`).join('\n');
+  const currentContext = omitCurrent
+    ? '当前设计系统：无（新建空白设计系统，或按参考资料从头提取，不沿用任何预设草稿）'
     : `当前设计系统草稿（仅在局部修改时保留未涉及字段）：${JSON.stringify({ name: current.name, description: current.description, tokens: current.tokens, components: current.components, guidelines: current.guidelines })}`;
   return `你是设计系统专家。根据本轮需求与参考资料创建或调整一套可复用的设计系统，并返回完整结果（不是补丁）。不修改任何文件，不使用工具，最终只返回 JSON。用中文写名称、描述、组件规范与指南。
 规则：
-- 颜色为十六进制（如 #356AF0），必须包含 primary；排版角色（typography.roles）至少 1 项，字号 4-240，行高为 0.5-4 的倍数或 4-300 的 px，字重为 100-900 的整数；间距基数为 1-64 的整数且刻度升序；圆角 0-9999。
+- 颜色为十六进制（#RGB / #RRGGBB / #RRGGBBAA），必须包含 primary；排版角色（typography.roles）至少 1 项，字号 4-240，行高为 0.5-4 的倍数或 4-300 的 px，字重为 100-900 的整数；间距基数为 1-64 的整数且刻度升序；圆角 0-9999。
+- 若提供了参考文件或关联项目参考，以参考资料中的配色、字体与规范为准，并将参考资料中的主品牌色/核心操作色/强调色作为 primary，不要自行套用参考资料之外的默认主色。
 - tokens.color 用 [{ role, value }] 数组，typography.roles 用 [{ role, size, lineHeight, weight }] 数组；role 支持 kebab-case、snake_case 或 camelCase 标识符。
 - 组件规范 0-48 项，说明布局、状态、可访问性与使用规则。
 - 若已有设计系统草稿且用户只要求局部调整，保留其它令牌、组件与指南不变，只改相关字段。
@@ -213,6 +217,10 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   const [active, setActive] = useState<Section>('overview');
   const [query, setQuery] = useState('');
   const [blank, setBlank] = useState(isNew);
+  const [freshChat, setFreshChat] = useState(isNew);
+  const [linkedProject, setLinkedProject] = useState<ProjectContext | null>(() => (
+    !isNew && system.sourceProject && project?.path === system.sourceProject ? project : null
+  ));
   const [turns, setTurns] = useState<Turn[]>(() => loadTurns(system.id));
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -450,7 +458,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   async function send(text: string, options: { project?: ProjectContext | null; attachments?: File[] } = {}) {
     const value = text.trim();
     if (!value || sending.current || task.running) return;
-    const selectedProject = options.project !== undefined ? options.project : project;
+    const selectedProject = options.project !== undefined ? options.project : linkedProject;
     const files = options.attachments ?? attachments;
     sending.current = true; cancelled.current = false; follow.current = true;
     liveEvents.current = []; setLive([]); setError(''); setNotice('');
@@ -480,7 +488,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         ...fileResources,
         ...(selectedProject ? [{ name: `项目：${selectedProject.name}`, kind: 'project' as const, content: context?.context?.slice(0, 12_000) }] : []),
       ];
-      const instruction = systemPrompt(value, before, context, references, [...turns, turn], blank);
+      const instruction = systemPrompt(value, before, context, references, turns, blank || freshChat);
       const result = await task.generate(instruction, systemSchema, config, selectedProject?.path);
       // Applied verbatim: whatever the model returned becomes the draft. Problems are reported in
       // the chat and on the fields; nothing is repaired or inherited behind the user's back.
@@ -500,7 +508,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         components: next.components,
         guidelines: next.guidelines,
       });
-      setDraft(next); persist(next); setBlank(false); setChanged(list);
+      setDraft(next); persist(next); setBlank(false); setFreshChat(false); setChanged(list);
       if (blank) { setActive('overview'); scroller.current?.scrollTo({ top: 0 }); }
       finish(
         turn.id,
@@ -642,7 +650,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       <aside className="sys-chat" aria-label="设计系统 AI 对话">
         <header className="sys-chat-head"><SquareTerminal size={15} /><strong>设计系统 Agent</strong>
           <span className="sys-chat-tools">
-            {!!turns.length && <button type="button" className="home-text-button sys-new-chat" disabled={task.running} onClick={() => { remember([]); setPrompt(''); input.current?.focus(); }}><RotateCcw size={12} />新对话</button>}
+            {!!turns.length && <button type="button" className="home-text-button sys-new-chat" disabled={task.running} onClick={() => { remember([]); setFreshChat(true); setPrompt(''); input.current?.focus(); }}><RotateCcw size={12} />新对话</button>}
             <button type="button" className="home-icon-button" aria-label="Agent 设置" title="Agent 设置" onClick={() => void openSettings()}><Settings2 size={15} /></button>
           </span>
         </header>
@@ -652,7 +660,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
             <h2>{blank ? '用一句话，生成一套设计系统。' : '继续完善这套系统。'}</h2>
             <p>{blank ? 'Agent 会给出语义配色、排版阶梯、间距圆角、组件规范与使用指南。也可以先给它素材。' : '调整某个令牌、补充组件规则，或让它检查对比度与状态覆盖。'}</p>
             <div className="sys-entries">{entries.map(({ id, icon: Icon, title, hint }) => <button type="button" key={id} className="sys-entry" onClick={() => {
-              if (id === 'describe') input.current?.focus();
+              if (id === 'describe') { if (!blank) setFreshChat(true); input.current?.focus(); }
               if (id === 'project') setDialog('project');
               if (id === 'import') importInput.current?.click();
             }}><Icon size={15} /><span><strong>{id === 'describe' && !blank ? '按新方向重做' : title}</strong><small>{hint}</small></span><ArrowUpRight size={12} className="sys-entry-arrow" /></button>)}</div>
@@ -712,8 +720,8 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
           </article>)}
         </div>
         <div className="sys-composer">
-          {(attachments.length > 0 || project) && <div className="sys-chips">
-            {project && <span><FolderOpen size={12} /><span title={project.path}>{project.name}</span><button type="button" aria-label="取消关联项目" onClick={() => onProject(null)}><X size={11} /></button></span>}
+          {(attachments.length > 0 || linkedProject) && <div className="sys-chips">
+            {linkedProject && <span><FolderOpen size={12} /><span title={linkedProject.path}>{linkedProject.name}</span><button type="button" aria-label="取消关联项目" onClick={() => { setLinkedProject(null); onProject(null); }}><X size={11} /></button></span>}
             {attachments.map((file, index) => <span key={`${file.name}-${index}`}><Upload size={12} /><span title={file.name}>{file.name}</span><button type="button" aria-label={`移除附件 ${file.name}`} onClick={() => setAttachments(items => items.filter((_, at) => at !== index))}><X size={11} /></button></span>)}
           </div>}
           <form onSubmit={event => { event.preventDefault(); void send(prompt); }}>
@@ -881,8 +889,8 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     </div>
     <input ref={importInput} type="file" hidden accept=".md,.markdown,.css,.scss,.json,.txt,.ts,.tsx,.js,.jsx" aria-label="导入设计系统素材" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) handleImport(file); }} />
     <input ref={attachInput} type="file" hidden accept=".md,.markdown,.css,.scss,.json,.txt,.ts,.tsx,.js,.jsx" aria-label="选择参考文件" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) setAttachments(items => [...items.slice(0, 5), file]); }} />
-    {dialog === 'project' && <ProjectDialog project={project} initialPath={project?.path ?? ''} onSelect={next => {
-      setDialog(null); onProject(next);
+    {dialog === 'project' && <ProjectDialog project={linkedProject} initialPath={linkedProject?.path ?? project?.path ?? ''} onSelect={next => {
+      setDialog(null); setLinkedProject(next); onProject(next);
       if (next) void send('根据代码库中的令牌、字体与组件样式，提取一套设计系统。', { project: next });
     }} onClose={() => setDialog(null)} />}
     {dialog === 'settings' && <div className="rs-overlay"><SettingsApp onClose={() => setDialog(null)} /></div>}

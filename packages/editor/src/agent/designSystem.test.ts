@@ -148,13 +148,21 @@ describe('generated system contract', () => {
     expect(system.colors.length).toBe(5);
   });
 
-  it('does not inject default blue-purple tokens into systemPrompt when blank is true', () => {
-    const draft = resolvedSystem({ id: 'new', name: '新设计系统', description: '', color: '#356AF0', colors: ['#356AF0'] });
+  it('does not inject default blue-purple tokens into systemPrompt when blank is true or when reference files are provided', () => {
+    const draft = resolvedSystem({ id: 'new', name: '新设计系统', description: '', color: '#5E6AD2', colors: ['#5E6AD2'] });
     const blankPrompt = systemPrompt('按附件 design.md 生成', draft, null, '参考 design.md: primary #10B981', [], true);
-    expect(blankPrompt).toContain('当前设计系统：无（新建空白设计系统）');
+    expect(blankPrompt).toContain('当前设计系统：无');
     expect(blankPrompt).not.toContain('当前设计系统草稿');
     expect(blankPrompt).not.toContain('在「当前设计系统」的基础上');
+    expect(blankPrompt).not.toContain('#356AF0');
     expect(blankPrompt).toContain('参考 design.md: primary #10B981');
+
+    const refOnExistingPrompt = systemPrompt('按附件 design.md 重新提取', draft, null, '参考 design.md: primary #10B981', [
+      { id: 't1', text: '旧需求', state: 'completed', reply: '旧主色 #5E6AD2', changed: [], events: [], notes: [], warnings: [] },
+    ], false);
+    expect(refOnExistingPrompt).toContain('当前设计系统：无');
+    expect(refOnExistingPrompt).not.toContain('当前设计系统草稿');
+    expect(refOnExistingPrompt).not.toContain('旧主色 #5E6AD2');
 
     const editPrompt = systemPrompt('把主色改亮一点', draft, null, '', [], false);
     expect(editPrompt).toContain('当前设计系统草稿');

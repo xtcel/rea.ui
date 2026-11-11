@@ -18,8 +18,10 @@ export interface RasterOptions {
   /** 根节点相对于导出盒子左上角的位置（旋转图层需要居中留白）。 */
   inset: { x: number; y: number };
   scale: number;
-  format: 'png' | 'jpg';
+  format: 'png' | 'jpg' | 'webp';
 }
+
+const MIME: Record<RasterOptions['format'], string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
 
 async function dataUrlOf(url: string): Promise<string> {
   if (!url || url.startsWith('data:')) return url;
@@ -104,10 +106,13 @@ export async function rasterize(element: Element, options: RasterOptions): Promi
     if (format === 'jpg') { context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height); }
     context.scale(scale, scale);
     context.drawImage(image, 0, 0, width, height);
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-      blob => blob ? resolve(blob) : reject(new Error('图片编码失败。')),
-      format === 'jpg' ? 'image/jpeg' : 'image/png',
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      result => result ? resolve(result) : reject(new Error('图片编码失败。')),
+      MIME[format],
       .92,
     ));
+    // 浏览器不支持所选编码时会静默回退成 PNG；宁可按失败处理，也不生成扩展名与内容不符的文件。
+    if (blob.type !== MIME[format]) throw new Error(`当前环境不支持 ${format.toUpperCase()} 导出，请改用 PNG。`);
+    return blob;
   } finally { /* data URL 无需释放。 */ }
 }

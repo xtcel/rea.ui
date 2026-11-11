@@ -40,7 +40,8 @@ import { describeIssues, isSvgFile, svgLayerFragment } from './session/svgImport
 import { pickImageFiles, saveFile } from './platform';
 import { ComponentAssets } from './components/ComponentAssets';
 import { ExportDialog } from './components/ExportDialog';
-import { exportTargets, safeFileName } from './export/targets';
+import { ExportPanel } from './inspector/ExportPanel';
+import { applySuffix, exportTargets, safeFileName } from './export/targets';
 import type { ExportFormat } from './export/targets';
 import { exportFiles } from './export/run';
 import { ComponentInspector } from './components/ComponentInspector';
@@ -120,13 +121,9 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   }
   const selectedIds = selection.pageId === page.id ? selection.ids.filter(id => page.nodes.has(id)) : [];
   const selected = selectedIds.length === 1 ? page.nodes.get(selectedIds[0]) : undefined;
-  // 导出范围：有选区导选中，否则导当前页所有画框；这里只算文件数，供菜单与对话框显示。
-  const exportCount = (() => {
-    const chosen = selectionRoots(page, selectedIds).filter(id => { const node = page.nodes.get(id); return node && !node.hidden; }).length;
-    if (chosen) return chosen;
-    const top = [...page.nodes.values()].filter(node => node.parentId === page.source.props.designId && !node.hidden);
-    return top.filter(node => node.kind === 'Frame').length || top.length;
-  })();
+  // 导出范围只有选中的最外层图层；文件数供菜单与对话框显示，无选区时入口不可用。
+  const exportCount = selectionRoots(page, selectedIds)
+    .filter(id => { const node = page.nodes.get(id); return node && !node.hidden; }).length;
   function setSelectedId(id: string | null) { setSelection({ ...selection, pageId: page.id, ids: id ? [id] : [] }); }
   const propertyPanel = usePropertyPanel(page, selectedIds, model.transact);
   const canvasPage = useMemo(() => {
@@ -480,18 +477,19 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   };
   function run(action: () => Promise<unknown>) { void action().catch(error => model.setNotice(String(error))); }
   async function exportDocument() { const file = await model.exportFile(); await saveFile(file.blob, file.name); }
-  /** 导出图片：选中优先，否则当前页所有画框；多个文件打包成 ZIP，只弹一次保存框。 */
-  async function exportImages(format: ExportFormat, scale: number) {
+  /** 导出图片：只导当前选中的图层（多选各自一份）；多个文件打包成 ZIP，只弹一次保存框。 */
+  async function exportImages(format: ExportFormat, scale: number, suffix = '') {
     try {
       const root = canvas.current?.root();
       if (!root) throw new Error('画布还没有渲染完成，请稍后再试。');
-      const targets = exportTargets(parsed.page, selectedIds, id => canvas.current?.box(id));
+      const targets = exportTargets(parsed.page, selectedIds, id => canvas.current?.box(id))
+        .map(target => ({ ...target, name: applySuffix(target.name, suffix) }));
       const rotations = new Map(targets.map(target => [target.id, canvas.current?.rotation(target.id) ?? 0]));
       const files = await exportFiles({ root, targets, rotations, format, scale });
       if (files.length === 1) await saveFile(files[0].blob, files[0].name);
       else {
         const entries = await Promise.all(files.map(async file => ({ name: file.name, bytes: new Uint8Array(await file.blob.arrayBuffer()) })));
-        await saveFile(new Blob([zipArchive(entries) as unknown as BlobPart], { type: 'application/zip' }), `${safeFileName(page.name, '页面')}-${format}.zip`);
+        await saveFile(new Blob([zipArchive(entries) as unknown as BlobPart], { type: 'application/zip' }), `${applySuffix(safeFileName(page.name, '页面'), suffix)}-${format}.zip`);
       }
       setExportOpen(false);
       model.setNotice(`已导出 ${files.length} 个 ${format.toUpperCase()} 文件。`);
@@ -558,7 +556,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       { label: '新建文档', action: () => run(() => model.create()) }, { label: '打开文档…', action: () => setShowDocuments(true) },
       { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => input.current?.click() },
       { label: '插入图片或 SVG…', action: chooseImages },
-      { label: '导出图片…', action: () => setExportOpen(true) },
+      { label: '导出图片…', disabled: !exportCount, action: () => setExportOpen(true) },
       { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
       { label: '撤销', shortcut: '⌘/Ctrl+Z', disabled: !current.past.length, action: model.undo },
       { label: '重做', shortcut: '⌘/Ctrl+Shift+Z', disabled: !current.future.length, action: model.redo },
@@ -598,7 +596,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     ]}><span className="text-xs">视图</span><ChevronDown size={12} /></Menu>
     <Menu label={`缩放 ${zoom}%`} items={[{ label: '放大', shortcut: '+', action: () => view('in') }, { label: '缩小', shortcut: '−', action: () => view('out') }, { label: '缩放到 100%', shortcut: 'Shift+0', action: () => view('actual') }, { label: '适应全部', shortcut: 'Shift+1', action: () => view('fit') }, { label: '适应选中', shortcut: 'Shift+2', disabled: !selectedIds.length, action: () => view('selection') }]}><span className="min-w-9 text-right font-mono text-[11px]">{zoom}%</span><ChevronDown size={12} /></Menu></div>
   </>;
-  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={ids => setSelection({ ...selection, pageId: page.id, ids })} onMove={moveLayers} renameRequest={renameRequest ?? undefined} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onReplaceImage={replaceImage} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
+  return <><EditorShell agentActive={leftTab === 'agent'} toolbar={toolbar} panel={panel} onClose={() => setPanel(null)} left={<div className="rea-left-content"><div className="rea-left-tabs"><Tabs value={leftTab} onChange={setLeftTab} tabs={[...(agent ? [{id:'agent',label:'AI'}] : []),{id:'layers',label:'图层'},{id:'assets',label:'资源'}]}/><IconButton label="关闭 AI 与图层" className="rea-mobile-only" onClick={() => setPanel(null)}><X size={14}/></IconButton></div>{agent && <div className="rea-agent-container" hidden={leftTab !== 'agent'}>{agent(agentContext)}</div>}<div className="rea-left-panel-body" hidden={leftTab === 'agent'}>{leftTab==='layers'?<LayersPanel pages={pages} page={page} selectedId={selectedIds.at(-1) ?? null} selectedIds={selectedIds} onSelect={ids => setSelection({ ...selection, pageId: page.id, ids })} onMove={moveLayers} renameRequest={renameRequest ?? undefined} onPageChange={changePage} actions={actions} onChange={(id, props) => properties(id, props)} onNodeMenu={openLayerMenu} onClose={() => setPanel(null)} />:<ComponentAssets session={current} model={model} onInsert={insertComponent} onEdit={editComponent} onCreate={createComponent}/>}</div></div>} right={<Panel className="h-full" aria-label="属性面板"><div className="flex"><div className="min-w-0 flex-1"><Tabs value={tab} onChange={setTab} tabs={[{ id: 'design', label: '设计' }, { id: 'inspect', label: '检查' }]} /></div><IconButton label="关闭属性面板" className="rea-mobile-only m-1" onClick={() => setPanel(null)}><X size={14} /></IconButton></div><div role="tabpanel" id={`rea-content-${tab}`} aria-labelledby={`rea-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">{tab === 'design' ? <><ComponentInspector session={current} pageId={page.id} nodes={selectedIds.map(id=>page.nodes.get(id)!)} editingComponent={editingComponent} onTransaction={propertyPanel.onTransaction} onCreate={createComponent} onEdit={editComponent} onDetach={separateInstance} onNotice={model.setNotice} onOpenSource={key=>run(()=>openComponentSource(key))}/>{(!editingComponent||selectedIds.length>0)&&<Inspector nodes={propertyNodes} page={page} measurements={propertyPanel.measurements} onTransaction={propertyPanel.onTransaction} onPreview={propertyPanel.onPreview} onEditVector={id=>canvas.current?.editVector(id)} onReplaceImage={replaceImage} onCreateBoard={() => create('board', { x: 0, y: 0, width: 960, height: 640 })} />}{exportCount>0&&<ExportPanel onExport={exportImages}/>}</> : <InspectPanel parsed={parsed} selectedId={selected?.id ?? null} />}</div></Panel>}>
     {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
     <Canvas page={canvasPage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} system={model.current?.system ?? null} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} onDropImages={(files, point, parentId) => run(() => insertImages(files, point, parentId))} showRulers={viewPrefs.showRulers} showGuides={viewPrefs.showGuides} guides={guides} onGuidesChange={setGuides} onGuideContextMenu={openGuideMenu} onRevealGuides={() => { if (!viewPrefs.showGuides) viewPrefs.setShowGuides(true); }} onRulerContextMenu={openRulerMenu} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}

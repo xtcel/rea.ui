@@ -880,6 +880,10 @@ impl AgentService {
             }
             match result {
                 Ok(text) => match provider::extract_json(&text) {
+                    Some(value) if !has_workspace => {
+                        job.result = Some(value);
+                        job.state = "completed".into();
+                    }
                     Some(value) => match write_api_files(&design_root, &value) {
                         Ok(summary) => {
                             if has_workspace {

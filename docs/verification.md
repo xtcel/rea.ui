@@ -662,3 +662,27 @@ schema 修好之后，用户再次生成时收到「生成的设计系统格式�
 3. **AI 对话框资源展示与详情页「源文件」视图**：
    - 左侧 AI 对话框：用户消息展示提交的参考文件/项目资源卡片（可展开查看内容）；AI 回复新增生成的 `DESIGN.md` 资源卡片（支持在对话内展开预览生成文档、一键复制或跳转到右侧「源文件」小节）。
    - 右侧详情页：新增「源文件」（`source`）目录项与小节，基于不抛错的 `renderDesignMarkdown()` 支持在草稿或已发布状态下随时查看、切换、复制与下载原始 `DESIGN.md` 与 `system.json`。
+
+## 图片导出改为「只导选中图层」并迁入右侧栏（2026-11-11）
+
+用户反馈原实现把「导出图片」理解成整页导出，且入口只在主菜单。本次按确认后的口径改造：
+
+**行为**
+
+- 导出范围只有当前选中的最外层图层（多选各自一份）；无选区时不再回退到整页画框。
+- 右侧栏「设计」标签底部新增固定导出区：格式（PNG / JPG / WEBP / SVG）、倍率（1x / 2x / 3x，SVG 时禁用）、文件名后缀、`导出选中的…`。导出区固定在属性面板下方，不随属性滚动；无选区时不渲染。
+- 主菜单「导出图片…」保留，无选区时置灰；对话框与右栏共用同一导出函数。
+- WEBP 走浏览器原生 `canvas.toBlob('image/webp')`，保留透明背景；编码器不支持时抛错而不是把 PNG 内容写成 `.webp`。后缀由 `applySuffix()` 清掉路径分隔符后拼在图层名与扩展名之间。
+
+**命令结果**
+
+- `pnpm typecheck`、`pnpm build`、`openspec validate add-svg-vector-import-and-image-export --strict`、`git diff --check` 通过。
+- `npx vitest run packages/editor/src/export/targets.test.ts packages/editor/src/inspector/ExportPanel.test.tsx`：7 项通过（只导选中、无选区报错、隐藏图层、同名、后缀、文件名清洗、导出区文案）。
+- 全量 `npx vitest run`：560 通过 / 1 失败 / 2 跳过。失败项为工作区既有的设计系统改动（`packages/editor/src/agent/designSystem.test.ts` 期望 5 个颜色、实际 19 个），与本次导出改动无关。
+- `node /tmp/rea-verify-export-panel.mjs`（CDP + headless Chrome，1440×900，浅色）：**20 项全部通过**。覆盖无选区时右栏无导出区且菜单置灰、选中 48×48 图标后导出区出现在属性面板之后并贴住右栏底部、默认 PNG / 1x / 空后缀、格式为 PNG / JPG / WEBP / SVG、1x PNG 实际 48×48（不是整页）且文件名带 `@2x`、WEBP 为合法 RIFF/WEBP、SVG 时倍率禁用而后缀保留、菜单对话框仍提供四种格式、隐藏选中图层后导出区消失且菜单再次置灰。
+- 截图 `/tmp/rea-export-panel-view.png`（浅色，右栏底部导出区）。
+
+**未覆盖 / 待补**
+
+- 未在桌面版（Tauri）复跑系统保存面板；浏览器下载路径已覆盖。
+- 未做右栏宽度的极限压缩测试（280px 默认宽度下三控件完整显示）；更窄的右栏需要拖宽验证。

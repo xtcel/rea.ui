@@ -155,12 +155,12 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
     if (/\.reaui$/i.test(file.name)) {
       const { document } = decodeReaui(new Uint8Array(await file.arrayBuffer()));
       context += `\n设计参考 ${file.name}（仅参考，不覆盖）：\n${Object.entries(document.files).filter(([path]) => path !== AGENT_SESSIONS_FILE).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n').slice(0, 90_000)}\n`;
-    } else if (/\.(md|txt|css|json|tsx|jsx|ts|js)$/i.test(file.name)) {
-      if (file.size > 100_000) throw new Error(`「${file.name}」超过文本参考限制 100KB。`);
-      context += `\n参考 ${file.name}:\n${(await file.text()).slice(0, 24_000)}\n`;
+    } else if (/\.(md|markdown|txt|css|scss|json|tsx|jsx|ts|js)$/i.test(file.name)) {
+      if (file.size > 150_000) throw new Error(`「${file.name}」超过文本参考限制 150KB。`);
+      context += `\n参考 ${file.name}:\n${(await file.text()).slice(0, 60_000)}\n`;
     } else throw new Error(`暂不支持「${file.name}」。请选择 .reaui 或文本、样式、组件文件。`);
   }
-  if (context.length > 110_000) throw new Error('参考文件内容过多，请减少附件。');
+  if (context.length > 140_000) throw new Error('参考文件内容过多，请减少附件。');
   return context;
 }
 
