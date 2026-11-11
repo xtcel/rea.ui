@@ -54,48 +54,127 @@ export function resolvedSystem(system: DesignSystem): DesignSystem & { tokens: D
 }
 
 export function withTokens(system: DesignSystem, tokens: DesignTokens): DesignSystem {
+  // A generated system can be missing roles; the convenience fields must stay strings.
+  const palette = (tokens.color ?? {}) as unknown as Record<string, unknown>;
+  const primary = typeof palette.primary === 'string' ? palette.primary : '';
   return {
-    ...system, tokens,
-    color: tokens.color.primary,
-    colors: [tokens.color.primary, tokens.color.background, tokens.color.text, tokens.color.muted, tokens.color.border],
+    ...system, tokens, color: primary,
+    colors: [palette.primary, palette.background, palette.text, palette.muted, palette.border].filter((color): color is string => typeof color === 'string'),
   };
 }
 
-export function parseGeneratedSystem(value: unknown, sourceProject = ''): DesignSystem {
-  if (!value || typeof value !== 'object') throw new Error('没有收到有效的设计系统。');
-  const s = value as DesignSystem;
-  if (typeof s.name !== 'string' || !s.name.trim() || s.name.length > 120 || typeof s.description !== 'string' || s.description.length > 2000 ||
-    !isTokens(s.tokens) || typeof s.guidelines !== 'string' || s.guidelines.length > 16000 ||
-    !Array.isArray(s.components) || !s.components.length || s.components.length > 24 ||
-    !s.components.every(c => typeof c.name === 'string' && c.name.length <= 120 && typeof c.description === 'string' && c.description.length <= 2000)) {
-    throw new Error('生成的设计系统格式不完整，请重试。');
+/** What the Agent returned, applied verbatim, plus the problems the user has to fix by hand. */
+export interface GeneratedSystemReview { system: DesignSystem; warnings: string[] }
+
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Missing token groups are opened up as empty containers so the editor can render blanks instead of
+ * crashing. No value is ever invented: a colour the model did not return stays empty and is reported.
+ */
+function tokenContainers(value: unknown): DesignSystem['tokens'] {
+  const tokens = record(value) ? { ...value } : {};
+  for (const group of ['color', 'space', 'radius'] as const) {
+    if (!record(tokens[group])) tokens[group] = {};
   }
-  return withTokens({ id: crypto.randomUUID(), name: s.name, description: s.description, components: s.components, guidelines: s.guidelines, published: false, sourceProject, color: '', colors: [] }, resolvedTokens(s));
+  const typography = record(tokens.typography) ? { ...tokens.typography } : {};
+  if (!record(typography.roles)) typography.roles = {};
+  tokens.typography = typography;
+  return tokens as unknown as DesignSystem['tokens'];
+}
+
+/** Problems in the returned tokens; the values themselves are never changed. */
+function tokenWarnings(tokens: unknown): string[] {
+  const issues: SystemIssue[] = [];
+  try {
+    if (validateTokens(upgradeTokens(tokens as SystemTokens), issues, 2) !== null) return [];
+  } catch {
+    return ['令牌结构无法识别，无法检查'];
+  }
+  return issues.map(issue => `${issue.message}（${issue.path}）`);
+}
+
+export function parseGeneratedSystem(value: unknown, sourceProject = ''): GeneratedSystemReview {
+  if (!value || typeof value !== 'object') throw new Error('没有收到有效的设计系统。');
+  const raw = value as DesignSystem;
+  const warnings: string[] = [];
+  const tokens = tokenContainers(foldRoleArrays(raw.tokens));
+  const name = typeof raw.name === 'string' ? raw.name : '';
+  const description = typeof raw.description === 'string' ? raw.description : '';
+  const guidelines = typeof raw.guidelines === 'string' ? raw.guidelines : '';
+  const components: DesignComponent[] = [];
+  if (Array.isArray(raw.components)) raw.components.slice(0, 24).forEach((entry, index) => {
+    if (!entry || typeof entry.name !== 'string' || typeof entry.description !== 'string') {
+      warnings.push(`第 ${index + 1} 条组件规范不完整，未写入`);
+      return;
+    }
+    components.push({ name: entry.name, description: entry.description });
+  });
+  if (!components.length) warnings.push('AI 没有返回组件规范');
+  if (!name.trim()) warnings.push('AI 没有返回系统名称');
+  if (!description.trim()) warnings.push('AI 没有返回系统描述');
+  if (!guidelines.trim()) warnings.push('AI 没有返回使用指南');
+  warnings.push(...tokenWarnings(tokens));
+  const palette = ((tokens as DesignTokens).color ?? {}) as unknown as Record<string, unknown>;
+  const colors = Object.values(palette).filter((color): color is string => typeof color === 'string');
+  const system: DesignSystem = {
+    id: crypto.randomUUID(), name, description, components, guidelines,
+    tokens, color: typeof palette.primary === 'string' ? palette.primary : colors[0] ?? '', colors,
+    published: false, sourceProject,
+  };
+  return { system, warnings };
 }
 
 const string = { type: 'string' };
-const typeToken = { type: 'object', additionalProperties: false, required: ['size', 'lineHeight', 'weight'], properties: { size: { type: 'number' }, lineHeight: { type: 'number' }, weight: { type: 'number' } } };
+const number = { type: 'number' };
+// Strict structured outputs reject open objects and optional properties, so role maps are
+// generated as arrays and folded back into the editor's records after parsing.
+const colorEntry = { type: 'object', additionalProperties: false, required: ['role', 'value'], properties: { role: string, value: string } };
+const typeRoleEntry = { type: 'object', additionalProperties: false, required: ['role', 'size', 'lineHeight', 'weight'], properties: { role: string, size: number, lineHeight: number, weight: number } };
 export const systemSchema = {
-  type: 'object', additionalProperties: false, required: ['name', 'description', 'tokens', 'components', 'guidelines'],
+  type: 'object', additionalProperties: false, required: ['summary', 'name', 'description', 'tokens', 'components', 'guidelines'],
   properties: {
-    // Optional: one sentence the chat surface can show as the turn's answer.
+    // One sentence the chat surface can show as the turn's answer; required because strict
+    // structured outputs cannot express an optional property.
     summary: string,
     name: string, description: string, guidelines: string,
     tokens: {
       type: 'object', additionalProperties: false, required: ['color', 'typography', 'space', 'radius'],
       properties: {
-        color: { type: 'object', additionalProperties: { type: 'string' }, required: ['primary', 'background', 'surface', 'text', 'muted', 'border'] },
+        color: { type: 'array', items: colorEntry },
         typography: {
           type: 'object', additionalProperties: false, required: ['family', 'roles'],
-          properties: { family: { type: 'string' }, roles: { type: 'object', additionalProperties: typeToken, required: ['body'] } },
+          properties: { family: string, roles: { type: 'array', items: typeRoleEntry } },
         },
-        space: { type: 'object', additionalProperties: false, required: ['unit', 'scale'], properties: { unit: { type: 'number' }, scale: { type: 'array', items: { type: 'number' } } } },
-        radius: { type: 'object', additionalProperties: false, required: ['sm', 'md', 'lg'], properties: { sm: { type: 'number' }, md: { type: 'number' }, lg: { type: 'number' }, xl: { type: 'number' } } },
+        space: { type: 'object', additionalProperties: false, required: ['unit', 'scale'], properties: { unit: number, scale: { type: 'array', items: number } } },
+        radius: { type: 'object', additionalProperties: false, required: ['sm', 'md', 'lg', 'xl'], properties: { sm: number, md: number, lg: number, xl: number } },
       },
     },
     components: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'description'], properties: { name: string, description: string } } },
   },
 };
+
+/** Generated role arrays become the records the editor and validator expect. */
+function foldRoleArrays(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const tokens = value as Record<string, unknown>;
+  const typography = tokens.typography as Record<string, unknown> | undefined;
+  if (!Array.isArray(tokens.color) && !Array.isArray(typography?.roles)) return value;
+  const next: Record<string, unknown> = { ...tokens };
+  if (Array.isArray(tokens.color)) {
+    next.color = Object.fromEntries(tokens.color.flatMap(entry => {
+      const item = entry as { role?: unknown; value?: unknown } | null;
+      return typeof item?.role === 'string' && typeof item.value === 'string' ? [[item.role, item.value]] : [];
+    }));
+  }
+  if (typography && Array.isArray(typography.roles)) {
+    next.typography = { ...typography, roles: Object.fromEntries((typography.roles as unknown[]).flatMap(entry => {
+      const item = entry as { role?: unknown; size?: unknown; lineHeight?: unknown; weight?: unknown } | null;
+      return typeof item?.role === 'string' ? [[item.role, { size: item.size, lineHeight: item.lineHeight, weight: item.weight }]] : [];
+    })) };
+  }
+  return next;
+}
 
 export interface AgentSystemRef { id: string; revision: number | null; hash: string; draft: boolean }
 /** What an Agent turn actually consumed: the package, its provenance and whether the document binds it. */

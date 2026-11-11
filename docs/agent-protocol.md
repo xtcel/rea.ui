@@ -167,6 +167,8 @@ $REAUI pack ./design --out ./design.reaui --force
 
 UI 的「导入 DESIGN.md / CSS」入口不直接调用 `importDesignMarkdown()`：选中的文件挂到输入框并预填提取指令，用户确认后才发送，由生成流程按 `systemSchema` 产出系统；散文型 DESIGN.md 因此在入口处不再报 `DS_MD_INVALID`。库函数仍服务 CLI、测试与精确往返。
 
+生成结果由 `parseGeneratedSystem()` 接收：只做形状转换（角色数组折回记录，缺失的令牌分组开成空容器），返回值 `{ system, warnings }`。**不补齐、不映射别名、不排序刻度、不重试**——`systemSchema` 只能约束结构，模型仍可能给出 `components: []`、`primary: 'blue'` 或乱序刻度，这些内容原样写进草稿，`warnings` 逐条说明缺什么、哪个字段不合法。理由是不能把中间修改藏进黑盒：用户要先看到模型到底返回了什么，再决定怎么改。真正的闸门在发布与「用于 UI 生成」：`validateTokens()` 有问题时两个按钮都禁用，提示语是「先修正标出的令牌问题」。设计系统页用同一份 `SystemIssue` 驱动三处提示——轮次内的清单、页面顶部计数条、左侧目录的受影响小节标记。
+
 校验：
 
 ```bash

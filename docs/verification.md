@@ -582,3 +582,69 @@ CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图�
 - 契约型 DESIGN.md 经 Agent 提取后不再保证 hash 与字节往返，模型可能改写数值；需要严格往返时使用 CLI 或库函数。
 - 未验证真实 Agent 生成完成的整套系统质量：复核只到「预填、确认发送、请求携带附件」；本次运行时该轮返回「已有生成任务正在运行，请等待完成或先取消。」，与本改动无关。
 - 不支持的文件类型与超过 100KB 的文本由 `attachmentContext()` 在发送时拒绝，入口不再提前校验，错误以失败轮次呈现，未单独截图。
+
+## 设计系统生成失败修复：严格 schema 与失败原因透传（2026-11-11）
+
+设计系统页发送请求后固定报「Codex 生成失败。请检查登录、模型与网络后重试。」，并附 `codex_models_manager::manager: failed to refresh available models: request timed out`。排查确认是两个叠加缺陷：`systemSchema` 违反严格结构化输出规则（`summary` 未列入 `required`，`tokens.color` / `typography.roles` 是开放映射），请求在生成前被 400 拒绝；本地 Agent 只用 stderr 组织错误，而真实原因写在 stdout 的 `turn.failed` 事件里。变更见 `openspec/changes/fix-design-system-generation-errors/`。
+
+**命令结果**
+
+- `cargo test -p rea-local-agent`：14 项通过（新增失败事件提取、噪音过滤、假 Codex 的 `noisy` 路径）。
+- `pnpm typecheck` 通过；`pnpm test`：65 个文件通过 / 2 跳过，551 项通过 / 2 跳过；`pnpm build` 通过。
+- `openspec validate fix-design-system-generation-errors --strict` 通过；`git diff --check` 干净。
+
+**真机复核**
+
+- 在独立端口 `5273` 启动开发服务（`crates/local-agent` 会由 Vite 插件重新 `cargo run`，避免复用 5173 上的旧桥接）。
+- 失败路径：向 `/__rea/agent` 提交一个 `required` 不覆盖全部属性的 schema，任务返回 `Codex 生成失败：生成格式约束与当前模型不兼容，请更新后重试。` 加模型原句 `Invalid schema for response_format 'codex_output_schema': ... Missing 'a'.`，错误里不含 `codex_models_manager`。
+- 成功路径：设计系统页输入「把主色改成 #7C3AED，其它令牌与组件保持不变。」，一轮真实 Codex 生成完成（`执行过程 · 3 项`），改动清单为 `primary #356AF0 → #7C3AED`、圆角档位、组件规范，右侧主色字段与配色预览同步更新；无错误条、无失败标签。截图 `/tmp/rea-ds-generation.png`。
+
+**实现要点**
+
+- `systemSchema`：`summary` 进入 `required`，`radius.xl` 必填，`tokens.color` 改为 `[{ role, value }]`，`typography.roles` 改为 `[{ role, size, lineHeight, weight }]`，所有对象 `additionalProperties: false`。
+- `parseGeneratedSystem()` 用 `foldRoleArrays()` 还原角色数组；对象形态原样通过，API 提供商与旧调用不受影响。
+- Rust 侧新增 `failure_reason()` / `readable_failure()` / `failure_hint()` / `stderr_is_noise()`；进程退出后先 `join` stdout、stderr 读线程再判定结果，避免最后一行 `turn.failed` 晚于错误组装。
+
+**未覆盖 / 待补**
+
+- 未在桌面版（Tauri）复跑：桌面端复用同一 `crates/local-agent`，但需重新编译产物后才生效。
+- 未覆盖非 schema 类真实失败（登录过期、限流）的真机表现，映射规则由单测守护。
+
+## 设计系统原样采用 AI 结果，在 UI 提示待修项（2026-11-11）
+
+schema 修好之后，用户再次生成时收到「生成的设计系统格式不完整，请重试。」。第一版实现把这句话换成「点名 + 自动重试一次 + 别名补位」，用户否决了这个方向：自动修补会让中间修改完全黑盒，用户既看不到模型返回了什么，也不知道自己该改哪一处。最终口径是**原样采用 + UI 警告 + 发布前闸门**。变更见 `openspec/changes/report-design-system-format-issues/`。
+
+**复现与定位**
+
+- 用 CDP 记录真实请求，把设计系统页的 prompt 与 `systemSchema` 导出后直接调用 `/__rea/agent`，连续两轮（按附件提取、局部改主色）返回的都是合规结果，解析通过——说明失败取决于模型某次的返回内容，而不是固定路径。
+- 解析入口 `packages/editor/src/agent/designSystem.ts` 的复合布尔判断是唯一来源：任一字段不合规都只抛同一句话，`validateTokens()` 已经产出的 `SystemIssue`（含 `path`）被丢弃。
+
+**实现要点**
+
+- `parseGeneratedSystem()` 返回 `{ system, warnings }`：只做形状转换（角色数组折回记录、缺失的令牌分组开成空容器），其余原样写入；不补默认值、不做别名映射、不排序刻度、不重试。
+- 警告分三层，都由同一份 `SystemIssue` 驱动：轮次内「已按 AI 返回写入，以下内容需要你修正」清单、页面顶部「AI 返回的内容有 N 处需要修正」计数条（按消息去重，避免同一句话因多个路径重复）、左侧目录按 `SystemIssue.path` 标出的受影响小节。
+- 草稿允许不完整：`isSystems()` 退到记录外壳校验，刷新后仍能加载；闸门只有两处——「发布版本」与「用于 UI 生成」在 `validateTokens()` 报错时 `disabled`，并在调用入口提前 `setError` 兜底。
+- 预览不越界：`specimenSize()`（10–32）与 `sampleSize()`（8–96）只限制绘制尺寸，输入框、字段与存储值仍是模型返回的原值。
+
+**验证**
+
+- `packages/editor/src/agent/designSystem.test.ts`：11 项通过，覆盖原样保留缺字段 / 非法取值、组件为空不套默认、对象形态兼容、跨 `tokenContainers` 的结构。
+- `packages/editor/src/agent/generation.test.ts`：6 项通过，`isSystems([invalid])` 为 `true`，非法令牌由 `validateTokens()` 拦截，`parseGeneratedSystem(...).warnings.length > 0`。
+- `pnpm typecheck` 通过；`pnpm test`：65 个文件通过 / 2 跳过，554 项通过 / 2 跳过；`pnpm build` 通过。
+- `openspec validate report-design-system-format-issues --strict` 通过；`git diff --check` 干净。
+
+**真机复核（CDP + headless Chrome，脚本 `/tmp/rea-verify-warnings.mjs`）**
+
+- 真机生成逼不出稳定的非法取值（模型会自行规范化，两轮都返回合规令牌），因此在 `localStorage['rea-home:systems']` 注入一条外壳合法、内容不合规的记录（`primary: 'blue'`、`space.scale: [64,8,4]`、`radius.md: -4`、`body.size: 200`、`components: []`），刷新后从首页卡片进入设计系统页。10 项断言全部通过：
+  - 记录在刷新后仍被列出并打开（`isSystems()` 放宽生效）。
+  - 顶部警告条给出 5 处与去重后的三类消息；左侧 `配色 / 排版 / 间距 / 圆角` 四个小节都带标记。
+  - 轮次内的清单显示注入的 `AI 没有返回组件规范` 与非法颜色条目（`loadTurns()` 保留 `warnings`）。
+  - 「发布版本」与「用于 UI 生成」均为 `disabled`。
+  - 主色字段显示 `BLUE`，`localStorage` 里仍是 `blue`，`radius.md` 仍是 `-4`、刻度仍是 `[64,8,4]`——没有被改写。
+  - 把主色改回 `#356AF0` 后，警告条当场从 5 处降到 4 处，说明闸门跟的是草稿而不是某一轮回复。
+- 截图 `/tmp/rea-ds-warning-gate.png`（配色区）、`/tmp/rea-ds-type-sample.png`（排版区）。
+
+**未覆盖 / 待补**
+
+- 未在桌面版（Tauri）复跑：需要重新构建产物后才带上前端改动。
+- 真机只覆盖了「不合规内容已被写入」的展示与闸门，没有覆盖模型在真实回复中直接返回空组件的一次完整轮次（三次尝试里模型都自行补齐了组件）。

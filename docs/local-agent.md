@@ -59,6 +59,10 @@
 
 流程参考 [Claude Design 设计系统官方说明](https://support.claude.com/en/articles/14604397-set-up-your-design-system-in-claude-design) 中的代码提取、基础样式/组件/布局审核、配置预览与启用。设计系统生成使用 `exec --json --sandbox read-only --output-schema`；设计文件编辑使用临时设计目录下的 `workspace-write` 模式，最终结构化回复仅包含修改摘要。
 
+`--output-schema` 会原样作为模型 API 的 `response_format`，按严格结构化输出校验，因此 schema 必须封闭：每个对象声明 `properties` 且 `additionalProperties: false`，`required` 覆盖全部属性，不能有可选属性，也不能用 `additionalProperties` 表达开放映射。开放的角色集合（`tokens.color`、`typography.roles`）因此以 `[{ role, ... }]` 数组下发，由 `parseGeneratedSystem()` 折回编辑器使用的记录；对象形态仍被接受，API 提供商通道不受影响。
+
+失败提示以子进程返回的原因为准：Codex 把真实原因写在 stdout 的 `error` / `turn.failed` 事件里，stderr 通常只有启动横幅和 `codex_models_manager` 的模型刷新警告。本地 Agent 在进程退出后先排空两条管道再判定结果，过滤上述噪音，并把已知原因（schema 不兼容、模型不被账号支持、登录失效、限流、超时）映射成可操作的中文提示。
+
 ## 文件交互与边界
 
 `.reaui` 继续由现有 storage 层解包/封包。Agent 只接收 `rea.json`、`pages/*.page.tsx` 与可选 `components/main.components.tsx`，规则通过提示词与工作区 `AGENTS.md` 注入；图片字节仍由宿主保存，`agent/sessions.json` 属于文档元数据，不进入工作区。工作区最多 12 页，单文件 500KB，快照合计 2MB；目录和文件不接受符号链接或越界路径。前端用 `DocumentSession` 验证 AST 后原子提交，保留项目身份、资源与历史。关联项目代码只作为已读取的上下文，不设为 Agent 的可写工作目录。

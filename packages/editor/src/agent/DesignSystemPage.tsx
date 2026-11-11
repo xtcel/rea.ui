@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ComponentType, ReactNode } from 'react';
-import { ArrowLeft, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, Component as ComponentIcon, FolderOpen, History, LayoutGrid, LoaderCircle, MoreHorizontal, Palette, Plus, RotateCcw, Ruler, Search, Settings2, Sparkles, Square, SquareRoundCorner, SquareTerminal, Timer, Trash2, Type as TypeIcon, Upload, X } from 'lucide-react';
-import { CANONICAL_COLOR_ROLES, CANONICAL_TYPE_ROLES, exportDesignMarkdown, legacySystemToPackage } from '@rea/design-system';
-import type { DesignSystemTokens, TypeToken } from '@rea/design-system';
+import { ArrowLeft, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, Component as ComponentIcon, FolderOpen, History, LayoutGrid, LoaderCircle, MoreHorizontal, Palette, Plus, RotateCcw, Ruler, Search, Settings2, Sparkles, Square, SquareRoundCorner, SquareTerminal, Timer, Trash2, TriangleAlert, Type as TypeIcon, Upload, X } from 'lucide-react';
+import { CANONICAL_COLOR_ROLES, CANONICAL_TYPE_ROLES, exportDesignMarkdown, legacySystemToPackage, validateTokens } from '@rea/design-system';
+import type { DesignSystemTokens, SystemIssue, TypeToken } from '@rea/design-system';
 import { publishSystem, systemVersions } from '@rea/storage';
 import type { LocalSystemVersion, StorageService } from '@rea/storage';
 import { agentRequest } from './client';
@@ -21,7 +21,7 @@ type Section = 'overview' | 'colors' | 'type' | 'spacing' | 'radius' | 'motion' 
 type TurnState = 'running' | 'completed' | 'failed' | 'cancelled';
 type RowKey = 'identity' | 'color' | 'type' | 'font' | 'space' | 'radius' | 'motion' | 'components' | 'guidelines';
 
-interface Turn { id: string; text: string; state: TurnState; reply: string; changed: string[]; events: string[]; notes: string[] }
+interface Turn { id: string; text: string; state: TurnState; reply: string; changed: string[]; events: string[]; notes: string[]; warnings: string[] }
 interface SystemChange { row: RowKey; label: string }
 
 const requiredColors = ['primary', 'background', 'surface', 'text', 'muted', 'border'];
@@ -63,6 +63,10 @@ const importPrompt = (name: string) => `按附件 ${name} 提取设计系统：�
 const shortHash = (hash: string) => hash.slice(0, 8);
 const stamp = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 const hex = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
+/** Preview-only: keeps the specimen readable, never written back to the tokens. */
+const specimenSize = (value: number) => Math.min(32, Math.max(10, Number.isFinite(value) ? value : 14));
+/** Preview-only: an out-of-range size is drawn at the edge of the ladder, the field keeps the value. */
+const sampleSize = (value: number) => Math.min(96, Math.max(8, Number.isFinite(value) ? value : 14));
 const firstUnused = (candidates: readonly string[], used: string[]) => candidates.find(role => !used.includes(role));
 const chatKey = (id: string) => `rea-home:system-chat:${id}`;
 
@@ -71,7 +75,7 @@ function loadTurns(id: string): Turn[] {
     const value: unknown = JSON.parse(localStorage.getItem(chatKey(id)) ?? 'null');
     if (!Array.isArray(value)) return [];
     return value.filter((turn): turn is Turn => !!turn && typeof turn === 'object' && typeof (turn as Turn).id === 'string' && typeof (turn as Turn).text === 'string')
-      .map(turn => ({ ...turn, state: turn.state === 'running' ? 'failed' : turn.state, events: Array.isArray(turn.events) ? turn.events : [], changed: Array.isArray(turn.changed) ? turn.changed : [], notes: Array.isArray(turn.notes) ? turn.notes : [] }));
+      .map(turn => ({ ...turn, state: turn.state === 'running' ? 'failed' : turn.state, events: Array.isArray(turn.events) ? turn.events : [], changed: Array.isArray(turn.changed) ? turn.changed : [], notes: Array.isArray(turn.notes) ? turn.notes : [], warnings: Array.isArray(turn.warnings) ? turn.warnings : [] }));
   } catch { return []; }
 }
 function saveTurns(id: string, turns: Turn[]) {
@@ -89,6 +93,7 @@ function systemPrompt(request: string, current: Draft, project: ProjectContext |
   return `你是设计系统专家。根据本轮需求，在「当前设计系统」的基础上创建或调整一套可复用的设计系统，并返回完整结果（不是补丁）。不修改任何文件，不使用工具，最终只返回 JSON。用中文写名称、描述、组件规范与指南。
 规则：
 - 颜色为六位十六进制；排版角色必须包含 body，字号 8-96，行高为 1-3 的倍数或 8-96 的 px，字重为 100-900 的整百数；间距基数为 1-64 的整数且刻度升序；圆角 0-96。
+- tokens.color 用 [{ role, value }] 数组，typography.roles 用 [{ role, size, lineHeight, weight }] 数组；role 用小写标识符。
 - 组件规范 1-24 项，至少涵盖按钮、输入框与卡片，每条说明布局、状态、可访问性与使用规则。
 - 用户只要求局部调整时，保留其它令牌、组件与指南不变，只改相关字段。
 - summary 用一句中文说明本轮改了什么，不超过 40 字。
@@ -221,6 +226,19 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   const importInput = useRef<HTMLInputElement>(null);
   const attachInput = useRef<HTMLInputElement>(null);
   const t = draft.tokens;
+  /** Applied as-is, so the same validator that guards publishing also drives the inline warnings. */
+  const issues = useMemo(() => {
+    const list: SystemIssue[] = [];
+    if (!blank) validateTokens(draft.tokens, list, 2);
+    return list;
+  }, [blank, draft.tokens]);
+  /** One line for the banner: the same sentence can come from several paths (a descending scale). */
+  const issueSummary = useMemo(() => [...new Set(issues.map(issue => issue.message.replace(/。$/, '')))].slice(0, 3).join('；'), [issues]);
+  const issueSections = useMemo(() => new Set<string>(issues.map(issue => issue.path.startsWith('tokens.color') ? 'colors'
+    : issue.path.startsWith('tokens.typography') ? 'type'
+      : issue.path.startsWith('tokens.space') ? 'spacing'
+        : issue.path.startsWith('tokens.radius') ? 'radius'
+          : issue.path.startsWith('tokens.motion') ? 'motion' : 'overview')), [issues]);
   const roles = Object.entries(t.typography.roles) as [string, TypeToken][];
   const bodyRole = t.typography.roles.body ?? { size: 14, lineHeight: 1.5, weight: 400 };
   const publishedRevision = typeof draft.revision === 'number' && draft.revision >= 1 && draft.hash ? draft.revision : null;
@@ -300,10 +318,10 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     catch (next) { setError(next instanceof Error ? next.message : String(next)); }
   }
   function remember(next: Turn[]) { setTurns(next); saveTurns(chatId.current, next); }
-  function finish(id: string, state: TurnState, reply: string, list: SystemChange[]) {
+  function finish(id: string, state: TurnState, reply: string, list: SystemChange[], warnings: string[] = []) {
     const events = liveEvents.current.slice(-10);
     setTurns(current => {
-      const next = current.map(turn => turn.id === id ? { ...turn, state, reply, changed: list.map(change => change.label), events } : turn);
+      const next = current.map(turn => turn.id === id ? { ...turn, state, reply, changed: list.map(change => change.label), events, warnings } : turn);
       saveTurns(chatId.current, next); return next;
     });
   }
@@ -399,7 +417,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     liveEvents.current = []; setLive([]); setError(''); setNotice('');
     const before = draft;
     const turn: Turn = {
-      id: crypto.randomUUID(), text: value, state: 'running', reply: '', changed: [], events: [],
+      id: crypto.randomUUID(), text: value, state: 'running', reply: '', changed: [], events: [], warnings: [],
       notes: [...files.map(file => file.name), ...(selectedProject ? [`项目：${selectedProject.name}`] : [])],
     };
     remember([...turns, turn]);
@@ -407,8 +425,11 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     try {
       const references = await attachmentContext(files);
       const context = selectedProject ? await agentRequest<ProjectContext>('project', { path: selectedProject.path }) : null;
-      const result = await task.generate(systemPrompt(value, before, context, references, [...turns, turn]), systemSchema, config, selectedProject?.path);
-      const generated = parseGeneratedSystem(result, selectedProject?.path);
+      const instruction = systemPrompt(value, before, context, references, [...turns, turn]);
+      const result = await task.generate(instruction, systemSchema, config, selectedProject?.path);
+      // Applied verbatim: whatever the model returned becomes the draft. Problems are reported in
+      // the chat and on the fields; nothing is repaired or inherited behind the user's back.
+      const { system: generated, warnings } = parseGeneratedSystem(result, selectedProject?.path);
       const tokens = generated.tokens ?? before.tokens;
       const next = resolvedSystem(withTokens({
         ...before, name: generated.name, description: generated.description, sourceProject: generated.sourceProject ?? before.sourceProject,
@@ -419,7 +440,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       const list = systemChanges(before, next);
       setDraft(next); persist(next); setBlank(false); setChanged(list);
       if (blank) { setActive('overview'); scroller.current?.scrollTo({ top: 0 }); }
-      finish(turn.id, 'completed', summaryOf(result) || (list.length ? `已更新 ${list.length} 项：${list.slice(0, 3).map(change => change.label).join('、')}。` : '已确认当前系统，没有需要调整的令牌。'), list);
+      finish(turn.id, 'completed', summaryOf(result) || (list.length ? `已更新 ${list.length} 项：${list.slice(0, 3).map(change => change.label).join('、')}。` : '已确认当前系统，没有需要调整的令牌。'), list, warnings);
     } catch (next) {
       const message = next instanceof Error ? next.message : String(next);
       finish(turn.id, cancelled.current ? 'cancelled' : 'failed', cancelled.current ? '已停止生成，保留当前系统。' : message, []);
@@ -431,6 +452,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   async function publish() {
     if (publishing || task.running) return;
     if (blank) { setError('先让 Agent 生成系统，或导入 DESIGN.md 后再发布。'); return; }
+    if (issues.length) { setError(`还有 ${issues.length} 处令牌需要修正，改完才能发布。`); return; }
     flushSave();
     setPublishing(true); setError(''); setNotice('');
     const target = targetRecord();
@@ -479,6 +501,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   function handleClose() { flushSave(); onClose(); }
   function applyToGeneration() {
     if (blank) { setError('先让 Agent 生成一套系统，再用于 UI 生成。'); return; }
+    if (issues.length) { setError(`还有 ${issues.length} 处令牌需要修正，改完才能用于 UI 生成。`); return; }
     flushSave();
     const target = targetRecord();
     if (target.created) {
@@ -495,7 +518,10 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     '--ds-primary': t.color.primary, '--ds-background': t.color.background, '--ds-surface': t.color.surface,
     '--ds-text': t.color.text, '--ds-muted': t.color.muted, '--ds-border': t.color.border,
     '--ds-radius': `${t.radius.md}px`, '--ds-space': `${t.space.unit}px`,
-    fontFamily: t.typography.family, fontSize: `${bodyRole.size}px`,
+    // The specimen is a fixed-size illustration, like the swatches that fall back to black for a
+    // non-hex value: the body size is drawn inside the panel so a wild number cannot push the page
+    // off-screen, while the label above and the 排版 fields keep showing what the model returned.
+    fontFamily: t.typography.family, fontSize: `${specimenSize(bodyRole.size)}px`,
   } as CSSProperties;
   const status = blank ? '等待生成'
     : isBuiltIn && !forked.current ? `内置 · v${publishedRevision ?? 1}`
@@ -517,12 +543,16 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       </div>
       <div className="sys-actions">
         <Menu label="更多设计系统操作" items={menuItems}><MoreHorizontal size={16} /></Menu>
-        <button type="button" className="home-secondary-button" disabled={publishing || task.running || blank} onClick={() => void publish()}><Upload size={14} />{publishing ? '发布中…' : '发布版本'}</button>
-        <button type="button" className="home-primary-button" disabled={blank || task.running} onClick={applyToGeneration}><Check size={14} />用于 UI 生成</button>
+        <button type="button" className="home-secondary-button" disabled={publishing || task.running || blank || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={() => void publish()}><Upload size={14} />{publishing ? '发布中…' : '发布版本'}</button>
+        <button type="button" className="home-primary-button" disabled={blank || task.running || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={applyToGeneration}><Check size={14} />用于 UI 生成</button>
       </div>
     </header>
     {error && <div className="sys-banner is-error" role="alert"><span>{error}</span><button type="button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={13} /></button></div>}
     {notice && <div className="sys-banner" role="status"><Check size={13} /><span>{notice}</span><button type="button" aria-label="关闭提示" onClick={() => setNotice('')}><X size={13} /></button></div>}
+    {!!issues.length && <div className="sys-banner is-warn" role="alert">
+      <TriangleAlert size={13} />
+      <span>AI 返回的内容有 {issues.length} 处需要修正：{issueSummary}。修正后才能发布或用于 UI 生成。</span>
+    </div>}
     <div className="sys-body">
       <aside className="sys-chat" aria-label="设计系统 AI 对话">
         <header className="sys-chat-head"><SquareTerminal size={15} /><strong>设计系统 Agent</strong>
@@ -559,6 +589,10 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
               {turn.state !== 'running' && !!turn.events.length && <details className="sys-events"><summary>执行过程 · {turn.events.length} 项<ChevronDown size={11} /></summary><ol>{turn.events.map((event, index) => <li key={index}>{event}</li>)}</ol></details>}
               {turn.reply && <p className={turn.state === 'failed' ? 'sys-error-text' : ''}>{turn.reply}</p>}
               {!!turn.changed.length && <ul className="sys-changed">{turn.changed.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+              {!!turn.warnings.length && <div className="sys-warn" role="status">
+                <strong><TriangleAlert size={11} />已按 AI 返回写入，以下内容需要你修正</strong>
+                <ul>{turn.warnings.map((text, index) => <li key={index}>{text}</li>)}</ul>
+              </div>}
               {(turn.state === 'failed' || turn.state === 'cancelled') && <button type="button" className="home-text-button" disabled={task.running} onClick={() => { setPrompt(turn.text); input.current?.focus(); }}><RotateCcw size={12} />修改需求后重试</button>}
             </div>
           </article>)}
@@ -603,7 +637,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
               const Icon = item.icon, count = blank ? 0 : q ? hits(item.id) : counts[item.id];
               return <button key={item.id} type="button" className="sys-nav-item" aria-current={active === item.id ? 'true' : undefined}
                 disabled={blank && item.id !== 'overview'} title={blank && item.id !== 'overview' ? '生成后可用' : undefined} onClick={() => goTo(item.id)}>
-                <Icon size={14} /><span>{item.label}</span>{count ? <small>{count}</small> : null}
+                <Icon size={14} /><span>{item.label}</span>{issueSections.has(item.id) ? <TriangleAlert size={11} className="sys-nav-warn" aria-label="需要修正" /> : null}{count ? <small>{count}</small> : null}
               </button>;
             })}
             {!shown.length && <p className="sys-nav-empty">没有匹配的令牌。</p>}
@@ -671,7 +705,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
                 <span className="sys-sec-label">阶梯</span>
                 <div className="sys-types">{roles.map(([role, value]) => <div className={`sys-type-row ${matched(role) ? 'is-match' : ''}`} key={role} data-search={role.toLowerCase()}>
                   <span className="sys-type-name"><code>{role}</code>{role !== 'body' && <button type="button" aria-label={`移除排版角色 ${role}`} title="移除" onClick={() => removeRole(role)}><X size={10} /></button>}</span>
-                  <span className="sys-type-sample" style={{ fontSize: `${value.size}px`, lineHeight: value.lineHeight <= 3 ? value.lineHeight : `${value.lineHeight}px`, fontWeight: value.weight, letterSpacing: value.letterSpacing === undefined ? undefined : `${value.letterSpacing}px` }}>排版阶梯 Aa</span>
+                  <span className="sys-type-sample" style={{ fontSize: `${sampleSize(value.size)}px`, lineHeight: value.lineHeight <= 3 ? value.lineHeight : `${Math.min(96, value.lineHeight)}px`, fontWeight: value.weight, letterSpacing: value.letterSpacing === undefined ? undefined : `${value.letterSpacing}px` }}>排版阶梯 Aa</span>
                   <span className="sys-nums">
                     <NumField label="字号" value={value.size} min={8} max={96} onCommit={next => setRole(role, { size: next })} />
                     <NumField label="行高" value={value.lineHeight} min={1} max={96} step={0.05} valid={next => next <= 3 || next >= 8} onCommit={next => setRole(role, { lineHeight: next })} />

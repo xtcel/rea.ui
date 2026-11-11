@@ -152,6 +152,8 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 `align-design-system-with-design-md` 在其上补了三件事。**令牌 v2**：`typography.roles` 取代固定三角色（`body` 必需），颜色新增任意语义角色与 `var(--rea-ds-color-*)` 别名，`radius` 增加 `xl/full`，新增 `motion.duration/easing`；变量按 `--rea-ds-type-<role>-*` 派生，`body/heading/caption` 保留 `--rea-ds-typography-*` 兼容别名。v1 与 v2 是并列 schema，`parseSystem()` 都接受，已固定 v1 快照的字节与 hash 不变；记录新增 `schemaVersion`，只有「有 revision/hash 且未声明 2」的旧记录才按 v1 形状重建，避免已发布系统被误降级为草稿。**绑定时机**：首页创建文档时先 `publishSystem()`（草稿）或 `ensureSystemVersion()`（已发布）拿到 `LocalSystemVersion`，再交给 `model.create(name, version)` 在首次保存前提交 `systemTransaction`，所以新文档不会经历「未固定但已被生成」的窗口；内置系统在应用启动时以只读 v1 注册进 `design-system-versions`，因而可以直接固定。**生成同源**：`DesignAgentPanel` 优先读 `DocumentSession.system`，提示词按 `bound` 分支——已固定才要求 `var(--rea-ds-*)`，未固定明确要求字面量；`AgentTurn.system` 记录同一份包，不再出现「画布按 v2 上色、提示词按 v5 生成、溯源记 v5」的错位。
 
+设计系统页的生成结果在写入草稿前经过 `parseGeneratedSystem()`：角色数组折回记录、缺失的令牌分组开成空容器，其余**原样写入**，并返回 `warnings` 说明模型缺了什么、哪个取值不合法。这里刻意不做修补——不补默认值、不做别名映射、不排序刻度、不自动重试：`systemSchema` 只能约束结构，内容缺口若在解析阶段被悄悄抹平，用户既看不到模型的真实返回，也无法判断该改哪一处。草稿允许不完整（`isSystems()` 只校验记录外壳），闸门放在发布与「用于 UI 生成」：`validateTokens()` 报出问题时两处入口都禁用并给出原因，修完即恢复。同一份 `SystemIssue` 驱动三处提示——轮次清单「已按 AI 返回写入，以下内容需要你修正」、页面顶部「N 处需要修正」、左侧目录按 `path` 标出的受影响小节。标本与排版样例这类**预览**会把越界字号画在阶梯边界（`specimenSize()` / `sampleSize()`），数值本身与输入框仍保持模型返回的原值。
+
 `@rea/design-system/designMd` 是 DESIGN.md 的双向通道：导出把完整契约写进 frontmatter（含指南与组件槽位），正文按八个小节生成供人阅读；导入只读 frontmatter，接受三位 hex、`Npx` 与 `tight/control/popup/dialog` 这类自有命名，按数值映射到契约并返回 warning。往返保持 hash 与字节稳定；正文不参与解析，避免自由排版带来的脆弱性。设计系统页的「导入 DESIGN.md / CSS」入口不直接调用这个解析器：选中的文件挂到输入框并预填提取指令，由用户确认后发送，所以散文型 DESIGN.md 不会在入口处被 `DS_MD_INVALID` 拒绝；`importDesignMarkdown()` 保留给 CLI、测试与精确往返。
 
 ## 外部 Agent 与 reaui CLI

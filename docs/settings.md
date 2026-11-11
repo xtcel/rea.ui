@@ -74,8 +74,8 @@
 
 ## 验证记录
 
-- `cargo test -p rea-local-agent`：13 项通过，含本机 SSE 模拟、401 错误映射、JSON 提取与路径过滤。
-- `npx vitest run`：424 项通过。
+- `cargo test -p rea-local-agent`：14 项通过，含本机 SSE 模拟、401 错误映射、JSON 提取、路径过滤与失败原因透传。
+- `npx vitest run`：551 项通过。
 - `npx tsc --noEmit`、`pnpm --filter @rea/web build` 通过。
 - 浏览器实测（1000×720 与 1200×800）：打开独立设置窗口、被拦截时回退整页、关闭后重开、展开各提供商表单、深色主题、通用与关于页、跨窗口修改模型后首页连接状态同步。
 - 用本地模拟 OpenAI 兼容接口跑通生成：画布出现模型返回的设计，会话显示「设计已完成」。

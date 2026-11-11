@@ -1,7 +1,6 @@
 export type Section = 'home' | 'projects' | 'systems' | 'templates';
 export type View = 'grid' | 'list';
 export type PreviewKind = 'starter' | 'website' | 'dashboard' | 'mobile';
-import { isTokens } from '../agent/designSystem';
 import type { DesignSystem } from '../agent/designSystem';
 import { legacySystemToPackage } from '@rea/design-system';
 export type { DesignSystem } from '../agent/designSystem';
@@ -36,9 +35,14 @@ export function isPreferences(value: unknown): value is Preferences {
   return typeof p.model === 'string' && (p.sendKey === 'enter' || p.sendKey === 'command') && typeof p.directory === 'string' &&
     (p.showRulers === undefined || typeof p.showRulers === 'boolean') && (p.showGuides === undefined || typeof p.showGuides === 'boolean');
 }
+/**
+ * A generated system is stored exactly as the model returned it, so tokens may be missing roles
+ * until the user fixes them in the editor; completeness is enforced at publish time instead of
+ * dropping the record on load.
+ */
 export function isSystems(value: unknown): value is DesignSystem[] {
-  return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) && Array.isArray(item.colors) && item.colors.length > 0 && item.colors.every((color: unknown) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) &&
-    (item.tokens === undefined || isTokens(item.tokens)) && (item.published === undefined || typeof item.published === 'boolean') &&
+  return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && typeof item.color === 'string' && Array.isArray(item.colors) && item.colors.every((color: unknown) => typeof color === 'string') &&
+    (item.tokens === undefined || !!item.tokens && typeof item.tokens === 'object') && (item.published === undefined || typeof item.published === 'boolean') &&
     (item.revision === undefined || (Number.isInteger(item.revision) && item.revision >= 1)) && (item.schemaVersion === undefined || item.schemaVersion === 1 || item.schemaVersion === 2) && (item.hash === undefined || /^[0-9a-f]{64}$/.test(item.hash)) &&
     (item.guidelines === undefined || typeof item.guidelines === 'string') && (item.components === undefined || Array.isArray(item.components) && item.components.every((c: { name?: unknown; description?: unknown }) => c && typeof c.name === 'string' && typeof c.description === 'string')));
 }

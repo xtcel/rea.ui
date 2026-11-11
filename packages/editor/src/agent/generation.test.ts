@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DocumentSession, AGENT_SESSIONS_FILE } from '@rea/document';
 import { createDefaultV2Document, decodeReaui, exportReaui } from '@rea/storage';
+import { validateTokens } from '@rea/design-system';
+import type { SystemIssue } from '@rea/design-system';
 import { builtInSystems, isSystems } from '../home/data';
 import { attachmentContext, designSources, generatedDocument, uiPrompt, workspacePrompt } from './generation';
 import { agentSystem, defaultTokens, parseGeneratedSystem, resolvedSystem, withTokens } from './designSystem';
@@ -69,9 +71,13 @@ describe('local agent generation contract', () => {
     // Editing a published system invalidates its stored hash, so the prompt must fall back to a draft.
     expect(context).toContain('草稿版本');
     expect(isSystems([system])).toBe(true);
-    expect(isSystems([{ ...system, tokens: { ...system.tokens!, radius: { ...system.tokens!.radius, md: -1 } } }])).toBe(false);
+    // A generated system is stored as returned; invalid values are reported by the editor, not dropped on load.
+    const invalid = { ...system, tokens: { ...system.tokens!, radius: { ...system.tokens!.radius, md: -1 } } };
+    expect(isSystems([invalid])).toBe(true);
+    const issues: SystemIssue[] = [];
+    expect(validateTokens(invalid.tokens, issues, 2)).toBeNull();
     expect(context).toContain('未固定设计系统');
     expect(uiPrompt('界面需求', agentSystem(builtInSystems[0], true), null)).toContain('只能引用 var(--rea-ds-*)');
-    expect(() => parseGeneratedSystem({ name: 'bad', tokens: { primary: 'red' } })).toThrow();
+    expect(parseGeneratedSystem({ name: 'bad', tokens: { primary: 'red' } }).warnings.length).toBeGreaterThan(0);
   });
 });

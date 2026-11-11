@@ -24,6 +24,8 @@ struct Job {
     events: Vec<String>,
     result: Option<Value>,
     error: Option<String>,
+    /// Last failure the child reported on stdout; the exit status alone rarely says why.
+    failure: Option<String>,
     preview: Option<Value>,
     preview_error: Option<String>,
 }
@@ -262,6 +264,78 @@ fn push_event(job: &Arc<Mutex<Job>>, message: String) {
     if job.events.len() > 20 {
         job.events.remove(0);
     }
+}
+
+/// Codex reports a failed turn on stdout as JSON; stderr usually only carries startup noise.
+fn failure_reason(event: &Value) -> Option<String> {
+    let message = match field(event, "type") {
+        "error" => field(event, "message"),
+        "turn.failed" => field(&event["error"], "message"),
+        _ => return None,
+    };
+    let reason = readable_failure(message);
+    (!reason.is_empty()).then_some(reason)
+}
+
+/// Error payloads often arrive as a JSON string; keep the sentence, drop the envelope.
+fn readable_failure(raw: &str) -> String {
+    let raw = raw.trim();
+    let text = if raw.starts_with('{') {
+        serde_json::from_str::<Value>(raw)
+            .ok()
+            .and_then(|value| {
+                value["error"]["message"]
+                    .as_str()
+                    .or_else(|| value["message"].as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| raw.to_string())
+    } else {
+        raw.to_string()
+    };
+    text.chars().take(600).collect()
+}
+
+/// A short, actionable sentence for the failures users actually hit.
+fn failure_hint(reason: &str) -> Option<&'static str> {
+    let text = reason.to_ascii_lowercase();
+    if text.contains("invalid_json_schema") || text.contains("invalid schema for response_format") {
+        Some("生成格式约束与当前模型不兼容，请更新后重试。")
+    } else if text.contains("not supported when using codex with a chatgpt account") {
+        Some("当前 Codex 账号不支持这个模型，请在设置里更换模型。")
+    } else if text.contains("401")
+        || text.contains("unauthorized")
+        || text.contains("not logged in")
+    {
+        Some("Codex 登录已失效，请重新运行 codex login。")
+    } else if text.contains("rate limit") || text.contains("429") || text.contains("usage limit") {
+        Some("请求过于频繁或额度用尽，请稍后重试。")
+    } else if text.contains("timed out") || text.contains("timeout") {
+        Some("请求超时，请检查网络后重试。")
+    } else {
+        None
+    }
+}
+
+fn failure_message(reason: Option<String>, details: &str) -> String {
+    match reason {
+        Some(reason) => match failure_hint(&reason) {
+            Some(hint) => format!("Codex 生成失败：{hint}\n{reason}"),
+            None => format!("Codex 生成失败：{reason}"),
+        },
+        None if details.trim().is_empty() => {
+            "Codex 生成失败。请检查登录、模型与网络后重试。".into()
+        }
+        None => format!(
+            "Codex 生成失败。请检查登录、模型与网络后重试。\n{}",
+            details.chars().take(2000).collect::<String>()
+        ),
+    }
+}
+
+/// The startup banner and a best-effort model refresh warning explain nothing about a failure.
+fn stderr_is_noise(line: &str) -> bool {
+    line.contains("codex_models_manager") || line.trim() == "Reading additional input from stdin..."
 }
 
 const COMPONENT_SOURCE: &str = "components/main.components.tsx";
@@ -599,12 +673,16 @@ impl AgentService {
                 }
             });
             let reader_job = job.clone();
-            std::thread::spawn(move || {
+            let stdout_reader = std::thread::spawn(move || {
                 for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                     if line.len() > MAX_RESULT as usize {
                         continue;
                     }
                     if let Ok(event) = serde_json::from_str::<Value>(&line) {
+                        // Keep the reason the child reported: the exit status alone is opaque.
+                        if let Some(reason) = failure_reason(&event) {
+                            reader_job.lock().unwrap().failure = Some(reason);
+                        }
                         if let Some(message) = public_progress(&event) {
                             push_event(&reader_job, message);
                         }
@@ -613,8 +691,11 @@ impl AgentService {
             });
             let errors = Arc::new(Mutex::new(String::new()));
             let error_buffer = errors.clone();
-            std::thread::spawn(move || {
+            let stderr_reader = std::thread::spawn(move || {
                 for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    if stderr_is_noise(&line) {
+                        continue;
+                    }
                     let mut buffer = error_buffer.lock().unwrap();
                     if buffer.len() < 6000 {
                         buffer.push_str(&line.chars().take(1000).collect::<String>());
@@ -628,6 +709,8 @@ impl AgentService {
             std::thread::spawn(move || {
                 let started = Instant::now();
                 loop {
+                    let mut exited = false;
+                    let mut status = None;
                     {
                         let mut job = watcher.lock().unwrap();
                         if has_workspace && job.state == "running" {
@@ -649,20 +732,35 @@ impl AgentService {
                                 let _ = child.kill();
                             }
                         }
-                        let status = job.child.as_mut().unwrap().try_wait();
-                        if let Ok(None) = status {
-                            drop(job);
-                            std::thread::sleep(Duration::from_millis(100));
-                            continue;
+                        match job.child.as_mut().unwrap().try_wait() {
+                            Ok(Some(value)) => {
+                                exited = true;
+                                status = Some(value);
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                job.state = "failed".into();
+                                job.error = Some(format!("无法读取 Codex 进程状态：{error}"));
+                                exited = true;
+                            }
                         }
-                        if job.state == "running" {
+                    }
+                    if !exited {
+                        std::thread::sleep(Duration::from_millis(100));
+                        continue;
+                    }
+                    // Both pipes close with the process. Drain them before judging the exit
+                    // status: a late `turn.failed` event is otherwise read after the message was
+                    // composed, which left only the startup noise on screen.
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    let mut job = watcher.lock().unwrap();
+                    if job.state == "running" {
+                        if let Some(status) = status {
                             let result = (|| -> Result<Value, String> {
-                                if !status.map_err(|e| e.to_string())?.unwrap().success() {
+                                if !status.success() {
                                     let details = errors.lock().unwrap().clone();
-                                    return Err(format!(
-                                        "Codex 生成失败。请检查登录、模型与网络后重试。\n{}",
-                                        details.chars().take(2000).collect::<String>()
-                                    ));
+                                    return Err(failure_message(job.failure.clone(), &details));
                                 }
                                 let file = std::fs::File::open(&output_file)
                                     .map_err(|_| "Codex 未返回生成结果。".to_string())?;
@@ -687,9 +785,10 @@ impl AgentService {
                                 }
                             }
                         }
-                        job.child.take();
                     }
-                    let _ = std::fs::remove_dir_all(work_dir);
+                    job.child.take();
+                    drop(job);
+                    let _ = std::fs::remove_dir_all(&work_dir);
                     break;
                 }
             });
@@ -1002,6 +1101,10 @@ prompt="$(cat)"
 case "$prompt" in
   slow) exec sleep 20 ;;
   failure) echo 'simulated network failure' >&2; exit 9 ;;
+  noisy) echo '{"type":"error","message":"{\"type\":\"error\",\"error\":{\"message\":\"The model is not supported when using Codex with a ChatGPT account.\"}}"}'
+         echo '{"type":"turn.failed","error":{"message":"The model is not supported when using Codex with a ChatGPT account."}}'
+         echo '2026-11-11T03:01:57.236552Z ERROR codex_models_manager::manager: failed to refresh available models: request timed out' >&2
+         exit 9 ;;
   invalid) echo 'invalid JSON' > "$output" ;;
   *) echo '{"name":"test result"}' > "$output" ;;
 esac
@@ -1041,6 +1144,17 @@ echo '{"type":"turn.started"}'
         assert_eq!(success["state"], "completed");
         assert_eq!(success["result"]["name"], "test result");
         assert_eq!(finish(&run("failure"))["state"], "failed");
+        let noisy = finish(&run("noisy"));
+        assert_eq!(noisy["state"], "failed");
+        let error = noisy["error"].as_str().unwrap();
+        assert!(
+            error.contains("当前 Codex 账号不支持这个模型"),
+            "the reason reported on stdout must reach the UI: {error}"
+        );
+        assert!(
+            !error.contains("codex_models_manager"),
+            "startup noise must not fill the error: {error}"
+        );
         assert_eq!(finish(&run("invalid"))["state"], "failed");
         let slow = run("slow");
         assert!(service
@@ -1054,6 +1168,41 @@ echo '{"type":"turn.started"}'
         assert!(cancel["result"].is_null());
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn turns_child_failure_events_into_actionable_errors() {
+        let event = json!({"type":"turn.failed","error":{"message":"{\"type\":\"error\",\"error\":{\"message\":\"Invalid schema for response_format 'codex_output_schema'.\"}}"}});
+        let reason = failure_reason(&event).unwrap();
+        assert_eq!(
+            reason,
+            "Invalid schema for response_format 'codex_output_schema'."
+        );
+        let message = failure_message(Some(reason.clone()), "");
+        assert!(
+            message.contains("生成格式约束与当前模型不兼容"),
+            "{message}"
+        );
+        assert!(message.contains(&reason), "{message}");
+        // A model metadata warning is not a failed turn and must not replace the real reason.
+        assert_eq!(
+            failure_reason(
+                &json!({"type":"item.completed","item":{"type":"error","message":"warning"}})
+            ),
+            None
+        );
+        assert_eq!(
+            failure_reason(&json!({"type":"error","message":"plain message"})).as_deref(),
+            Some("plain message")
+        );
+        // Startup noise is dropped; a message without any reason keeps the generic sentence.
+        assert!(stderr_is_noise("2026-11-11T03:01:57.236552Z ERROR codex_models_manager::manager: failed to refresh available models: request timed out"));
+        assert!(stderr_is_noise("Reading additional input from stdin..."));
+        assert!(!stderr_is_noise("Error: stream disconnected"));
+        assert_eq!(
+            failure_message(None, "  "),
+            "Codex 生成失败。请检查登录、模型与网络后重试。"
+        );
+    }
+
     #[test]
     fn writes_api_files_and_ignores_paths_outside_the_workspace() {
         let root = std::env::temp_dir().join(format!("rea-api-files-{}", std::process::id()));
