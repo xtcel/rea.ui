@@ -152,7 +152,7 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 `align-design-system-with-design-md` 在其上补了三件事。**令牌 v2**：`typography.roles` 取代固定三角色（`body` 必需），颜色新增任意语义角色与 `var(--rea-ds-color-*)` 别名，`radius` 增加 `xl/full`，新增 `motion.duration/easing`；变量按 `--rea-ds-type-<role>-*` 派生，`body/heading/caption` 保留 `--rea-ds-typography-*` 兼容别名。v1 与 v2 是并列 schema，`parseSystem()` 都接受，已固定 v1 快照的字节与 hash 不变；记录新增 `schemaVersion`，只有「有 revision/hash 且未声明 2」的旧记录才按 v1 形状重建，避免已发布系统被误降级为草稿。**绑定时机**：首页创建文档时先 `publishSystem()`（草稿）或 `ensureSystemVersion()`（已发布）拿到 `LocalSystemVersion`，再交给 `model.create(name, version)` 在首次保存前提交 `systemTransaction`，所以新文档不会经历「未固定但已被生成」的窗口；内置系统在应用启动时以只读 v1 注册进 `design-system-versions`，因而可以直接固定。**生成同源**：`DesignAgentPanel` 优先读 `DocumentSession.system`，提示词按 `bound` 分支——已固定才要求 `var(--rea-ds-*)`，未固定明确要求字面量；`AgentTurn.system` 记录同一份包，不再出现「画布按 v2 上色、提示词按 v5 生成、溯源记 v5」的错位。
 
-`@rea/design-system/designMd` 是 DESIGN.md 的双向通道：导出把完整契约写进 frontmatter（含指南与组件槽位），正文按八个小节生成供人阅读；导入只读 frontmatter，接受三位 hex、`Npx` 与 `tight/control/popup/dialog` 这类自有命名，按数值映射到契约并返回 warning。往返保持 hash 与字节稳定；正文不参与解析，避免自由排版带来的脆弱性。
+`@rea/design-system/designMd` 是 DESIGN.md 的双向通道：导出把完整契约写进 frontmatter（含指南与组件槽位），正文按八个小节生成供人阅读；导入只读 frontmatter，接受三位 hex、`Npx` 与 `tight/control/popup/dialog` 这类自有命名，按数值映射到契约并返回 warning。往返保持 hash 与字节稳定；正文不参与解析，避免自由排版带来的脆弱性。设计系统页的「导入 DESIGN.md / CSS」入口不直接调用这个解析器：选中的文件挂到输入框并预填提取指令，由用户确认后发送，所以散文型 DESIGN.md 不会在入口处被 `DS_MD_INVALID` 拒绝；`importDesignMarkdown()` 保留给 CLI、测试与精确往返。
 
 ## 外部 Agent 与 reaui CLI
 

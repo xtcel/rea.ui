@@ -165,6 +165,8 @@ $REAUI pack ./design --out ./design.reaui --force
 
 `exportDesignMarkdown()` 把包写成 DESIGN.md：frontmatter 是机器层（`colors` / `typography` / `rounded` / `spacing` / `shadow` / `motion` / `components` / `guidelines`），正文按 Overview、Colors、Typography、Layout、Elevation、Motion、Components、Guidance 生成，仅供人阅读。`importDesignMarkdown()` 只读 frontmatter，接受三位 hex、`Npx` 字符串与 `tight/control/popup/dialog`、`one/two/...` 这类自有命名，按数值映射到契约并返回 warning；正文不参与解析。往返（导出→导入→导出）保持 hash 与字节稳定。
 
+UI 的「导入 DESIGN.md / CSS」入口不直接调用 `importDesignMarkdown()`：选中的文件挂到输入框并预填提取指令，用户确认后才发送，由生成流程按 `systemSchema` 产出系统；散文型 DESIGN.md 因此在入口处不再报 `DS_MD_INVALID`。库函数仍服务 CLI、测试与精确往返。
+
 校验：
 
 ```bash

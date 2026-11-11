@@ -551,3 +551,34 @@ CDP 回归脚本 `scripts/verify-canvas-drag.mjs`（粘贴插入真实图片图�
 - v2 包的编辑约束依赖工作台表单；直接手改 `localStorage['rea-home:systems']` 写入非法令牌会在下次读取时被 `isSystems()` 丢弃（保存路径已加校验）。
 - DESIGN.md 正文不参与导入；手写文件的指南若只写在正文，导入后 `guidelines` 为空。
 - 动效只表达 duration / easing，不包含 keyframes 与 spring 参数。
+
+## 设计系统导入入口改为预填会话输入（2026-11-11）
+
+「导入 DESIGN.md / CSS」入口不再在文件选择阶段调用 `importDesignMarkdown()`，也不再自动发送：选中的文件挂到输入框的参考附件，同时预填一条提取指令，由用户确认或修改后自己发送。起因是散文型 DESIGN.md（如 Monday.com 风格规范）在入口处必然抛 `DS_MD_INVALID`，而同一文件从输入框「＋」加入却能正常工作。变更见 `openspec/changes/route-design-md-import-through-chat/`。
+
+**命令结果**
+
+- `pnpm typecheck`、`pnpm build`（wasm + web）通过；`openspec validate route-design-md-import-through-chat --strict` 通过。
+- `pnpm test`：65 个测试文件通过、2 个真实 Agent 冒烟按环境跳过；548 项通过、2 项跳过。`designMd.test.ts` 的往返与「无 frontmatter 报错」用例保持原样。
+- `node scripts/verify-design-system-import-entry.mjs`（需先 `pnpm dev`，默认 `http://127.0.0.1:5173`）：8 项全部通过。
+
+**CDP 复核覆盖**
+
+- 首页 → 设计系统 → 打开系统后，创建引导卡仍显示「导入 DESIGN.md / CSS」，文件输入存在。
+- 以 `DataTransfer` 构造一份无 frontmatter 的 Monday.com 风格 DESIGN.md 并触发入口：附件胶囊出现文件名，输入框预填「按附件 … 提取设计系统：优先沿用文件里的颜色、排版、圆角与组件规范。」，对话区没有新增轮次，`.sys-banner` 为空。
+- 截图确认预填文案两行完整可见、光标在末尾：`/tmp/rea-ds-import-prefill.png`。
+- 点击发送后才产生一轮，日志同时包含文件名与指令：`/tmp/rea-ds-import-entry.png`。
+- 生成进行中再次选择文件：出现「正在生成，稍后再导入。」，文件不被静默丢弃。
+
+**实现要点**
+
+- `handleImport()` 把文件追加到 `attachments`，输入框为空时 `setPrompt(importPrompt(file.name))`，随后聚焦并把光标放到末尾；发送仍走原有 `send(prompt)`。
+- 输入框已有文字时不覆盖，只追加附件。
+- 删除 `importMarkdown()` 与 `importDesignMarkdown` / `upgradeTokens` 的 UI 引用；库函数、CLI 能力与往返测试保留。
+- 引导卡 hint 改为「作为参考资料，由 Agent 提取成令牌」。
+
+**未覆盖 / 待补**
+
+- 契约型 DESIGN.md 经 Agent 提取后不再保证 hash 与字节往返，模型可能改写数值；需要严格往返时使用 CLI 或库函数。
+- 未验证真实 Agent 生成完成的整套系统质量：复核只到「预填、确认发送、请求携带附件」；本次运行时该轮返回「已有生成任务正在运行，请等待完成或先取消。」，与本改动无关。
+- 不支持的文件类型与超过 100KB 的文本由 `attachmentContext()` 在发送时拒绝，入口不再提前校验，错误以失败轮次呈现，未单独截图。

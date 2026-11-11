@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ComponentType, ReactNode } from 'react';
 import { ArrowLeft, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, Component as ComponentIcon, FolderOpen, History, LayoutGrid, LoaderCircle, MoreHorizontal, Palette, Plus, RotateCcw, Ruler, Search, Settings2, Sparkles, Square, SquareRoundCorner, SquareTerminal, Timer, Trash2, Type as TypeIcon, Upload, X } from 'lucide-react';
-import { CANONICAL_COLOR_ROLES, CANONICAL_TYPE_ROLES, exportDesignMarkdown, importDesignMarkdown, legacySystemToPackage, upgradeTokens } from '@rea/design-system';
+import { CANONICAL_COLOR_ROLES, CANONICAL_TYPE_ROLES, exportDesignMarkdown, legacySystemToPackage } from '@rea/design-system';
 import type { DesignSystemTokens, TypeToken } from '@rea/design-system';
 import { publishSystem, systemVersions } from '@rea/storage';
 import type { LocalSystemVersion, StorageService } from '@rea/storage';
@@ -43,7 +43,7 @@ const sections: { id: Section; label: string; icon: ComponentType<{ size?: numbe
 const entries = [
   { id: 'describe', icon: Sparkles, title: '用描述生成', hint: '一句话说清品牌与风格，Agent 给出完整系统' },
   { id: 'project', icon: FolderOpen, title: '从本地项目提取', hint: '读取现有令牌与组件样式，反推成系统' },
-  { id: 'import', icon: Upload, title: '导入 DESIGN.md / CSS', hint: '既有规范直接变成可编辑的令牌' },
+  { id: 'import', icon: Upload, title: '导入 DESIGN.md / CSS', hint: '作为参考资料，由 Agent 提取成令牌' },
 ] as const;
 const presets = [
   { label: 'SaaS 工具', prompt: '为一款面向团队协作的 SaaS 效率工具创建设计系统：冷静的蓝灰配色，克制的圆角，紧凑但清晰的信息密度。' },
@@ -58,6 +58,8 @@ const refinements = [
   { label: '补充组件规则', prompt: '为按钮、输入框、卡片补充状态与变体规则，说明何时使用哪一种。' },
 ];
 
+/** Pre-filled when a design reference is imported; the user can edit it before sending. */
+const importPrompt = (name: string) => `按附件 ${name} 提取设计系统：优先沿用文件里的颜色、排版、圆角与组件规范。`;
 const shortHash = (hash: string) => hash.slice(0, 8);
 const stamp = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 const hex = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
@@ -457,27 +459,22 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       setNotice('已导出 DESIGN.md。');
     } catch (next) { setError(next instanceof Error ? next.message : String(next)); }
   }
-  function importMarkdown(result: ReturnType<typeof importDesignMarkdown>) {
-    const spec = result.pkg;
-    const next = resolvedSystem(withTokens({
-      ...draft, name: spec.name, description: spec.description ?? '', tokens: upgradeTokens(spec.tokens),
-      components: spec.components as DesignComponent[], guidelines: spec.guidelines,
-      published: draft.published, revision: undefined, hash: undefined,
-    }, upgradeTokens(spec.tokens)));
-    setDraft(next); persist(next); setBlank(false); setChanged([{ row: 'identity', label: `已导入 ${spec.name}` }]);
-    setActive('overview'); scroller.current?.scrollTo({ top: 0 });
-    const notes = result.warnings.length ? `已导入 DESIGN.md，${result.warnings.length} 处已自动调整。` : '已导入 DESIGN.md。';
-    remember([...turns, { id: crypto.randomUUID(), text: '导入 DESIGN.md', state: 'completed', reply: notes, changed: [], events: [], notes: [] }]);
-    setNotice(notes);
-  }
-  async function handleImport(file: File) {
+  /**
+   * The header entry is the discoverable one, so it accepts every design reference as-is:
+   * the file joins the composer as an attachment and the extraction prompt is pre-filled,
+   * leaving the decision to edit and send to the user.
+   */
+  function handleImport(file: File) {
     setError(''); setNotice('');
-    if (/\.(md|markdown)$/i.test(file.name)) {
-      try { importMarkdown(importDesignMarkdown(await file.text(), { id: draft.id })); }
-      catch (next) { setError(next instanceof Error ? next.message : String(next)); }
-      return;
-    }
-    void send(`从附件 ${file.name} 提取设计系统：语义配色、排版阶梯、间距与圆角、组件规范与使用指南。`, { attachments: [file] });
+    if (task.running || sending.current) { setError('正在生成，稍后再导入。'); return; }
+    setAttachments(items => [...items.slice(0, 5), file]);
+    setPrompt(current => current.trim() ? current : importPrompt(file.name));
+    requestAnimationFrame(() => {
+      const field = input.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
   }
   function handleClose() { flushSave(); onClose(); }
   function applyToGeneration() {
@@ -723,7 +720,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         </div>
       </main>
     </div>
-    <input ref={importInput} type="file" hidden accept=".md,.markdown,.css,.scss,.json,.txt,.ts,.tsx,.js,.jsx" aria-label="导入设计系统素材" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void handleImport(file); }} />
+    <input ref={importInput} type="file" hidden accept=".md,.markdown,.css,.scss,.json,.txt,.ts,.tsx,.js,.jsx" aria-label="导入设计系统素材" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) handleImport(file); }} />
     <input ref={attachInput} type="file" hidden accept=".md,.markdown,.css,.scss,.json,.txt,.ts,.tsx,.js,.jsx" aria-label="选择参考文件" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) setAttachments(items => [...items.slice(0, 5), file]); }} />
     {dialog === 'project' && <ProjectDialog project={project} initialPath={project?.path ?? ''} onSelect={next => {
       setDialog(null); onProject(next);
