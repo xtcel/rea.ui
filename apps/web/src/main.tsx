@@ -4,6 +4,7 @@ import { HomeApp, SettingsApp, installDesktopExample, isSettingsLocation } from 
 import appDesignUrl from '../../../ReaUI_App.reaui?url';
 import './theme.css';
 import './home.css';
+import './system.css';
 import './settings.css';
 import { initGeometry } from '@rea/geometry';
 

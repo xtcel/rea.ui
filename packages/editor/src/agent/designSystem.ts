@@ -78,6 +78,8 @@ const typeToken = { type: 'object', additionalProperties: false, required: ['siz
 export const systemSchema = {
   type: 'object', additionalProperties: false, required: ['name', 'description', 'tokens', 'components', 'guidelines'],
   properties: {
+    // Optional: one sentence the chat surface can show as the turn's answer.
+    summary: string,
     name: string, description: string, guidelines: string,
     tokens: {
       type: 'object', additionalProperties: false, required: ['color', 'typography', 'space', 'radius'],

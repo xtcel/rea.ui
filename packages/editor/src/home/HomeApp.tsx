@@ -15,7 +15,7 @@ import { openSettingsWindow } from '../settings/window';
 import { loadProviders, notifyProvidersChanged, resolveAgentConfig, subscribeProviders } from '../settings/providers';
 import { useTheme } from '../session/theme';
 import { ProjectDialog } from '../agent/ProjectDialog';
-import { SystemWorkbench } from '../agent/SystemWorkbench';
+import { DesignSystemPage } from '../agent/DesignSystemPage';
 import { agentRequest } from '../agent/client';
 import type { ProjectContext } from '../agent/client';
 import { defaultTokens, resolvedSystem, systemSnapshot, withTokens } from '../agent/designSystem';
@@ -87,6 +87,7 @@ export function HomeApp() {
   const [designRequest, setDesignRequest] = useState<{ documentId: string; request: DesignRequest } | null>(null);
   const [dialog, setDialog] = useState<'project' | 'directory' | 'references' | null>(null);
   const [activeSystem, setActiveSystem] = useState<DesignSystem | null>(null);
+  const [newSystem, setNewSystem] = useState(false);
   const [newName, setNewName] = useState('');
   const composer = useRef<HTMLTextAreaElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -188,7 +189,9 @@ export function HomeApp() {
   function showCreate(kind: 'project' | 'system') {
     if (kind === 'system') {
       navigate('systems');
-      setActiveSystem(withTokens({ id: crypto.randomUUID(), name: '新设计系统', description: '', color: defaultTokens.color.primary, colors: [], published: false }, defaultTokens));
+      // A new system starts empty on purpose: the page opens as an AI conversation, not a form.
+      setNewSystem(true);
+      setActiveSystem(withTokens({ id: crypto.randomUUID(), name: '', description: '', color: defaultTokens.color.primary, colors: [], published: false }, defaultTokens));
     } else { setNewName(''); setDialog('project'); }
   }
   function createProject(event: FormEvent) {
@@ -236,6 +239,26 @@ export function HomeApp() {
   function useTemplate(value: string) { navigate('home'); setPrompt(value); requestAnimationFrame(() => composer.current?.focus()); }
 
   async function openComponentAssets(){if(!model.current)return;await model.storage.setMeta('editor-open-assets',{documentId:model.current.manifest.id});setInEditor(true);}
+  if (activeSystem) return <DesignSystemPage
+    system={activeSystem}
+    isNew={newSystem}
+    isBuiltIn={builtInSystems.some(item => item.id === activeSystem.id)}
+    storage={model.storage}
+    config={agentConfig}
+    project={project}
+    onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }}
+    onSave={saveSystem}
+    onUse={system => { saveSystem(system); setSelectedSystem(system.id); setNewSystem(false); setActiveSystem(null); navigate('home'); }}
+    onClose={() => { setNewSystem(false); setActiveSystem(null); }}
+    onOpenComponents={() => { setNewSystem(false); setActiveSystem(null); void openComponentAssets(); }}
+    onDelete={customSystems.some(item => item.id === activeSystem.id) ? () => {
+      const next = customSystems.filter(item => item.id !== activeSystem.id);
+      if (!writeStored('systems', next)) { setError('无法保存删除操作，请重试。'); return; }
+      setCustomSystems(next);
+      if (selectedSystem === activeSystem.id) setSelectedSystem('rea');
+      setNewSystem(false); setActiveSystem(null);
+    } : undefined}
+  />;
   if (inEditor) return <EditorWorkspace model={model} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} systems={usableSystems} system={currentSystem} onSystem={setSelectedSystem} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
 
   const filteredDocuments = documents.filter(doc => doc.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : b.updatedAt.localeCompare(a.updatedAt));
@@ -269,7 +292,7 @@ export function HomeApp() {
     <div className="home-main"><header className="home-topbar"><span className="home-mobile-menu"><IconControl label="打开导航" onClick={() => setMobileMenu(true)}><Menu size={20} /></IconControl></span><span className="home-breadcrumb">工作空间<ChevronRight size={13} /><strong>{activeNav.label}</strong></span><span className="home-local-indicator"><i />本地工作空间</span><IconControl label={theme.resolved === 'dark' ? '切换到浅色模式' : '切换到深色模式'} onClick={event => theme.toggle(event.currentTarget)}>{theme.resolved === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</IconControl></header>
       <main ref={content} id="home-content" className="home-content" tabIndex={-1}>
         {error && <div className="home-error" role="alert"><span>{error}</span><IconControl label="关闭错误提示" onClick={() => setError('')}><X size={16} /></IconControl></div>}
-        {section === 'systems' && activeSystem ? <SystemWorkbench onOpenComponents={()=>void openComponentAssets()} key={activeSystem.id} system={activeSystem} storage={model.storage} config={agentConfig} project={project} onProject={() => setDialog('directory')} isBuiltIn={builtInSystems.some(s => s.id === activeSystem.id)} onClose={() => setActiveSystem(null)} onSave={saveSystem} onUse={system => { saveSystem(system); setSelectedSystem(system.id); setActiveSystem(null); navigate('home'); }} onDelete={customSystems.some(s => s.id === activeSystem.id) ? () => { const next = customSystems.filter(s => s.id !== activeSystem.id); if (!writeStored('systems', next)) { setError('无法保存删除操作，请重试。'); return; } setCustomSystems(next); if (selectedSystem === activeSystem.id) setSelectedSystem('rea'); setActiveSystem(null); } : undefined} /> : section === 'home' ? <div className="home-overview">
+        {section === 'home' ? <div className="home-overview">
           <section className="home-idea" aria-labelledby="home-idea-title">
             <div className="home-idea-heading"><span className="home-idea-mark" aria-hidden="true"><Shapes size={25} strokeWidth={1.5} /></span><h1 id="home-idea-title">从一个想法，开始设计。</h1><p>说说你想创造什么，其余的我们一起完成。</p></div>
             {composerUI}
@@ -282,7 +305,7 @@ export function HomeApp() {
           <div className="home-library-toolbar">{section==='systems'&&<button type="button" className="home-secondary-button" onClick={()=>void openComponentAssets()}>本地组件资源</button>}<label className="home-search"><Search size={16} /><input aria-label={`搜索${activeNav.label}`} placeholder={section === 'projects' ? '搜索项目…' : section === 'systems' ? '搜索设计系统…' : '搜索模板…'} value={search} onChange={event => setSearch(event.currentTarget.value)} />{search && <button type="button" aria-label="清空搜索" onClick={() => setSearch('')}><X size={14} /></button>}</label><div className="home-toolbar-right">{section !== 'templates' && <><SelectControl label="排序方式" value={sort} onChange={setSort} icon={<SlidersHorizontal size={13} />}><option value="recent">{section === 'projects' ? '最近更新' : '默认排序'}</option><option value="name">名称排序</option></SelectControl><span className="home-control-divider" /><div className="home-view-switch" role="group" aria-label="显示方式"><IconControl label="网格视图" pressed={views[section] === 'grid'} onClick={() => changeView('grid')}><LayoutGrid size={16} /></IconControl><IconControl label="列表视图" pressed={views[section] === 'list'} onClick={() => changeView('list')}><List size={17} /></IconControl></div></>}</div></div>
           <div className="home-library-count">{section === 'projects' ? `${filteredDocuments.length} 个项目` : section === 'systems' ? `${filteredSystems.length} 个设计系统` : '示例模板 · 点击填入设计需求'}</div>
           {section === 'projects' ? loading ? <div className="home-loading" role="status"><LoaderCircle size={18} />正在读取本地项目…</div> : filteredDocuments.length ? projectCollection(filteredDocuments) : <EmptyState search={search} label="项目" onClear={() => setSearch('')} onCreate={() => showCreate('project')} />
-            : section === 'systems' ? filteredSystems.length ? <div className={`home-collection is-${views.systems}`} aria-label="设计系统列表">{filteredSystems.map(system => <button type="button" key={system.id} className="home-project-card home-system-card" onClick={() => setActiveSystem(system)}><SystemPreview system={system} /><div className="home-card-info"><span className="home-card-title">{system.name}{currentSystem.id === system.id && <span className="home-current-badge">当前使用</span>}</span><span className="home-card-description">{resolvedSystem(system).published ? system.description : `草稿 · ${system.description || '等待配置'}`}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}</div> : <EmptyState search={search} label="设计系统" onClear={() => setSearch('')} onCreate={() => showCreate('system')} />
+            : section === 'systems' ? filteredSystems.length ? <div className={`home-collection is-${views.systems}`} aria-label="设计系统列表">{filteredSystems.map(system => <button type="button" key={system.id} className="home-project-card home-system-card" onClick={() => { setNewSystem(false); setActiveSystem(system); }}><SystemPreview system={system} /><div className="home-card-info"><span className="home-card-title">{system.name}{currentSystem.id === system.id && <span className="home-current-badge">当前使用</span>}</span><span className="home-card-description">{resolvedSystem(system).published ? system.description : `草稿 · ${system.description || '等待配置'}`}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}</div> : <EmptyState search={search} label="设计系统" onClear={() => setSearch('')} onCreate={() => showCreate('system')} />
               : <div className="home-collection is-grid">{templates.filter(template => template.name.includes(search) || template.description.includes(search)).map(template => <button type="button" key={template.id} className="home-project-card" onClick={() => useTemplate(template.prompt)}><ProjectPreview kind={template.id} /><div className="home-card-info"><span className="home-card-title">{template.name}<span className="home-example-badge">示例</span></span><span className="home-card-description">{template.description}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}{!templates.some(template => template.name.includes(search) || template.description.includes(search)) && <EmptyState search={search} label="模板" onClear={() => setSearch('')} />}</div>}
         </section>}
       </main>
