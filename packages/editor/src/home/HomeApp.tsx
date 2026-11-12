@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';import type { FormEvent, MouseEventHandler, ReactNode } from 'react';
 import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, ChevronsUpDown, Clock3, FileText, Folder, House, LayoutGrid, LayoutTemplate, List, LoaderCircle, Menu, Moon, Plus, Search, Settings2, Shapes, SlidersHorizontal, Sun, X } from 'lucide-react';
-import type { DocumentSummary, LocalSystemVersion } from '@rea/storage';
-import { ensureSystemVersion, publishSystem } from '@rea/storage';
+import { serializeSystem, systemToDraft } from '@rea/design-system';
+import { SYSTEM_AGENT_SESSIONS_FILE } from '@rea/document';
+import type { DocumentSummary } from '@rea/storage';
+import { deleteSystemDraft, ensureSystemVersion, loadSystemDrafts, projectSystemTransaction, saveSystemDraft } from '@rea/storage';
 import { EditorWorkspace } from '../EditorApp';
 import { useDocument } from '../session/useDocument';
 import { Dialog } from '../ui';
@@ -15,7 +17,7 @@ import { openSettingsWindow } from '../settings/window';
 import { loadProviders, notifyProvidersChanged, resolveAgentConfig, subscribeProviders } from '../settings/providers';
 import { useTheme } from '../session/theme';
 import { ProjectDialog } from '../agent/ProjectDialog';
-import { DesignSystemPage } from '../agent/DesignSystemPage';
+import { DesignSystemPage, parseSystemTurns, serializeSystemTurns } from '../agent/DesignSystemPage';
 import { agentRequest } from '../agent/client';
 import type { ProjectContext } from '../agent/client';
 import { defaultTokens, resolvedSystem, systemSnapshot, withTokens } from '../agent/designSystem';
@@ -66,7 +68,8 @@ export function HomeApp() {
   const [sort, setSort] = useState('recent');
   const [views, setViews] = useState<Record<'projects' | 'systems', View>>(() => readStored('views', { projects: 'grid', systems: 'grid' }, (v): v is Record<'projects' | 'systems', View> => !!v && typeof v === 'object' && 'projects' in v && 'systems' in v && ['grid', 'list'].includes(String(v.projects)) && ['grid', 'list'].includes(String(v.systems))));
   const [preferences, setPreferences] = useState(() => readStored('preferences', defaultPreferences, isPreferences));
-  const [customSystems, setCustomSystems] = useState<DesignSystem[]>(() => readStored('systems', [], isSystems));
+  const [customSystems, setCustomSystems] = useState<DesignSystem[]>([]);
+  const [systemsReady, setSystemsReady] = useState(false);
   const [selectedSystem, setSelectedSystem] = useState(() => readStored('selected-system', 'rea', (v): v is string => typeof v === 'string'));
   const [agentConfig, setAgentConfig] = useState(() => resolveAgentConfig(loadProviders()));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -87,6 +90,8 @@ export function HomeApp() {
   const [designRequest, setDesignRequest] = useState<{ documentId: string; request: DesignRequest } | null>(null);
   const [dialog, setDialog] = useState<'project' | 'directory' | 'references' | null>(null);
   const [activeSystem, setActiveSystem] = useState<DesignSystem | null>(null);
+  const [systemScope, setSystemScope] = useState<'library' | 'project'>('library');
+  const editingDocumentId = useRef('');
   const [newSystem, setNewSystem] = useState(false);
   const [newName, setNewName] = useState('');
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -97,6 +102,15 @@ export function HomeApp() {
   const currentSystem = systems.find(item => item.id === selectedSystem) ?? systems[0];
   const usableSystems = systems.filter(item => resolvedSystem(item).published);
   const activeNav = navigation.find(item => item.id === section)!;
+  useEffect(() => {
+    let active = true;
+    let legacy: Storage | undefined;
+    try { legacy = window.localStorage; } catch { /* IndexedDB remains usable when localStorage is unavailable. */ }
+    void loadSystemDrafts(model.storage, legacy).then(items => {
+      if (active) { setCustomSystems(items); setSystemsReady(true); }
+    }).catch(error => { if (active) setError(`系统库读取失败：${String(error)}`); });
+    return () => { active = false; };
+  }, [model.storage]);
   const recentDocuments = [...documents].sort((a, b) => {
     const first = recentIds.indexOf(a.id), second = recentIds.indexOf(b.id);
     return (first < 0 ? Infinity : first) - (second < 0 ? Infinity : second) || b.updatedAt.localeCompare(a.updatedAt);
@@ -188,6 +202,7 @@ export function HomeApp() {
   function openProject(id: string) { setMobileMenu(false); void run(async () => { await model.open(id); setInEditor(true); }); }
   function showCreate(kind: 'project' | 'system') {
     if (kind === 'system') {
+      setSystemScope('library');
       navigate('systems');
       // A new system starts empty on purpose: the page opens as an AI conversation, not a form.
       setNewSystem(true);
@@ -197,29 +212,26 @@ export function HomeApp() {
   function createProject(event: FormEvent) {
     event.preventDefault(); if (!newName.trim()) return;
     void run(async () => {
-      let version: LocalSystemVersion | undefined;
-      try { version = await systemVersion(); } catch { version = undefined; }
-      await model.create(newName.trim(), version);
+      if (!systemsReady) throw new Error('设计系统库尚未就绪，请稍后重试。');
+      await model.create(newName.trim(), systemSnapshot(currentSystem).pkg);
       setDialog(null); setInEditor(true);
     });
   }
-  function saveSystem(system: DesignSystem) {
-    if (!isSystems([system])) throw new Error('设计系统令牌不合法，请检查颜色是否为六位十六进制、排版与圆角是否在允许范围内。');
-    const next = [...customSystems.filter(item => item.id !== system.id), system];
-    if (!writeStored('systems', next)) throw new Error('未能保存设计系统，请检查本地存储后重试。');
-    setCustomSystems(next); setActiveSystem(system);
-    if (!system.published && selectedSystem === system.id) setSelectedSystem('rea');
-  }
-  /** Choosing a system is the act that binds it: drafts are published first, published versions are registered as-is. */
-  async function systemVersion(): Promise<LocalSystemVersion> {
-    const snapshot = systemSnapshot(currentSystem);
-    if (snapshot.ref.draft) {
-      return publishSystem(model.storage, {
-        id: snapshot.pkg.id, name: snapshot.pkg.name, description: snapshot.pkg.description,
-        tokens: snapshot.pkg.tokens, components: snapshot.pkg.components, guidelines: snapshot.pkg.guidelines,
-      });
+  async function saveSystem(system: DesignSystem) {
+    if (systemScope === 'project') {
+      const session = model.latest();
+      if (!session || session.manifest.id !== editingDocumentId.current) throw new Error('项目已切换，请重新打开设计系统。');
+      const transaction = projectSystemTransaction(session, system);
+      // Validate before handing it to the model, which reports UI errors as a boolean.
+      session.commit(transaction);
+      if (!model.transact(transaction)) throw new Error('未能保存项目设计系统，请重试。');
+      return;
     }
-    return ensureSystemVersion(model.storage, snapshot.pkg, snapshot.ref.revision ?? 1);
+    if (!isSystems([system])) throw new Error('设计系统令牌不合法，请检查颜色是否为六位十六进制、排版与圆角是否在允许范围内。');
+    await saveSystemDraft(model.storage, system);
+    setCustomSystems(items => [...items.filter(item => item.id !== system.id), system]);
+    setActiveSystem(system);
+    if (!system.published && selectedSystem === system.id) setSelectedSystem('rea');
   }
   async function send() {
     if (!prompt.trim() || sending.current || busy) return;
@@ -227,9 +239,9 @@ export function HomeApp() {
     const text = prompt.trim();
     setError('');
     try {
-      const version = await systemVersion();
-      const document = await model.create(text.split('\n')[0].slice(0, 48), version);
-      setDesignRequest({ documentId: document.id, request: { id: crypto.randomUUID(), text, attachments, references: referenceProjects, system: currentSystem, project } });
+      if (!systemsReady) throw new Error('设计系统库尚未就绪，请稍后重试。');
+      const document = await model.create(text.split('\n')[0].slice(0, 48), systemSnapshot(currentSystem).pkg);
+      setDesignRequest({ documentId: document.id, request: { id: crypto.randomUUID(), text, attachments, references: referenceProjects, project } });
       setPrompt(''); setAttachments([]); setReferenceProjects([]); setInEditor(true);
     } catch (error) {
       const reply = error instanceof Error ? error.message : String(error);
@@ -239,27 +251,48 @@ export function HomeApp() {
   function useTemplate(value: string) { navigate('home'); setPrompt(value); requestAnimationFrame(() => composer.current?.focus()); }
 
   async function openComponentAssets(){if(!model.current)return;await model.storage.setMeta('editor-open-assets',{documentId:model.current.manifest.id});setInEditor(true);}
+  function editProjectSystem() {
+    const session = model.latest(); if (!session) return;
+    editingDocumentId.current = session.manifest.id;
+    setSystemScope('project'); setNewSystem(!session.system);
+    setActiveSystem(session.system ? systemToDraft(session.system) : withTokens({ id: crypto.randomUUID(), name: '', description: '', color: '', colors: [], published: false }, structuredClone(defaultTokens)));
+  }
   if (activeSystem) return <DesignSystemPage
     system={activeSystem}
     isNew={newSystem}
-    isBuiltIn={builtInSystems.some(item => item.id === activeSystem.id)}
+    isBuiltIn={systemScope === 'library' && builtInSystems.some(item => item.id === activeSystem.id)}
+    projectScope={systemScope === 'project' ? {
+      name: model.current!.manifest.name, snapshot: model.current!.system,
+      history: parseSystemTurns(model.current!.files[SYSTEM_AGENT_SESSIONS_FILE]),
+      onHistory: turns => {
+        if (model.latest()?.manifest.id !== editingDocumentId.current) throw new Error('项目已切换，已停止写入系统会话。');
+        if (!model.writeMetadata(SYSTEM_AGENT_SESSIONS_FILE, serializeSystemTurns(turns))) throw new Error('未能保存项目系统会话，请重试。');
+      },
+      onSaveToLibrary: async draft => {
+        const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本`, example: false, revision: undefined, hash: undefined, schemaVersion: 2 };
+        await saveSystemDraft(model.storage, copy);
+        setCustomSystems(items => [...items, copy]);
+      },
+    } : undefined}
     storage={model.storage}
     config={agentConfig}
     project={project}
     onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }}
     onSave={saveSystem}
-    onUse={system => { saveSystem(system); setSelectedSystem(system.id); setNewSystem(false); setActiveSystem(null); navigate('home'); }}
-    onClose={() => { setNewSystem(false); setActiveSystem(null); }}
-    onOpenComponents={() => { setNewSystem(false); setActiveSystem(null); void openComponentAssets(); }}
-    onDelete={customSystems.some(item => item.id === activeSystem.id) ? () => {
-      const next = customSystems.filter(item => item.id !== activeSystem.id);
-      if (!writeStored('systems', next)) { setError('无法保存删除操作，请重试。'); return; }
-      setCustomSystems(next);
+    onUse={async system => { await saveSystem(system); if (systemScope === 'library') { setSelectedSystem(system.id); navigate('home'); } setNewSystem(false); setActiveSystem(null); setSystemScope('library'); }}
+    onClose={() => { setNewSystem(false); setActiveSystem(null); setSystemScope('library'); }}
+    onOpenComponents={() => { setNewSystem(false); setActiveSystem(null); setSystemScope('library'); void openComponentAssets(); }}
+    onDelete={systemScope === 'library' && customSystems.some(item => item.id === activeSystem.id) ? async () => {
+      await deleteSystemDraft(model.storage, activeSystem.id);
+      setCustomSystems(items => items.filter(item => item.id !== activeSystem.id));
       if (selectedSystem === activeSystem.id) setSelectedSystem('rea');
       setNewSystem(false); setActiveSystem(null);
     } : undefined}
   />;
-  if (inEditor) return <EditorWorkspace model={model} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} systems={usableSystems} system={currentSystem} onSystem={setSelectedSystem} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
+  if (inEditor) return <EditorWorkspace model={model} onEditSystem={editProjectSystem} systemChoices={usableSystems} onHome={() => { setDesignRequest(null); setInEditor(false); navigate('home'); }} agent={canvas => <DesignAgentPanel model={model} canvas={canvas} initialRequest={designRequest && designRequest.documentId === model.current?.manifest.id ? designRequest.request : undefined} config={agentConfig} onEditSystem={editProjectSystem} systems={usableSystems} onSystem={id => {
+    try { const selected = systems.find(item => item.id === id); if (selected) model.transact({ label: '采用项目设计系统', ops: [{ type: 'system', source: serializeSystem(systemSnapshot(selected).pkg) }] }); }
+    catch (error) { model.setNotice(String(error)); }
+  }} project={project} onProject={next => { setProject(next); updatePreferences({ directory: next?.path ?? '' }); }} sendKey={preferences.sendKey} />} />;
 
   const filteredDocuments = documents.filter(doc => doc.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : b.updatedAt.localeCompare(a.updatedAt));
   const filteredSystems = systems.filter(system => `${system.name} ${system.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : 0);
@@ -305,7 +338,7 @@ export function HomeApp() {
           <div className="home-library-toolbar">{section==='systems'&&<button type="button" className="home-secondary-button" onClick={()=>void openComponentAssets()}>本地组件资源</button>}<label className="home-search"><Search size={16} /><input aria-label={`搜索${activeNav.label}`} placeholder={section === 'projects' ? '搜索项目…' : section === 'systems' ? '搜索设计系统…' : '搜索模板…'} value={search} onChange={event => setSearch(event.currentTarget.value)} />{search && <button type="button" aria-label="清空搜索" onClick={() => setSearch('')}><X size={14} /></button>}</label><div className="home-toolbar-right">{section !== 'templates' && <><SelectControl label="排序方式" value={sort} onChange={setSort} icon={<SlidersHorizontal size={13} />}><option value="recent">{section === 'projects' ? '最近更新' : '默认排序'}</option><option value="name">名称排序</option></SelectControl><span className="home-control-divider" /><div className="home-view-switch" role="group" aria-label="显示方式"><IconControl label="网格视图" pressed={views[section] === 'grid'} onClick={() => changeView('grid')}><LayoutGrid size={16} /></IconControl><IconControl label="列表视图" pressed={views[section] === 'list'} onClick={() => changeView('list')}><List size={17} /></IconControl></div></>}</div></div>
           <div className="home-library-count">{section === 'projects' ? `${filteredDocuments.length} 个项目` : section === 'systems' ? `${filteredSystems.length} 个设计系统` : '示例模板 · 点击填入设计需求'}</div>
           {section === 'projects' ? loading ? <div className="home-loading" role="status"><LoaderCircle size={18} />正在读取本地项目…</div> : filteredDocuments.length ? projectCollection(filteredDocuments) : <EmptyState search={search} label="项目" onClear={() => setSearch('')} onCreate={() => showCreate('project')} />
-            : section === 'systems' ? filteredSystems.length ? <div className={`home-collection is-${views.systems}`} aria-label="设计系统列表">{filteredSystems.map(system => <button type="button" key={system.id} className="home-project-card home-system-card" onClick={() => { setNewSystem(false); setActiveSystem(system); }}><SystemPreview system={system} /><div className="home-card-info"><span className="home-card-title">{system.name}{currentSystem.id === system.id && <span className="home-current-badge">当前使用</span>}</span><span className="home-card-description">{resolvedSystem(system).published ? system.description : `草稿 · ${system.description || '等待配置'}`}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}</div> : <EmptyState search={search} label="设计系统" onClear={() => setSearch('')} onCreate={() => showCreate('system')} />
+            : section === 'systems' ? filteredSystems.length ? <div className={`home-collection is-${views.systems}`} aria-label="设计系统列表">{filteredSystems.map(system => <button type="button" key={system.id} className="home-project-card home-system-card" onClick={() => { setNewSystem(false); setActiveSystem(system); }}><SystemPreview system={system} /><div className="home-card-info"><span className="home-card-title">{system.name}{currentSystem.id === system.id && <span className="home-current-badge">新建默认</span>}</span><span className="home-card-description">{resolvedSystem(system).published ? system.description : `草稿 · ${system.description || '等待配置'}`}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}</div> : <EmptyState search={search} label="设计系统" onClear={() => setSearch('')} onCreate={() => showCreate('system')} />
               : <div className="home-collection is-grid">{templates.filter(template => template.name.includes(search) || template.description.includes(search)).map(template => <button type="button" key={template.id} className="home-project-card" onClick={() => useTemplate(template.prompt)}><ProjectPreview kind={template.id} /><div className="home-card-info"><span className="home-card-title">{template.name}<span className="home-example-badge">示例</span></span><span className="home-card-description">{template.description}</span></div><ArrowUpRight className="home-card-arrow" size={16} /></button>)}{!templates.some(template => template.name.includes(search) || template.description.includes(search)) && <EmptyState search={search} label="模板" onClear={() => setSearch('')} />}</div>}
         </section>}
       </main>

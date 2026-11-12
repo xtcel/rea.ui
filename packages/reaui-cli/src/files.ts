@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { AGENT_SESSIONS_FILE, COMPONENT_FILE, EDITOR_GUIDES_FILE, SYSTEM_FILE } from '@rea/document';
+import { AGENT_SESSIONS_FILE, SYSTEM_AGENT_SESSIONS_FILE, COMPONENT_FILE, EDITOR_GUIDES_FILE, SYSTEM_FILE } from '@rea/document';
 import type { ReauiAsset } from '@rea/storage';
 import { CliError } from './errors';
 
@@ -13,7 +13,7 @@ export function isSafeRelative(file: string): boolean {
 }
 
 export function isDocumentTextFile(file: string): boolean {
-  return file === 'rea.json' || file === COMPONENT_FILE || file === AGENT_SESSIONS_FILE || file === EDITOR_GUIDES_FILE || file === SYSTEM_FILE || /^pages\/[^/]+\.page\.tsx$/.test(file);
+  return file === 'rea.json' || file === COMPONENT_FILE || file === AGENT_SESSIONS_FILE || file === SYSTEM_AGENT_SESSIONS_FILE || file === EDITOR_GUIDES_FILE || file === SYSTEM_FILE || /^pages\/[^/]+\.page\.tsx$/.test(file);
 }
 
 export async function readDocumentFiles(dir: string): Promise<Record<string, string>> {

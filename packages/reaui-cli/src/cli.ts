@@ -7,6 +7,7 @@ import { runPack } from './commands/pack';
 import { runPreview } from './commands/preview';
 import { runUnpack } from './commands/unpack';
 import { runValidate } from './commands/validate';
+import { runSystem } from './commands/system';
 
 export const VERSION = '0.1.3';
 
@@ -21,6 +22,7 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
   unpack     解包 .reaui 为文档目录
   diff       比较两个设计源
   preview    生成自包含 HTML 预览
+  system     get|set|remove 项目设计系统（set 使用 --system <JSON文件>）
   mcp        启动 MCP server（转发到 @xtcel/reaui-mcp）
 
 通用选项：
@@ -36,6 +38,8 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
   reaui pack ./demo --out demo.reaui
   reaui unpack demo.reaui --out ./restored
   reaui preview ./demo --out preview.html
+  reaui init ./brand --system ./brand.system.json
+  reaui system set ./demo --system ./brand.system.json
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -53,6 +57,7 @@ export async function main(argv: string[]): Promise<number> {
       case 'unpack': return await runUnpack(args);
       case 'diff': return await runDiff(args);
       case 'preview': return await runPreview(args);
+      case 'system': return await runSystem(args);
       default: throw new CliError('USAGE_COMMAND', `未知命令：${args.command}`, undefined, '运行 reaui help 查看可用命令。');
     }
   } catch (error) {

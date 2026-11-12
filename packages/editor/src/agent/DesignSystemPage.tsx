@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ComponentType, ReactNode } from 'react';
 import { ArrowLeft, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, Component as ComponentIcon, Copy, Download, FileCode, FolderOpen, History, LayoutGrid, LoaderCircle, MoreHorizontal, Palette, Plus, RotateCcw, Ruler, Search, Settings2, Sparkles, Square, SquareRoundCorner, SquareTerminal, Timer, Trash2, TriangleAlert, Type as TypeIcon, Upload, X } from 'lucide-react';
 import { CANONICAL_COLOR_ROLES, CANONICAL_TYPE_ROLES, legacySystemToPackage, renderDesignMarkdown, serializeSystem, validateTokens } from '@rea/design-system';
-import type { DesignSystemTokens, SystemIssue, TypeToken } from '@rea/design-system';
+import type { DesignSystemPackage, DesignSystemTokens, SystemIssue, TypeToken } from '@rea/design-system';
 import { publishSystem, systemVersions } from '@rea/storage';
 import type { LocalSystemVersion, StorageService } from '@rea/storage';
 import { agentRequest } from './client';
@@ -201,8 +201,25 @@ export interface DesignSystemPageProps {
   system: DesignSystem; isNew: boolean; isBuiltIn: boolean;
   storage: StorageService; config: AgentConfig;
   project: ProjectContext | null; onProject: (project: ProjectContext | null) => void;
-  onSave: (system: DesignSystem) => void; onUse: (system: DesignSystem) => void;
-  onClose: () => void; onDelete?: () => void; onOpenComponents?: () => void;
+  onSave: (system: DesignSystem) => void | Promise<void>; onUse: (system: DesignSystem) => void | Promise<void>;
+  onClose: () => void; onDelete?: () => void | Promise<void>; onOpenComponents?: () => void;
+  projectScope?: {
+    name: string; snapshot: DesignSystemPackage | null; history: Turn[];
+    onHistory: (turns: Turn[]) => void; onSaveToLibrary: (system: DesignSystem) => Promise<void>;
+  };
+}
+
+export function parseSystemTurns(source?: string): Turn[] {
+  try {
+    const value = JSON.parse(source ?? 'null') as { version?: number; turns?: Turn[] } | null;
+    return value?.version === 1 && Array.isArray(value.turns) ? value.turns.filter(turn => turn && typeof turn.id === 'string' && typeof turn.text === 'string').map(turn => ({ ...turn, state: turn.state === 'running' ? 'failed' : turn.state, events: turn.events ?? [], notes: turn.notes ?? [], warnings: turn.warnings ?? [], changed: turn.changed ?? [] })) : [];
+  } catch { return []; }
+}
+
+export function serializeSystemTurns(turns: Turn[]): string {
+  const retained = turns.slice(-24);
+  while (retained.length > 1 && JSON.stringify({ version: 1, turns: retained }).length > 512 * 1024) retained.shift();
+  return JSON.stringify({ version: 1, turns: retained });
 }
 
 /**
@@ -212,7 +229,7 @@ export interface DesignSystemPageProps {
  * in place for the cases where a precise value beats a sentence.
  */
 export function DesignSystemPage(props: DesignSystemPageProps) {
-  const { system, isNew, isBuiltIn, storage, config, project, onProject, onSave, onUse, onClose, onDelete, onOpenComponents } = props;
+  const { system, isNew, isBuiltIn, storage, config, project, onProject, onSave, onUse, onClose, onDelete, onOpenComponents, projectScope } = props;
   const [draft, setDraft] = useState<Draft>(() => resolvedSystem(system));
   const [active, setActive] = useState<Section>('overview');
   const [query, setQuery] = useState('');
@@ -221,7 +238,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   const [linkedProject, setLinkedProject] = useState<ProjectContext | null>(() => (
     !isNew && system.sourceProject && project?.path === system.sourceProject ? project : null
   ));
-  const [turns, setTurns] = useState<Turn[]>(() => loadTurns(system.id));
+  const [turns, setTurns] = useState<Turn[]>(() => projectScope?.history ?? loadTurns(system.id));
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [live, setLive] = useState<string[]>([]);
@@ -244,6 +261,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
   const turnsRef = useRef(turns); turnsRef.current = turns;
   const saveTimer = useRef<number | null>(null);
   const pending = useRef<Draft | null>(null);
+  const saveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const log = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const scroller = useRef<HTMLDivElement>(null);
@@ -280,6 +298,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     guidelines: draft.guidelines,
   }), [draft]);
   const currentJson = useMemo(() => {
+    if (projectScope?.snapshot) return serializeSystem(projectScope.snapshot);
     try { return serializeSystem(legacySystemToPackage({ ...draft, name: draft.name.trim() || '未命名设计系统' })); }
     catch {
       return JSON.stringify({
@@ -290,7 +309,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         guidelines: draft.guidelines,
       }, null, 2);
     }
-  }, [draft]);
+  }, [draft, projectScope?.snapshot]);
   const q = query.trim().toLowerCase();
   /** Every section answers to its own name plus the tokens it owns. */
   const haystack: Record<Section, string[]> = {
@@ -306,7 +325,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     source: ['源文件', 'DESIGN.md', 'system.json', currentMarkdown],
   };
   const hits = (id: Section) => q ? haystack[id].filter(item => item.toLowerCase().includes(q)).length : 0;
-  const shown = sections.filter(item => !q || hits(item.id) > 0);
+  const shown = sections.filter(item => (!projectScope || item.id !== 'versions') && (!q || hits(item.id) > 0));
   const isShown = (id: Section) => shown.some(item => item.id === id);
   const counts: Partial<Record<Section, number>> = { colors: colorKeys.length, type: roles.length, components: draft.components.length, versions: versions.length };
   /** `is-match` marks the rows a search actually found, so jumping lands on something visible. */
@@ -364,13 +383,13 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     try { setVersions((await systemVersions(storage)).filter(version => version.id === id).sort((left, right) => right.revision - left.revision)); }
     catch (next) { setError(next instanceof Error ? next.message : String(next)); }
   }
-  function remember(next: Turn[]) { setTurns(next); saveTurns(chatId.current, next); }
+  function persistHistory(next: Turn[]) {
+    if (projectScope) projectScope.onHistory(next); else saveTurns(chatId.current, next);
+  }
+  function remember(next: Turn[]) { turnsRef.current = next; setTurns(next); persistHistory(next); }
   function finish(id: string, state: TurnState, reply: string, list: SystemChange[], warnings: string[] = [], extra: Partial<Pick<Turn, 'resources' | 'markdown' | 'systemName'>> = {}) {
     const events = liveEvents.current.slice(-10);
-    setTurns(current => {
-      const next = current.map(turn => turn.id === id ? { ...turn, state, reply, changed: list.map(change => change.label), events, warnings, ...extra } : turn);
-      saveTurns(chatId.current, next); return next;
-    });
+    remember(turnsRef.current.map(turn => turn.id === id ? { ...turn, state, reply, changed: list.map(change => change.label), events, warnings, ...extra } : turn));
   }
   /** A built-in system is read-only, so its first edit forks a local copy instead of failing. */
   function targetRecord(): { id: string; created: boolean } {
@@ -384,7 +403,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     return { id, created: true };
   }
   /** Local edits never wait for a button: they are debounced into the library record. */
-  function persist(next: Draft) {
+  function persist(next: Draft): Promise<boolean> {
     const name = next.name.trim() || '未命名设计系统';
     const target = targetRecord();
     let record: DesignSystem = { ...next, name, id: target.id };
@@ -405,21 +424,25 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         setDraft(current => ({ ...current, revision: undefined, hash: undefined }));
       }
     }
-    try { onSave(record); setSaved(true); setError(''); }
-    catch (next) { setError(next instanceof Error ? next.message : String(next)); }
+    const write = saveQueue.current.then(async () => {
+      try { await onSave(record); setSaved(true); setError(''); return true; }
+      catch (next) { setError(next instanceof Error ? next.message : String(next)); return false; }
+    });
+    saveQueue.current = write;
+    return write;
   }
   function scheduleSave(next: Draft) {
     pending.current = next;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => { saveTimer.current = null; flushSave(); }, 700);
+    saveTimer.current = window.setTimeout(() => { saveTimer.current = null; void flushSave(); }, 700);
   }
-  function flushSave() {
+  async function flushSave(): Promise<boolean> {
     if (saveTimer.current !== null) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
     const next = pending.current;
     pending.current = null;
-    if (next) persist(next);
+    return next ? persist(next) : saveQueue.current;
   }
-  function update(next: Draft) { setDraft(next); scheduleSave(next); }
+  function update(next: Draft) { setSaved(false); setDraft(next); scheduleSave(next); }
   function nextDraft(patch: Partial<DesignSystem>) {
     return resolvedSystem(withTokens({ ...draft, ...patch }, patch.tokens ?? draft.tokens));
   }
@@ -508,7 +531,8 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
         components: next.components,
         guidelines: next.guidelines,
       });
-      setDraft(next); persist(next); setBlank(false); setFreshChat(false); setChanged(list);
+      setDraft(next); const applied = await persist(next); setBlank(false); setFreshChat(false); setChanged(list);
+      if (projectScope && !applied) throw new Error('系统修改未应用到项目，请修正令牌或引用冲突后再保存。');
       if (blank) { setActive('overview'); scroller.current?.scrollTo({ top: 0 }); }
       finish(
         turn.id,
@@ -527,10 +551,11 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     if (await openSettingsWindow() === 'in-app') setDialog('settings');
   }
   async function publish() {
+    if (projectScope) return;
     if (publishing || task.running) return;
     if (blank) { setError('先让 Agent 生成系统，或导入 DESIGN.md 后再发布。'); return; }
     if (issues.length) { setError(`还有 ${issues.length} 处令牌需要修正，改完才能发布。`); return; }
-    flushSave();
+    if (!await flushSave()) return;
     setPublishing(true); setError(''); setNotice('');
     const target = targetRecord();
     const id = target.id;
@@ -542,7 +567,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       const pkg = legacySystemToPackage({ ...base, name });
       const version = await publishSystem(storage, { id, name, description: pkg.description, tokens: pkg.tokens, components: pkg.components, guidelines: pkg.guidelines });
       const next = resolvedSystem(withTokens({ ...base, name, revision: version.revision, hash: version.hash, schemaVersion: version.payload.schemaVersion }, base.tokens));
-      setDraft(next); onSave(next); setSaved(true);
+      setDraft(next); await onSave(next); setSaved(true);
       await loadVersions(id);
       setNotice(`已发布 v${version.revision}。`);
     } catch (next) { setError(next instanceof Error ? next.message : String(next)); }
@@ -556,6 +581,19 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       URL.revokeObjectURL(url);
       setNotice('已导出 DESIGN.md。');
     } catch (next) { setError(next instanceof Error ? next.message : String(next)); }
+  }
+  function exportJson() {
+    try {
+      const pkg = projectScope?.snapshot ?? legacySystemToPackage(draft);
+      const url = URL.createObjectURL(new Blob([serializeSystem(pkg)], { type: 'application/json' }));
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${pkg.name.replace(/[\\/:*?"<>|]/g, '-')}.system.json`; anchor.click(); URL.revokeObjectURL(url);
+      setNotice('已导出设计系统 JSON。');
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+  }
+  async function saveToLibrary() {
+    if (!projectScope || !await flushSave()) return;
+    try { await projectScope.onSaveToLibrary(draft); setNotice('已另存为独立设计系统，当前项目保持不变。'); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
   async function copyText(content: string, label: string) {
     try {
@@ -582,20 +620,22 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
       field.setSelectionRange(field.value.length, field.value.length);
     });
   }
-  function handleClose() { flushSave(); onClose(); }
-  function applyToGeneration() {
+  async function handleClose() { if (await flushSave()) onClose(); }
+  async function applyToGeneration() {
     if (blank) { setError('先让 Agent 生成一套系统，再用于 UI 生成。'); return; }
     if (issues.length) { setError(`还有 ${issues.length} 处令牌需要修正，改完才能用于 UI 生成。`); return; }
-    flushSave();
+    if (!await flushSave()) return;
     const target = targetRecord();
     if (target.created) {
       // Forking a built-in: the copy is what gets enabled, named so the library stays readable.
       const copyName = draft.name === system.name ? `${draft.name} 副本` : draft.name;
       const record = { ...draft, id: target.id, name: copyName, example: false, published: true, revision: undefined, hash: undefined };
-      setDraft(record); onUse(record);
+      setDraft(record);
+      try { await onUse(record); } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
       return;
     }
-    onUse({ ...draft, id: target.id, example: false, published: true });
+    try { await onUse({ ...draft, id: target.id, example: false, published: true }); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
 
   const pickColor = (...keys: string[]) => {
@@ -616,31 +656,33 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     // off-screen, while the label above and the 排版 fields keep showing what the model returned.
     fontFamily: t.typography.family, fontSize: `${specimenSize(bodyRole.size)}px`,
   } as CSSProperties;
-  const status = blank ? '等待生成'
+  const status = projectScope ? `项目内 · ${projectScope.name}` : blank ? '等待生成'
     : isBuiltIn && !forked.current ? `内置 · v${publishedRevision ?? 1}`
       : publishedRevision ? `v${publishedRevision}${draft.published ? ' · 已启用' : ''}`
         : draft.published ? '草稿 · 已启用' : '草稿';
   const menuItems = [
-    ...(onOpenComponents ? [{ label: '本地组件资源', action: onOpenComponents }] : []),
+    ...(projectScope ? [{ label: '另存到系统库', action: () => { void saveToLibrary(); } }] : []),
+    ...(onOpenComponents ? [{ label: '本地组件资源', action: () => { void flushSave().then(ok => { if (ok) onOpenComponents(); }); } }] : []),
     { label: '导入 DESIGN.md / CSS', action: () => importInput.current?.click() },
     { label: '导出 DESIGN.md', action: exportMarkdown },
+    { label: '导出系统 JSON', action: exportJson },
     ...(onDelete ? [{ label: '删除设计系统', danger: true, action: () => setDialog('delete') }] : []),
   ];
 
-  return <section className="sys-page" aria-label="设计系统">
+  return <section className={`sys-page${projectScope ? ' is-project-system' : ''}`} aria-label="设计系统">
     <header className="sys-topbar">
-      <button type="button" className="home-icon-button" aria-label="返回设计系统列表" title="返回设计系统列表" onClick={handleClose}><ArrowLeft size={16} /></button>
+      <button type="button" className="home-icon-button" aria-label={projectScope ? '返回项目' : '返回设计系统列表'} title={projectScope ? '返回项目' : '返回设计系统列表'} disabled={task.running} onClick={() => void handleClose()}><ArrowLeft size={16} /></button>
       <div className="sys-title">
         <input aria-label="设计系统名称" value={draft.name} maxLength={120} placeholder="未命名设计系统" onChange={event => update(nextDraft({ name: event.currentTarget.value }))} />
         <span className="sys-status" title={isBuiltIn && !forked.current ? '内置系统只读；首次编辑会自动保存为本地副本' : undefined}>{status}{saved && <small>· 已保存</small>}</span>
       </div>
       <div className="sys-actions">
         <Menu label="更多设计系统操作" items={menuItems}><MoreHorizontal size={16} /></Menu>
-        <button type="button" className="home-secondary-button" disabled={publishing || task.running || blank || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={() => void publish()}><Upload size={14} />{publishing ? '发布中…' : '发布版本'}</button>
-        <button type="button" className="home-primary-button" disabled={blank || task.running || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={applyToGeneration}><Check size={14} />用于 UI 生成</button>
+        {projectScope ? <button type="button" className="home-secondary-button" disabled={task.running || blank || !!issues.length} onClick={() => void saveToLibrary()}><Copy size={14} />另存到系统库</button> : <button type="button" className="home-secondary-button" disabled={publishing || task.running || blank || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={() => void publish()}><Upload size={14} />{publishing ? '发布中…' : '发布版本'}</button>}
+        <button type="button" className="home-primary-button" disabled={blank || task.running || !!issues.length} title={issues.length ? '先修正标出的令牌问题' : undefined} onClick={() => void applyToGeneration()}><Check size={14} />{projectScope ? '保存并返回项目' : '设为新建默认'}</button>
       </div>
     </header>
-    {error && <div className="sys-banner is-error" role="alert"><span>{error}</span><button type="button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={13} /></button></div>}
+    {error && <div className="sys-banner is-error" role="alert"><span>{error}</span>{projectScope && <button type="button" disabled={task.running} onClick={() => { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); pending.current = null; void saveQueue.current.then(onClose); }}>放弃未保存修改并返回</button>}<button type="button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={13} /></button></div>}
     {notice && <div className="sys-banner" role="status"><Check size={13} /><span>{notice}</span><button type="button" aria-label="关闭提示" onClick={() => setNotice('')}><X size={13} /></button></div>}
     {!!issues.length && <div className="sys-banner is-warn" role="alert">
       <TriangleAlert size={13} />
@@ -797,7 +839,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
               <div className="sys-sec-block">
                 <span className="sys-sec-label">介绍</span>
                 <textarea className="sys-field sys-field-area" rows={2} maxLength={2000} value={draft.description} aria-label="设计系统描述" placeholder="一句话说明这套系统服务谁、传达什么。" onChange={event => update(nextDraft({ description: event.currentTarget.value }))} />
-                <p className="sys-meta">{colorKeys.length} 个颜色角色 · {roles.length} 个排版角色 · {draft.components.length} 条组件规范 · {versions.length} 个已发布版本</p>
+                <p className="sys-meta">{colorKeys.length} 个颜色角色 · {roles.length} 个排版角色 · {draft.components.length} 条组件规范 · {projectScope ? '仅影响当前项目' : `${versions.length} 个已发布版本`}</p>
               </div>
             </SpecSection>
             <SpecSection id="colors" hidden={!isShown('colors')} title="配色" hint="语义角色优先；点击色块取色，或直接改十六进制。" updated={updatedRows.has('color')}>
@@ -896,7 +938,7 @@ export function DesignSystemPage(props: DesignSystemPageProps) {
     {dialog === 'settings' && <div className="rs-overlay"><SettingsApp onClose={() => setDialog(null)} /></div>}
     {dialog === 'delete' && <Dialog title="删除设计系统" onClose={() => setDialog(null)}>
       <p className="sys-hint">删除「{draft.name || '未命名设计系统'}」后，它不会再出现在列表与生成选择中。已发布版本仍保留在本地版本记录里。</p>
-      <div className="home-dialog-actions"><button type="button" className="home-secondary-button" onClick={() => setDialog(null)}>取消</button><button type="button" className="home-secondary-button sys-danger" onClick={() => { setDialog(null); onDelete?.(); }}>删除</button></div>
+      <div className="home-dialog-actions"><button type="button" className="home-secondary-button" onClick={() => setDialog(null)}>取消</button><button type="button" className="home-secondary-button sys-danger" onClick={() => { void flushSave().then(async ok => { if (ok) { await onDelete?.(); setDialog(null); } }).catch(error => setError(String(error))); }}>删除</button></div>
     </Dialog>}
   </section>;
 }

@@ -11,6 +11,12 @@ import { agentSystem, defaultTokens, parseGeneratedSystem, resolvedSystem, withT
 const page = `import { Page, Frame, Text } from '@rea/design';
 export default <Page id="main" designId="page-root"><Frame designId="main-frame" className="absolute left-0 top-0 w-[1440px] h-[1024px] bg-white"><Text designId="hero-title" className="absolute left-8 top-8 text-2xl">生成设计</Text></Frame></Page>;`;
 describe('local agent generation contract', () => {
+  it('describes an unbound project without injecting a global default or a system reference', () => {
+    const prompt = uiPrompt('继续编辑', null, null);
+    expect(prompt).toContain('当前项目未设置设计系统');
+    expect(prompt).not.toContain('reaui-design-system');
+    expect(prompt).not.toContain('#356AF0');
+  });
   it('injects a file-editing protocol, stable identities and the current design system', () => {
     const generated = generatedDocument({ name: '项目', summary: '', pages: [{ id: 'main', source: page }] });
     const files = { ...generated.document.files, 'assets/photo.png': 'asset index', 'notes.txt': 'not a design source' };

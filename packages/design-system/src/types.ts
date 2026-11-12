@@ -77,10 +77,18 @@ export interface SystemComponentSpec {
   variants?: { key: string; name: string }[];
   guidelines?: string;
 }
+/** Editable library/project draft. `published` is the legacy enabled flag, not a revision claim. */
+export interface SystemDraft {
+  id: string; name: string; description: string; color: string; colors: string[]; example?: boolean;
+  tokens?: DesignSystemTokens; components?: (Partial<SystemComponentSpec> & { name: string; description: string })[]; guidelines?: string;
+  published?: boolean; sourceProject?: string; schemaVersion?: number; revision?: number; hash?: string;
+}
 export interface DesignSystemPackage {
   format: typeof SYSTEM_FORMAT; schemaVersion: number;
   id: string; revision: number; hash: string; name: string; description?: string;
   tokens: SystemTokens; components: SystemComponentSpec[]; guidelines: string;
+  projectId?: string;
+  origin?: { id: string; revision: number; hash: string };
   [key: string]: unknown;
 }
 export interface DesignSystemPackageV2 extends DesignSystemPackage {

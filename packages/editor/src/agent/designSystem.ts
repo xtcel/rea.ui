@@ -1,16 +1,10 @@
 import { DEFAULT_TOKENS, isV2Tokens, legacySystemToPackage, upgradeTokens, validateTokens } from '@rea/design-system';
-import type { DesignSystemPackage, DesignSystemTokens, SystemComponentSpec, SystemIssue, SystemTokens } from '@rea/design-system';
+import type { DesignSystemPackage, DesignSystemTokens, SystemComponentSpec, SystemDraft, SystemIssue, SystemTokens } from '@rea/design-system';
 
 /** The editor stores v2 tokens; v1 and the pre-ABI flat shape are normalised on read. */
 export type DesignTokens = DesignSystemTokens;
 export type DesignComponent = Partial<SystemComponentSpec> & { name: string; description: string };
-export interface DesignSystem {
-  id: string; name: string; description: string; color: string; colors: string[]; example?: boolean;
-  tokens?: DesignSystemTokens; components?: DesignComponent[]; guidelines?: string;
-  published?: boolean; sourceProject?: string; schemaVersion?: number;
-  /** Last published revision; only trusted together with a matching `hash`. */
-  revision?: number; hash?: string;
-}
+export type DesignSystem = SystemDraft;
 export const defaultTokens: DesignTokens = DEFAULT_TOKENS;
 export const defaultComponents: DesignComponent[] = [
   { name: '按钮', description: '主要操作使用主色，次要操作使用描边，禁用状态降低对比并禁止交互。' },
@@ -116,7 +110,7 @@ export function parseGeneratedSystem(value: unknown, sourceProject = ''): Genera
   if (!name.trim()) warnings.push('AI 没有返回系统名称');
   warnings.push(...tokenWarnings(tokens));
   const palette = ((tokens as DesignTokens).color ?? {}) as unknown as Record<string, unknown>;
-  const colors = Object.values(palette).filter((color): color is string => typeof color === 'string');
+  const colors = Object.values(palette).filter((color): color is string => typeof color === 'string').slice(0, 5);
   const system: DesignSystem = {
     id: crypto.randomUUID(), name, description, components, guidelines,
     tokens, color: typeof palette.primary === 'string' ? palette.primary : colors[0] ?? '', colors,

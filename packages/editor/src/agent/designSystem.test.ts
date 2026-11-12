@@ -22,7 +22,8 @@ describe('design system version reference', () => {
   });
 
   it('drops the revision once the tokens no longer match the published hash', () => {
-    const published = { ...record(), revision: 3, schemaVersion: 2, hash: legacySystemToPackage(record()).hash };
+    const version = { ...record(), revision: 3, schemaVersion: 2 };
+    const published = { ...version, hash: legacySystemToPackage(version).hash };
     expect(systemSnapshot(published).ref).toMatchObject({ revision: 3, draft: false });
     expect(systemSnapshot({ ...published, tokens: { ...(published.tokens as object), primary: '#FF0000' } as unknown as DesignSystem['tokens'] }).ref).toMatchObject({ revision: null, draft: true });
   });

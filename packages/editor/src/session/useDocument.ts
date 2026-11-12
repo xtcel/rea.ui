@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { DocumentSession } from '@rea/document';
 import type { SourceOperation, Transaction } from '@rea/document';
-import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2, systemTransaction } from '@rea/storage';
+import { AutoSaver, StorageService, bootstrapStorage, createDefaultV2Document, exportReaui, importReaui, migrateV1ToV2 } from '@rea/storage';
+import type { DesignSystemPackage } from '@rea/design-system';
 import { withDocumentMetadata } from './metadata';
 import { applyAgentSnapshot } from './agent';
 import type { AssetRecord, DocumentRecord, LocalSystemVersion, SaveStatus } from '@rea/storage';
@@ -93,13 +94,9 @@ export function useDocument() {
   }
   async function open(id: string) { await saver.current?.flush(); activate(await storage.openDocument(id)); }
   /** A document can be born pinned: the snapshot is committed before the first save, so the workspace never starts unbound. */
-  async function create(name?: string, system?: LocalSystemVersion) {
+  async function create(name?: string, system?: LocalSystemVersion | DesignSystemPackage) {
     await saver.current?.flush();
-    let doc = await storage.createDocument(name);
-    if (system) {
-      const pinned = new DocumentSession(doc.files).commit(systemTransaction(system));
-      doc = await storage.saveDocument({ ...doc, files: { ...pinned.files }, manifest: pinned.manifest, revision: pinned.rev });
-    }
+    const doc = await storage.createDocument(name, system && ('payload' in system ? (system as LocalSystemVersion).payload : system as DesignSystemPackage));
     await storage.setMeta('lastOpenedId', doc.id); activate(doc); return doc;
   }
   function applyAgentFiles(documentId: string, expectedRev: number, files: Record<string, string>, turnId: string): number {

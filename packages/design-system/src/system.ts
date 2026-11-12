@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from './hash';
 import { systemVariables, upgradeTokens, validateComponentSpecs, validateTokens } from './tokens';
 import { DEFAULT_TOKENS, DesignSystemError, SYSTEM_FORMAT, SYSTEM_SCHEMA_VERSION, SYSTEM_SCHEMA_VERSION_V1 } from './types';
-import type { DesignSystemPackage, DesignSystemPackageV2, DesignSystemTokens, SystemIssue, SystemTokens } from './types';
+import type { DesignSystemPackage, DesignSystemPackageV2, DesignSystemTokens, SystemDraft, SystemIssue, SystemTokens } from './types';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const HASH = /^[0-9a-f]{64}$/;
@@ -62,6 +62,7 @@ export function parseSystem(source: string | unknown): DesignSystemPackage {
 export interface CreateSystemInput {
   id: string; revision?: number; name: string; description?: string;
   tokens: SystemTokens; components: DesignSystemPackage['components']; guidelines: string;
+  projectId?: string; origin?: DesignSystemPackage['origin'];
 }
 export function createSystem(input: CreateSystemInput): DesignSystemPackageV2 {
   const tokens = upgradeTokens(input.tokens);
@@ -70,6 +71,8 @@ export function createSystem(input: CreateSystemInput): DesignSystemPackageV2 {
     id: input.id, revision: input.revision ?? 1, hash: '',
     name: input.name, ...(input.description ? { description: input.description } : {}),
     tokens, components: input.components, guidelines: input.guidelines,
+    ...(input.projectId ? { projectId: input.projectId } : {}),
+    ...(input.origin ? { origin: input.origin } : {}),
   } as DesignSystemPackageV2;
   draft.hash = systemHash(draft);
   const issues = validateSystem(draft, true);
@@ -173,11 +176,12 @@ export function legacySystemToPackage(value: unknown): DesignSystemPackage {
     id: typeof value.id === 'string' && ID.test(value.id) ? value.id : `system-${sha256Hex(JSON.stringify(value)).slice(0, 12)}`,
     name: typeof value.name === 'string' && value.name.trim() ? value.name : '未命名设计系统',
     description: typeof value.description === 'string' ? value.description : '',
-    components: components.length ? components : [{ key: 'button', name: '按钮', description: '主要操作使用主色。' }],
+    components: Array.isArray(value.components) ? components : [{ key: 'button', name: '按钮', description: '主要操作使用主色。' }],
     guidelines: typeof value.guidelines === 'string' ? value.guidelines : '',
   };
   const keepV1 = preservedV1 ?? flatV1;
-  if (!keepV1) return createSystem({ ...base, tokens: tokens as DesignSystemTokens });
+  const revision = typeof value.revision === 'number' ? value.revision : 1;
+  if (!keepV1) return createSystem({ ...base, revision, tokens: tokens as DesignSystemTokens });
   const { description: _description, ...rest } = base;
   const snapshot = {
     format: SYSTEM_FORMAT, schemaVersion: SYSTEM_SCHEMA_VERSION_V1, revision: 1, hash: '',
@@ -197,4 +201,20 @@ export function isSystemPackage(value: unknown): value is DesignSystemPackage {
 /** Sanity check used by the import path: name list must match the token set. */
 export function declaredVariableNames(value: DesignSystemPackage): string[] {
   return systemVariables(value.tokens).map(variable => variable.name);
+}
+
+/** Preserve incomplete drafts on reload; full validation belongs to adoption and publishing. */
+export function isSystemDrafts(value: unknown): value is SystemDraft[] {
+  return Array.isArray(value) && value.every(item => record(item) && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && typeof item.color === 'string' && Array.isArray(item.colors) && item.colors.every(color => typeof color === 'string') &&
+    (item.tokens === undefined || record(item.tokens)) && (item.published === undefined || typeof item.published === 'boolean') &&
+    (item.revision === undefined || (Number.isInteger(item.revision) && Number(item.revision) >= 1)) && (item.schemaVersion === undefined || item.schemaVersion === 1 || item.schemaVersion === 2) && (item.hash === undefined || typeof item.hash === 'string' && HASH.test(item.hash)) &&
+    (item.guidelines === undefined || typeof item.guidelines === 'string') && (item.components === undefined || Array.isArray(item.components) && item.components.every(c => record(c) && typeof c.name === 'string' && typeof c.description === 'string')));
+}
+
+export function systemToDraft(pkg: DesignSystemPackage): SystemDraft {
+  const tokens = upgradeTokens(pkg.tokens);
+  return { id: pkg.id, name: pkg.name, description: pkg.description ?? '', tokens,
+    color: tokens.color.primary, colors: [...new Set(Object.values(tokens.color).filter((value): value is string => typeof value === 'string'))].slice(0, 5),
+    components: structuredClone(pkg.components), guidelines: pkg.guidelines, published: true,
+    schemaVersion: pkg.schemaVersion, revision: pkg.revision, hash: pkg.hash };
 }

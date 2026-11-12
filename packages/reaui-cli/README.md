@@ -149,3 +149,14 @@ Yes. Wrap `main()` or shell out to the `reaui` binary; both are designed for non
 ## License
 
 [Apache-2.0](https://www.npmjs.com/package/@xtcel/reaui-cli)
+
+## Project design systems / 项目设计系统
+
+```bash
+reaui init ./design --system ./brand.system.json
+reaui system get ./design --json
+reaui system set ./design --system ./brand.system.json
+reaui system remove ./design
+```
+
+系统包保存为项目内的 `design/system.json`，不依赖全局系统库，也不会隐式发布。v4 可同时携带组件目录。设置/移除先验证全部页面与组件引用，冲突时保持原文件；修改 `.reaui` 前先 unpack。项目系统会话 `agent/system-sessions.json` 随打包保存。

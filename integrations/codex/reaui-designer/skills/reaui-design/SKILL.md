@@ -28,7 +28,7 @@ Detailed references: `references/cli.md` (commands, flags, exit codes),
 1. Never create or edit `rea.json` by hand; use `reaui init` (or `reaui_create_design`).
 2. Never hand-write, hand-zip, or hand-patch a `.reaui`. Always `reaui pack`.
 3. Never raise the manifest `version` or place `design/system.json` by hand.
-   Pinned design systems (v4) go through `scripts/pin-system.mjs` only.
+   Adopt systems through `reaui system set` when supported, or `scripts/pin-system.mjs` in older bundled runtimes. Existing project snapshots always take precedence over default tokens.
 4. Never deliver a document that has not passed a final
    `reaui validate <file.reaui> --json` with `ok: true` (exit code 0).
 5. Deliver files into the **user's project directory**. The MCP workspace and
@@ -169,7 +169,7 @@ reaui validate "$DOC" --json
 ## 7. Pinned design system (optional v4 capability)
 
 Use this only when the user supplies or asks for a brand/design system, design
-tokens, "固定设计系统", or a token-driven theme. Ordinary page requests stay v2.
+tokens, "固定设计系统", or a token-driven theme. Existing v4 projects always retain and use their embedded system; do not substitute the default visual tokens. New requests without a system stay unbound. v4 supports both components and system snapshots.
 
 Pipeline:
 
@@ -177,7 +177,7 @@ Pipeline:
    (`format: "reaui-design-system"`, `schemaVersion: 1`, `id`, `revision`,
    `name`, `tokens`, `components`, `guidelines`; `hash` may be omitted — the
    script computes it). See `references/design-system.md` for token shape.
-2. Make page `className` values reference the system through
+2. Prefer adopting the valid complete package first with `reaui system set "$DOC" --system <package.json>` when supported. Then make page `className` values reference the system through
    `var(--rea-ds-*)` for colour, spacing, radius and shadow; positioning and
    sizes stay design px. Validate first while the document is v2: unresolved
    token references surface as `DS_TOKEN_UNDECLARED`, and a v2 document that

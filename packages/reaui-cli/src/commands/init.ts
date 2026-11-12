@@ -1,6 +1,8 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createManifest } from '@rea/document';
+import { parseSystem, serializeSystem, SYSTEM_FILE } from '@rea/design-system';
+import { readFile } from 'node:fs/promises';
 import { value, values } from '../args';
 import type { Args } from '../args';
 import { CliError } from '../errors';
@@ -44,9 +46,16 @@ export async function runInit(args: Args): Promise<number> {
   }
   const pages = pageIds.map(id => ({ id, file: `pages/${id}.page.tsx` }));
   const manifest = createManifest(`doc_${crypto.randomUUID()}`, name.trim(), pages);
+  const systemPath = value(args, 'system');
+  const system = systemPath ? parseSystem(await readFile(path.resolve(systemPath), 'utf8')) : null;
+  if (system) manifest.version = 4;
   await mkdir(target, { recursive: true });
   await mkdir(path.join(target, 'pages'), { recursive: true });
   await writeFile(path.join(target, 'rea.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  if (system) {
+    await mkdir(path.join(target, 'design'), { recursive: true });
+    await writeFile(path.join(target, SYSTEM_FILE), serializeSystem(system), 'utf8');
+  }
   for (const [index, id] of pageIds.entries()) {
     const pageName = (names[index] ?? (index === 0 ? name.trim() : `页面 ${index + 1}`)).trim() || `页面 ${index + 1}`;
     await writeFile(path.join(target, `pages/${id}.page.tsx`), pageSource(id, pageName, width, height), 'utf8');

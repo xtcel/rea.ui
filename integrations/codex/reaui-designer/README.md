@@ -4,7 +4,7 @@ Generate, validate, and revise **editable REA UI design documents** (`.reaui`)
 from UI requests — and keep them openable in the REA UI editor.
 
 The plugin bundles a prebuilt `@xtcel/reaui-cli` (0.1.3, built from the
-`rea.ui` repository at 2026-11-10) and `@xtcel/reaui-mcp` (0.1.1), so it works
+`rea.ui` repository at 2026-11-12) and `@xtcel/reaui-mcp` (0.1.1), so it works
 offline after install. Node.js **22.18+** is required.
 
 A `.reaui` file is a ZIP containing a `rea.json` manifest plus one static TSX
@@ -82,19 +82,18 @@ judge success by exit code and `--json`.
 
 ## Pinned design systems (v4)
 
-`reaui` has no “pin system” command; v4 is the pair (`version: 4`,
-`design/system.json`). Never edit that pair by hand. Use:
+Project systems are embedded snapshots, independent of the standalone library. v4 can carry both a system and component definitions. Adopt before generating token-aware pages:
 
 ```bash
-node "$SKILL_DIR/scripts/pin-system.mjs" \
-  --design ./designs/landing --system ./designs/brand.system.json
+reaui init ./designs/landing --system ./designs/brand.system.json
+reaui system get ./designs/landing --json
+reaui system set ./designs/landing --system ./designs/brand.system.json
+reaui system remove ./designs/landing
 ```
 
-The script verifies the snapshot shape, recomputes its SHA-256 hash, writes the
-manifest version and `design/system.json`, and runs `validate --system`. If
-validation fails it restores `rea.json` and removes what it wrote. `--force`
-replaces a different pinned system; `--dry-run` prints the plan. Confirm the
-user's editor build supports v4 first — otherwise deliver a v2 version as well.
+The package must include a valid hash. Settings validate the whole document before writing, and removal fails while references remain. Adoption does not publish a library revision. Existing project snapshots take precedence over default visual tokens. The older `pin-system.mjs` remains available for compatibility and hash construction.
+
+The bundled MCP adds `reaui_get_system/reaui_set_system` and an optional system JSON parameter on `reaui_init/reaui_create_design`.
 
 ## Local MCP
 

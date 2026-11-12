@@ -14,6 +14,15 @@ const files = (version: 2 | 3 | 4 = 2, source = newPageSource('main')) => ({
 });
 
 describe('system snapshot', () => {
+  it('keeps v4 when adding token-aware components and undoing their edits', () => {
+    const source = `import { Components, Component, Frame } from '@rea/design'; export default <Components><Component id="test-card" designId="card-definition"><Frame designId="card-root" className="w-20 h-20 bg-[var(--rea-ds-color-primary)]" /></Component></Components>;`;
+    const pinned = new DocumentSession(files()).commit({ label: '采用系统', ops: [{ type: 'system', source: serializeSystem(system()) }] });
+    const withComponents = pinned.commit({ label: '添加组件', ops: [{ type: 'catalog', source }] });
+    expect(withComponents.manifest.version).toBe(4);
+    expect(new DocumentSession(withComponents.files).components.size).toBe(1);
+    expect(withComponents.system?.hash).toBe(pinned.system?.hash);
+    expect(withComponents.undo().files).toEqual(pinned.files);
+  });
   it('opens a v4 document without a pinned system', () => {
     const session = new DocumentSession(files(4));
     expect(session.manifest.version).toBe(4);

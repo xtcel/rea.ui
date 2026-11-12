@@ -2,6 +2,7 @@ import { PAGE_ID } from '@rea/design';
 
 /** Non-design, document-owned metadata (not design sources). They travel inside .reaui but are never sent to the Agent workspace. */
 export const AGENT_SESSIONS_FILE = 'agent/sessions.json';
+export const SYSTEM_AGENT_SESSIONS_FILE = 'agent/system-sessions.json';
 export const EDITOR_GUIDES_FILE = 'editor/guides.json';
 export { SYSTEM_FILE } from '@rea/design-system';
 

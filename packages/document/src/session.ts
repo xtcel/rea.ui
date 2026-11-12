@@ -209,7 +209,7 @@ export class DocumentSession {
     this.manifest = parseManifest(files['rea.json']);
     this.system = readSystem(files, this.manifest.version);
     this.components = parseCatalog(files[COMPONENT_FILE]);
-    if(files[COMPONENT_FILE]&&this.manifest.version!==3)throw new Error('组件目录需要文档格式 v3。');
+    if(files[COMPONENT_FILE]&&this.manifest.version<3)throw new Error('组件目录需要文档格式 v3 或以上。');
     const componentPages=new Map<string,ParsedPage>();
     for(const [key,def]of this.components){const parsed=componentEditor(def);componentPages.set(key,{...parsed,page:resolvePage(parsed.source,this.components,def)});}
     // Check every published combination, including definitions not used on a page.
@@ -233,7 +233,7 @@ export class DocumentSession {
       if(op.type==='catalog'){
         const next=parseCatalog(op.source),previous=parseCatalog(files[COMPONENT_FILE]);
         if(!op.libraryUpdate)for(const [key,def]of previous)if(def.props.library&&(!next.has(key)||serializeElement(next.get(key)!)!==serializeElement(def)))throw new Error('库组件只读，请编辑来源并发布，再使用库升级。');
-        files[COMPONENT_FILE]=op.source;manifest={...manifest,version:3};writeManifest();
+        files[COMPONENT_FILE]=op.source;manifest={...manifest,version:manifest.version===4?4:3};writeManifest();
       } else if (op.type === 'system') {
         if (op.source === null) {
           const usage = tokenUsage(files);

@@ -7,7 +7,7 @@
 ```text
 rea.json                         清单（format/version/id/name/pages/createdAt）
 pages/<pageId>.page.tsx           每页一个静态 TSX
-components/main.components.tsx    可选，v3 组件目录
+components/main.components.tsx    可选，v3/v4 组件目录
 agent/sessions.json               可选元数据
 editor/guides.json                可选元数据
 assets/…                          可选资源
@@ -141,6 +141,10 @@ $REAUI pack ./design --out ./design.reaui --force
 
 文档可以固定一套设计系统：`design/system.json` 保存自包含快照，清单同时为 `version: 4`。快照结构为 `{ format: "reaui-design-system", schemaVersion, id, revision, hash, name, tokens, components, guidelines }`，`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256。`schemaVersion` 1 与 2 都可读，新发布的版本为 2。
 
+项目快照是生成、渲染与校验的共同依据。采用系统不隐式发布，全局选择只影响新建。项目内编辑首次建立独立 id 并携带 `projectId` 与 `origin: {id, revision, hash}`；库变更不影响项目。v4 同时支持组件目录。页面 AI 的工作区不允许写系统，但宿主在候选校验前合并自己的快照，拒绝外部替换和未知引用。项目系统编辑会话保存到 `agent/system-sessions.json`，页面会话到 `agent/sessions.json`，引用其它项目时必须排除 `agent/` 内容。
+
+CLI 可通过 `reaui init ./design --system ./brand.json` 或 `reaui system set ./design --system ./brand.json` 采用系统；`system get` 读取完整快照，`system remove` 仅在没有令牌引用时成功。MCP 的 `reaui_init/reaui_create_design` 接受可选 system JSON，另有 `reaui_get_system/reaui_set_system`（null 移除）。已有项目先读取系统，再生成页面。
+
 ### 10.1 令牌模型
 
 - `color`：`primary` 核心必需；`background/surface/text/muted/border` 为可选预置角色，其余为自定义语义角色（如 `on_primary`、`surface_dark_1`、`card`、`cardForeground`、`ring`、`onPrimary` 等），键名支持 `snake_case`、`kebab-case` 或 `camelCase`（匹配 `^[a-zA-Z][a-zA-Z0-9_-]*$`）。v2 的颜色值可以是 `#RGB` / `#RRGGBB` / `#RRGGBBAA` 十六进制或 `var(--rea-ds-color-*)` 别名，别名必须指向已声明的角色且不能成环。
@@ -157,7 +161,7 @@ $REAUI pack ./design --out ./design.reaui --force
 提示词与校验共用同一个「是否已固定」判断：
 
 - 文档已固定（`design/system.json` 存在）：颜色、间距、圆角、阴影只能引用 `var(--rea-ds-*)`，例如 `bg-[var(--rea-ds-color-surface)]`、`rounded-[var(--rea-ds-radius-md)]`、`p-[var(--rea-ds-space-24)]`、`shadow-[var(--rea-ds-shadow-card)]`；字号与行高优先写 `text-[length:var(--rea-ds-type-body-size)]`。
-- 文档未固定：颜色、间距、圆角与字号使用十六进制与 px 字面量，**不得**写 `var(--rea-ds-*)`；令牌 JSON 只作为取值参考。
+- 文档未固定：颜色、间距、圆角与字号使用十六进制与 px 字面量，**不得**写 `var(--rea-ds-*)`；使用已有页面风格和用户要求，不注入全局默认系统。
 - 位置与尺寸（`left` / `top` / `right` / `bottom` / `w-` / `h-`）始终使用设计 px，不使用间距令牌。
 - 组件规范按 `key` 引用；条目声明了 `component` 时优先写 `<Instance component="…" />`（full profile），不要重画矩形与文字。
 
@@ -167,7 +171,7 @@ $REAUI pack ./design --out ./design.reaui --force
 
 UI 的「导入 DESIGN.md / CSS」入口不直接调用 `importDesignMarkdown()`：选中的文件挂到输入框并预填提取指令，用户确认后才发送，由生成流程按 `systemSchema` 产出系统；散文型 DESIGN.md 因此在入口处不再报 `DS_MD_INVALID`。库函数仍服务 CLI、测试与精确往返。
 
-生成结果由 `parseGeneratedSystem()` 接收：只做形状转换（角色数组折回记录，缺失的令牌分组开成空容器），返回值 `{ system, warnings }`。**不补齐、不映射别名、不排序刻度、不重试**——`systemSchema` 只能约束结构，模型仍可能给出 `components: []`、`primary: 'blue'` 或乱序刻度，这些内容原样写进草稿，`warnings` 逐条说明缺什么、哪个字段不合法。理由是不能把中间修改藏进黑盒：用户要先看到模型到底返回了什么，再决定怎么改。真正的闸门在发布与「用于 UI 生成」：`validateTokens()` 有问题时两个按钮都禁用，提示语是「先修正标出的令牌问题」。设计系统页用同一份 `SystemIssue` 驱动三处提示——轮次内的清单、页面顶部计数条、左侧目录的受影响小节标记。
+生成结果由 `parseGeneratedSystem()` 接收：只做形状转换（角色数组折回记录，缺失的令牌分组开成空容器），返回值 `{ system, warnings }`。**不补齐、不映射别名、不排序刻度、不重试**——`systemSchema` 只能约束结构，模型仍可能给出 `components: []`、`primary: 'blue'` 或乱序刻度，这些内容原样写进草稿，`warnings` 逐条说明缺什么、哪个字段不合法。理由是不能把中间修改藏进黑盒：用户要先看到模型到底返回了什么，再决定怎么改。真正的闸门在发布与「设为新建默认」：`validateTokens()` 有问题时两个按钮都禁用，提示语是「先修正标出的令牌问题」。设计系统页用同一份 `SystemIssue` 驱动三处提示——轮次内的清单、页面顶部计数条、左侧目录的受影响小节标记。
 
 校验：
 

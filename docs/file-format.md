@@ -90,7 +90,7 @@ SVG 不走资源存储：文件被解析成 `Group + Rect / Ellipse / Vector` �
 
 ## 设计系统快照
 
-固定设计系统时，文档在 `design/system.json` 保存一份自包含快照，结构为 `{ format: "reaui-design-system", schemaVersion, id, revision, hash, name, tokens, components, guidelines }`。`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256；`revision` 是来源系统的已发布版本。`schemaVersion` 1 与 2 都可读：新发布的版本为 2（`typography.roles`、可选 `motion` 与 `radius.xl/full`），已固定的 v1 快照保持原字节。
+固定设计系统时，文档在 `design/system.json` 保存一份自包含快照，结构为 `{ format: "reaui-design-system", schemaVersion, id, revision, hash, name, tokens, components, guidelines }`。`hash` 是除自身外全部字段按键排序、无空白序列化后的 SHA-256；`revision` 是该快照的版本；采用库草稿无需发布。项目首次编辑另建 id，并可含 `projectId` 与 `origin: { id, revision, hash }`，来源库不参与运行时解析。`schemaVersion` 1 与 2 都可读：新发布的版本为 2（`typography.roles`、可选 `motion` 与 `radius.xl/full`），已固定的 v1 快照保持原字节。
 
 ```json
 {
@@ -127,7 +127,7 @@ SVG 不走资源存储：文件被解析成 `Group + Rect / Ellipse / Vector` �
 
 MIME：`application/vnd.reaui+zip`，文件名来自文档名称。
 
-ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、可选的组件目录、可选的 `design/system.json`、`agent/sessions.json`（存在时）、`editor/guides.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
+ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，压缩级别 6。清单、清单引用的页面文件、可选的组件目录、可选的 `design/system.json`、`agent/sessions.json` / `agent/system-sessions.json`（存在时）、`editor/guides.json`（存在时）和所有资源组成容器；相同内容生成相同字节。导入始终分配新的本地文档 id，同名追加 ` (2)`、` (3)` 等，原有文档不被覆盖。
 
 `.reaui` 会携带文档内的 AI 会话记录与手动参考线，换机或转交他人打开后仍可看到历史会话并恢复参考线。两者都不是设计源，不参与静态解析，也不会被注入 Agent 的临时工作区；参考线同样不进入页面 TSX 或代码导出。
 
@@ -137,7 +137,7 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 2. 路径必须相对、安全且使用 `/`。拒绝绝对路径、盘符、反斜杠、空路径段、`.`、`..`、控制字符、目录条目（结尾 `/`）。
 3. 最多 5000 条目，解压后合计最多 256MiB，任一条目压缩比不得超过 200。超限在分配解压缓冲区前拒绝。
 4. 必须有 UTF-8 `rea.json`，所有清单页面必须存在并通过静态解析，id 必须一致。拒绝清单未引用的页面文件。清单 v2 / v3 携带 `design/system.json` 时拒绝；v4 允许。
-5. `assets/` 路径同时遵守 Image 的资源路径限制。允许的固定路径为 `agent/sessions.json`、`editor/guides.json`、`design/system.json`；根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的其他文件忽略并给出警告。会话文件超过 512KB、参考线文件超过 64KB、设计系统快照超过 256KB，或三者不是合法 JSON / 顶层不是对象 / 系统 hash 与内容不符时丢弃并给出警告，不阻断导入；若丢弃快照后页面仍有令牌引用，导入会失败并提示先恢复系统。
+5. `assets/` 路径同时遵守 Image 的资源路径限制。允许的固定路径为 `agent/sessions.json`、`agent/system-sessions.json`、`editor/guides.json`、`design/system.json`；根目录清单、固定组件目录 `components/main.components.tsx` 及 `pages/`、`assets/` 之外的其他文件忽略并给出警告。会话文件超过 512KB、参考线文件超过 64KB、设计系统快照超过 256KB，或三者不是合法 JSON / 顶层不是对象 / 系统 hash 与内容不符时丢弃并给出警告，不阻断导入；若丢弃快照后页面仍有令牌引用，导入会失败并提示先恢复系统。
 6. 所有校验通过后，在一个 IndexedDB 事务中写入新文档和资源，失败时无残留。
 
 压缩比限制也适用于高度重复的正常文件；若其超过阈值，导入会按同样规则拒绝。
@@ -189,7 +189,7 @@ ZIP 使用 fflate，导出条目按路径排序，时间戳固定 1980-01-01，�
 
 ## v3 组件与路径
 
-没有组件的 v2 文档可直接打开；首次写入组件目录时原子升级清单为 v3。页面文件保持原路径。v3 的可选组件目录固定为 `components/main.components.tsx`，根为 `<Components>`，每个 `<Component id designId>` 恰好包含一个视觉根；原语仍从 `@rea/design` 导入，不执行代码。
+没有组件的 v2 文档可直接打开；首次写入组件目录时清单至少为 v3；已有 v4 保持 v4，组件与系统快照可以共存。页面文件保持原路径。v3 的可选组件目录固定为 `components/main.components.tsx`，根为 `<Components>`，每个 `<Component id designId>` 恰好包含一个视觉根；原语仍从 `@rea/design` 导入，不执行代码。
 
 ```tsx
 export default <Components>

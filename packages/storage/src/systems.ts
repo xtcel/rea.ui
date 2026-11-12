@@ -1,5 +1,5 @@
-import { canonicalJson, createSystem, serializeSystem, systemHash, systemVariables, SYSTEM_REGISTRY } from '@rea/design-system';
-import type { DesignSystemPackage } from '@rea/design-system';
+import { canonicalJson, createSystem, legacySystemToPackage, serializeSystem, systemHash, systemVariables, SYSTEM_REGISTRY } from '@rea/design-system';
+import type { DesignSystemPackage, SystemDraft } from '@rea/design-system';
 import type { DocumentSession, Transaction } from '@rea/document';
 import type { StorageService } from './idb';
 
@@ -60,6 +60,18 @@ export async function ensureSystemVersion(storage: StorageService, snapshot: Des
 }
 export function unpinTransaction(): Transaction {
   return { label: '取消固定设计系统', ops: [{ type: 'system', source: null }] };
+}
+
+/** Local edits fork the embedded copy, never publish or change its library source. */
+export function projectSystemTransaction(session: DocumentSession, draft: SystemDraft): Transaction {
+  const current = session.system;
+  const content = legacySystemToPackage({ ...draft, schemaVersion: 2, revision: undefined, hash: undefined });
+  const fields = (pkg: DesignSystemPackage) => ({ name: pkg.name, description: pkg.description ?? '', tokens: pkg.tokens, components: pkg.components, guidelines: pkg.guidelines });
+  if (current && canonicalJson(fields(current)) === canonicalJson(fields(content))) return { label: '编辑项目设计系统', ops: [] };
+  const owned = current?.projectId === session.manifest.id;
+  const origin = current?.origin ?? (current ? { id: current.id, revision: current.revision, hash: current.hash } : undefined);
+  const payload = createSystem({ ...content, id: owned ? current.id : `project-${crypto.randomUUID()}`, revision: owned ? current.revision + 1 : 1, projectId: session.manifest.id, origin });
+  return { label: '编辑项目设计系统', ops: [{ type: 'system', source: serializeSystem(payload) }] };
 }
 export function pinSystem(session: DocumentSession, version: LocalSystemVersion): DocumentSession {
   return session.commit(systemTransaction(version));

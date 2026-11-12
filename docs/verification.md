@@ -686,3 +686,13 @@ schema 修好之后，用户再次生成时收到「生成的设计系统格式�
 
 - 未在桌面版（Tauri）复跑系统保存面板；浏览器下载路径已覆盖。
 - 未做右栏宽度的极限压缩测试（280px 默认宽度下三控件完整显示）；更窄的右栏需要拖宽验证。
+# 项目独立设计系统：make-design-systems-project-owned
+
+OpenSpec：`openspec/changes/make-design-systems-project-owned/`，按四阶段完成文档/AI 校验、项目采用与库迁移、项目内编辑、工具与协议对齐。
+
+- `pnpm exec vitest run`：575 通过、2 个真实模型冒烟测试按配置跳过（71 文件）。新增覆盖同一未发布系统连续创建、首次保存失败不落残缺文档、来源与项目隔离、撤销、令牌冲突、系统库幂等迁移、系统会话文件往返、候选快照保护、v4 组件共存、CLI/MCP 实际调用。
+- `pnpm typecheck`、`pnpm build`（WASM/Web）、`pnpm build:cli`、`pnpm build:mcp`、`openspec validate make-design-systems-project-owned --strict` 和 `git diff --check` 通过。Web 构建仍报告既有主包体积提示。
+- `pnpm test:rust`：26 项通过。初次沙箱运行的两个本地 HTTP 测试因禁止监听端口失败；允许本机测试监听后全量通过，无 Rust 代码变更。
+- `node scripts/verify-project-design-systems.mjs`：隔离 Chrome 临时用户目录、1440×900 与 390×844，46 个检查通过。实际点击库创建/项目创建、项目编辑、撤销重做、另存到库、AI 系统编辑（仅模型边界模拟）、实际 `.reaui` 下载、刷新和会话恢复。确认导出包含精确快照与会话，未影响另一项目及来源库。截图 `/tmp/rea-project-system-{desktop,mobile,ai}.png` 已目视检查；发现并修复了窄屏保存按钮被隐藏的问题。
+- 同步仓库内 Codex 集成的 CLI/MCP 预构建包，通过真实 stdio MCP 客户端验证 10 个工具及 CLI 初始化/读取系统；未修改已安装的外部插件或发布 npm 包。
+- 机械设计检测未发现新增样式令牌问题；保留既有 system.css 字号/圆角建议。已有单元测试用任意用户字体 Inter，不属于编辑器字体，已做仅该测试文件的窄范围豁免；未刷新 DESIGN.md sidecar。

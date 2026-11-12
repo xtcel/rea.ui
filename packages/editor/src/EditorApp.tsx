@@ -56,11 +56,11 @@ export function EditorApp() {
   const model = useDocument();
   return <EditorWorkspace model={model} />;
 }
-export function EditorWorkspace({ model, onHome, agent }: { model: DocumentModel; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode }) {
+export function EditorWorkspace({ model, onHome, agent, onEditSystem, systemChoices }: { model: DocumentModel; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode; onEditSystem?: () => void; systemChoices?: import('@rea/design-system').SystemDraft[] }) {
   if (!model.current) return <div className="p-8 text-sm" role="status">正在打开本地文档…</div>;
-  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} onHome={onHome} agent={agent} />;
+  return <DocumentEditor key={model.current.manifest.id} model={model} current={model.current} onHome={onHome} agent={agent} onEditSystem={onEditSystem} systemChoices={systemChoices} />;
 }
-function DocumentEditor({ model, current, onHome, agent }: { model: DocumentModel; current: DocumentSession; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode }) {
+function DocumentEditor({ model, current, onHome, agent, onEditSystem, systemChoices }: { model: DocumentModel; current: DocumentSession; onHome?: () => void; agent?: (context: AgentCanvasContext) => ReactNode; onEditSystem?: () => void; systemChoices?: import('@rea/design-system').SystemDraft[] }) {
   const pages = [...current.pages.values()].map(parsed => parsed.page);
   const [pageId, setPageId] = useState(pages[0].id), [selection, setSelection] = useState<SelectionState>(() => emptySelection(pages[0].id));
   const [renameRequest, setRenameRequest] = useState<{ id: string; serial: number } | null>(null);
@@ -604,7 +604,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   {createComponentDialog&&<Dialog title="创建组件" onClose={()=>setCreateComponentDialog(false)}><label className="rea-component-label">组件名称<input className="rea-input" autoFocus value={componentName} onChange={e=>setComponentName(e.target.value)} maxLength={120} onKeyDown={e=>{if(e.key==='Enter')confirmComponent();}}/></label><p className="rea-field-help">选中内容将成为主组件，画布当前位置保留一个关联实例。</p><div className="rea-dialog-actions"><Button onClick={()=>setCreateComponentDialog(false)}>取消</Button><Button disabled={!componentName.trim()} onClick={confirmComponent}>创建组件</Button></div></Dialog>}
   {showDocuments && <DocumentListDialog model={model} onClose={() => setShowDocuments(false)} onExport={exportDocument} />}
   {exportOpen && <ExportDialog count={exportCount} onClose={() => setExportOpen(false)} onExport={exportImages} />}
-  {showSystem && <DesignSystemDialog model={model} onClose={() => setShowSystem(false)} />}
+  {showSystem && <DesignSystemDialog model={model} onClose={() => setShowSystem(false)} onEdit={onEditSystem} choices={systemChoices} />}
   {contextMenu && <ContextMenu label={contextMenu.rulerZone ? '标尺操作' : contextMenu.guideId ? '参考线操作' : menuActions ? '图层操作' : '画布操作'} x={contextMenu.x} y={contextMenu.y} entries={menuEntries} onClose={() => setContextMenu(null)} />}
   {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['显示 / 隐藏 · 锁定 / 解锁', '⇧⌘H / ⇧⌘L'], ['水平 / 垂直翻转', 'Shift+H / Shift+V'], ['自动布局 / 粘贴并替换', 'Shift+A / ⇧⌘R'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['直角 / 圆角切换', '双击圆角'], ['显示 / 隐藏标尺', '⌃R'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
 }

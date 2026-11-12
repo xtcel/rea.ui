@@ -4,7 +4,7 @@
 
 MCP server for [REA UI](https://github.com/xtcel/rea.ui). It wraps the `reaui` CLI so Claude Code, Cursor, Cline, or any MCP client can create, validate and pack `.reaui` design documents — React TSX + Tailwind that opens in the REA UI editor and exports as production code.
 
-Agents are good at writing TSX and bad at guessing file layout. This server encodes the contract: one protocol resource, eight tools, and structured validation errors a model can act on without reading source.
+Agents are good at writing TSX and bad at guessing file layout. This server encodes the contract: one protocol resource, ten tools, and structured validation errors a model can act on without reading source.
 
 ## Two transports, one package
 
@@ -85,6 +85,8 @@ Remote sessions are **not persisted**: the workspace is a temp directory created
 | `reaui_pack` | Pack a validated document into a single `.reaui` |
 | `reaui_unpack` | Unpack `.reaui` into a directory for page-by-page edits |
 | `reaui_preview` | Render a self-contained `preview.html` |
+| `reaui_get_system` | Read the complete project snapshot (or null); use it before editing existing projects |
+| `reaui_set_system` | Set a full system JSON package, or pass null to remove an unused system; validates all references before writing |
 | `reaui_diff` | Compare two design sources and report what changed |
 
 All paths are relative to the workspace root; absolute paths and `..` escapes are rejected.
@@ -118,3 +120,7 @@ Node.js **22.18+**. macOS, Linux, Windows. No Rust toolchain.
 ## License
 
 [Apache-2.0](https://github.com/xtcel/rea.ui/blob/main/LICENSE)
+
+## Project-owned systems
+
+`reaui_init` and `reaui_create_design` accept optional `system` (a complete serialized `reaui-design-system` JSON package). The package is embedded before token-aware pages are validated. `reaui_create_design` also accepts optional static `components` source; v4 supports both. Existing projects use their embedded snapshot, never a global default. Without a system, use existing page styling and literal values. Adopting a system does not publish a library version.

@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -47,8 +47,38 @@ async function exists(target: string): Promise<boolean> {
   }
 }
 
+/** Pass package content to the CLI without shell interpolation or a permanent sidecar. */
+async function withSystemFile<T>(root: string, source: string | undefined, run: (args: string[]) => Promise<T>): Promise<T> {
+  if (source === undefined) return run([]);
+  await mkdir(root, { recursive: true });
+  const file = path.join(root, `.reaui-system-${crypto.randomUUID()}.json`);
+  try { await writeFile(file, source, 'utf8'); return await run(['--system', file]); }
+  finally { await rm(file, { force: true }); }
+}
+
 export function registerTools(server: McpServer, context: ToolContext): void {
   const { root } = context;
+
+  server.registerTool('reaui_get_system', {
+    title: 'Read the project design system', description: 'Read the complete embedded project system, or null when none is set. This project snapshot is authoritative for generation.',
+    inputSchema: { path: z.string().describe('Project directory or .reaui file relative to the workspace root') },
+  }, async input => {
+    try {
+      const target = resolveInRoot(root, input.path);
+      const result = await runCli(['system', 'get', relativeTo(root, target), '--json'], root);
+      return reply(parseJsonOutput(result.stdout) ?? { error: result.stderr || result.stdout }, result.code !== 0);
+    } catch (error) { return failure(error); }
+  });
+  server.registerTool('reaui_set_system', {
+    title: 'Set or remove the project design system', description: 'Adopt a complete reaui-design-system package in a project directory. Pass null to remove. Validates all page/component token references before writing; does not publish a library version.',
+    inputSchema: { path: z.string().describe('Project directory relative to the workspace root'), system: z.string().nullable().describe('Full JSON package including schemaVersion, revision and hash; null removes the system') },
+  }, async input => {
+    try {
+      const target = resolveInRoot(root, input.path);
+      const result = await withSystemFile(root, input.system ?? undefined, args => runCli(['system', input.system === null ? 'remove' : 'set', relativeTo(root, target), ...args, '--json'], root));
+      return reply(parseJsonOutput(result.stdout) ?? { error: result.stderr || result.stdout }, result.code !== 0);
+    } catch (error) { return failure(error); }
+  });
 
   server.registerTool(
     'reaui_init',
@@ -63,6 +93,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
         pageName: z.string().optional().describe('Display name of the first page'),
         width: z.number().int().positive().optional().describe('Desktop artboard width, default 1440'),
         height: z.number().int().positive().optional().describe('Desktop artboard height, default 1024'),
+        system: z.string().optional().describe('Optional complete reaui-design-system JSON package embedded before page generation'),
       },
     },
     async input => {
@@ -73,7 +104,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
         if (input.pageName) args.push('--page-name', input.pageName);
         if (input.width) args.push('--width', String(input.width));
         if (input.height) args.push('--height', String(input.height));
-        const result = await runCli(args, root);
+        const result = await withSystemFile(root, input.system, extra => runCli([...args, ...extra], root));
         if (result.code !== 0) return reply({ ok: false, exitCode: result.code, error: result.stdout || result.stderr }, true);
         return reply({ ok: true, path: relativeTo(root, target), output: result.stdout.trim() });
       } catch (error) {
@@ -275,6 +306,8 @@ export function registerTools(server: McpServer, context: ToolContext): void {
           .describe('One or more pages, written in order'),
         width: z.number().int().positive().optional().describe('Desktop artboard width, default 1440'),
         height: z.number().int().positive().optional().describe('Desktop artboard height, default 1024'),
+        system: z.string().optional().describe('Optional complete reaui-design-system JSON package; pages can reference its --rea-ds-* variables'),
+        components: z.string().optional().describe('Optional complete static components/main.components.tsx source'),
         out: z.string().optional().describe('Output .reaui path, defaults to <path>.reaui'),
       },
     },
@@ -292,8 +325,16 @@ export function registerTools(server: McpServer, context: ToolContext): void {
         const initArgs = ['init', relativeTo(root, docDir), '--name', input.name, '--page', first.id, '--page-name', first.name];
         if (input.width) initArgs.push('--width', String(input.width));
         if (input.height) initArgs.push('--height', String(input.height));
-        const init = await runCli(initArgs, root);
+        const init = await withSystemFile(root, input.system, extra => runCli([...initArgs, ...extra], root));
         if (init.code !== 0) return reply({ ok: false, stage: 'init', exitCode: init.code, error: init.stdout || init.stderr }, true);
+
+        if (input.components !== undefined) {
+          await mkdir(path.join(docDir, 'components'), { recursive: true });
+          await writeFile(path.join(docDir, 'components/main.components.tsx'), input.components, 'utf8');
+          const manifest = await readManifest(docDir);
+          manifest.version = Math.max(3, manifest.version);
+          await writeFile(path.join(docDir, 'rea.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+        }
 
         await mkdir(path.join(docDir, 'pages'), { recursive: true });
         for (const page of input.pages) {

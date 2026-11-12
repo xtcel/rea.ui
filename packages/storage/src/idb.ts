@@ -1,6 +1,8 @@
 import { DocumentSession, createManifest, newPageSource } from '@rea/document';
 import type { DocumentManifest } from '@rea/document';
 import { isAssetPath } from '@rea/design';
+import { serializeSystem, SYSTEM_FILE } from '@rea/design-system';
+import type { DesignSystemPackage } from '@rea/design-system';
 
 export interface DocumentRecord {
   id: string; name: string; createdAt: string; updatedAt: string; revision: number;
@@ -72,7 +74,13 @@ export class StorageService {
       return next;
     } catch (error) { try { tx.abort(); } catch { /* Already aborted. */ } await done.catch(() => {}); throw error; }
   }
-  async createDocument(name?: string): Promise<DocumentRecord> { return this.saveDocument(emptyDocument(name)); }
+  async createDocument(name?: string, system?: DesignSystemPackage): Promise<DocumentRecord> {
+    const doc = emptyDocument(name);
+    if (!system) return this.saveDocument(doc);
+    const session = new DocumentSession(doc.files).commit({ label: '采用设计系统', ops: [{ type: 'system', source: serializeSystem(system) }] });
+    if (!session.files[SYSTEM_FILE]) throw new Error('未能创建项目设计系统。');
+    return this.saveDocument(recordFromFiles({ ...session.files }));
+  }
   async getAssets(docId: string): Promise<AssetRecord[]> {
     const db = await this.getDB();
     const all = await request<AssetRecord[]>(db.transaction('assets', 'readonly').objectStore('assets').getAll());

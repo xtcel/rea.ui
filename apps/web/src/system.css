@@ -296,6 +296,12 @@
   .sys-sec-head { flex-direction:column; align-items:flex-start; gap:10px; }
 }
 @media (max-width:620px) {
+  .is-project-system .sys-title { flex:1; overflow:hidden; }
+  .is-project-system .sys-title input { width:100%; min-width:0; }
+  .is-project-system .sys-status { display:none; }
+  .is-project-system .sys-actions { flex-shrink:0; margin-left:0; }
+  .is-project-system .sys-actions .home-primary-button { display:inline-flex; white-space:nowrap; }
+  .is-project-system .sys-actions .home-secondary-button { display:none; }
   .sys-title input { width:min(160px,38vw); font-size:13px; }
   .sys-actions .home-primary-button { display:none; }
   .sys-sec { padding:20px 0; }

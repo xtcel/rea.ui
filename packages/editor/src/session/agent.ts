@@ -1,4 +1,16 @@
-import { COMPONENT_FILE, DocumentSession, SYSTEM_FILE } from '@rea/document';
+import { COMPONENT_FILE, DocumentSession, parseManifest, SYSTEM_FILE } from '@rea/document';
+
+/** Validate editable sources with the host's read-only system, never an Agent-supplied snapshot. */
+export function agentCandidateFiles(session: DocumentSession, files: Readonly<Record<string, string>>): Record<string, string> {
+  let manifest = parseManifest(files['rea.json']);
+  if (manifest.id !== session.manifest.id || manifest.createdAt !== session.manifest.createdAt) throw new Error('AI 不允许修改项目身份。');
+  if (session.manifest.version === 4) manifest = { ...manifest, version: 4 };
+  const candidate: Record<string, string> = { 'rea.json': JSON.stringify(manifest, null, 2) };
+  for (const page of manifest.pages) candidate[page.file] = files[page.file];
+  if (files[COMPONENT_FILE] !== undefined) candidate[COMPONENT_FILE] = files[COMPONENT_FILE];
+  if (session.files[SYSTEM_FILE]) candidate[SYSTEM_FILE] = session.files[SYSTEM_FILE];
+  return { ...new DocumentSession(candidate).files };
+}
 
 /** Merge only the editable design files; binary assets stay with the host document. */
 export function applyAgentSnapshot(session: DocumentSession, documentId: string, expectedRev: number, files: Record<string, string>, turnId: string): DocumentSession {
@@ -7,13 +19,7 @@ export function applyAgentSnapshot(session: DocumentSession, documentId: string,
   const nextFiles = { ...session.files };
   for (const page of session.manifest.pages) delete nextFiles[page.file];
   delete nextFiles[COMPONENT_FILE];
-  // The pinned system is host-owned: the Agent never receives or edits it.
-  const candidateFiles = { ...files };
-  if (session.manifest.version === 4) {
-    const manifest = JSON.parse(candidateFiles['rea.json']) as Record<string, unknown>;
-    if (manifest.version !== 4) candidateFiles['rea.json'] = JSON.stringify({ ...manifest, version: 4 }, null, 2);
-    if (session.files[SYSTEM_FILE]) candidateFiles[SYSTEM_FILE] = session.files[SYSTEM_FILE];
-  }
+  const candidateFiles = agentCandidateFiles(session, files);
   const candidate = new DocumentSession(candidateFiles);
   const paths = ['rea.json', ...candidate.manifest.pages.map(page => page.file), ...(files[COMPONENT_FILE] ? [COMPONENT_FILE] : [])];
   for (const path of paths) nextFiles[path] = candidateFiles[path];

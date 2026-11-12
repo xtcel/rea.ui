@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { COMPONENT_FILE, DocumentSession, createManifest, newPageSource } from '@rea/document';
 import { decodeReaui, exportReaui } from '@rea/storage';
 import { applyAgentSnapshot } from './agent';
+import { createSystem, DEFAULT_TOKENS, serializeSystem, SYSTEM_FILE } from '@rea/design-system';
+import { apiWorkspacePrompt, designSources } from '../agent/generation';
+import { pinnedAgentSystem } from '../agent/designSystem';
 
 function document() {
   return new DocumentSession({ 'rea.json': JSON.stringify(createManifest('doc_agent', 'AI 项目', [{ id: 'main', file: 'pages/main.page.tsx' }])), 'pages/main.page.tsx': newPageSource('main'), 'assets/index.txt': 'keep this asset index' });
@@ -10,6 +13,24 @@ function snapshot(session: DocumentSession, text: string): Record<string, string
   return { ...session.files, 'pages/main.page.tsx': `import { Page, Frame, Text } from '@rea/design'; export default <Page id="main" designId="page-root"><Frame designId="main-frame" className="absolute left-0 top-0 w-[1440px] h-[1024px] bg-white"><Text designId="title-main">${text}</Text></Frame></Page>;` };
 }
 describe('Agent source snapshots', () => {
+  it('validates two token-aware turns with the host system and rejects forged or unknown tokens', async () => {
+    const pkg = createSystem({ id: 'host-system', name: '宿主系统', tokens: DEFAULT_TOKENS, components: [], guidelines: '' });
+    const base = document().commit({ label: '采用', ops: [{ type: 'system', source: serializeSystem(pkg) }] });
+    const editable = designSources(base.files);
+    editable['rea.json'] = editable['rea.json'].replace('"version": 4', '"version": 2');
+    editable['pages/main.page.tsx'] = snapshot(base, '第一轮')['pages/main.page.tsx'].replace('bg-white', 'bg-[var(--rea-ds-color-primary)]');
+    editable[SYSTEM_FILE] = '{forged';
+    const first = applyAgentSnapshot(base, base.manifest.id, base.rev, editable, 'one');
+    expect(first.manifest.version).toBe(4);
+    expect(first.files[SYSTEM_FILE]).toBe(base.files[SYSTEM_FILE]);
+    expect(apiWorkspacePrompt('继续', pinnedAgentSystem(pkg), null, '', '', first.files)).toContain('--rea-ds-color-primary');
+    const second = applyAgentSnapshot(first, first.manifest.id, first.rev, designSources(first.files), 'two');
+    expect(second.system?.hash).toBe(pkg.hash);
+    const invalid = { ...editable, 'pages/main.page.tsx': editable['pages/main.page.tsx'].replace('color-primary', 'color-unknown') };
+    expect(() => applyAgentSnapshot(second, second.manifest.id, second.rev, invalid, 'bad')).toThrow('未声明令牌');
+    const reopened = decodeReaui(await exportReaui({ files: second.files }));
+    expect(reopened.document.files[SYSTEM_FILE]).toBe(base.files[SYSTEM_FILE]);
+  });
   it('coalesces a turn, preserves assets, exports and restores its complete source', async () => {
     const initial = document();
     const first = applyAgentSnapshot(initial, 'doc_agent', 0, snapshot(initial, '布局'), 'turn-one');

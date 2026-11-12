@@ -40,12 +40,7 @@ export function isPreferences(value: unknown): value is Preferences {
  * until the user fixes them in the editor; completeness is enforced at publish time instead of
  * dropping the record on load.
  */
-export function isSystems(value: unknown): value is DesignSystem[] {
-  return Array.isArray(value) && value.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.description === 'string' && typeof item.color === 'string' && Array.isArray(item.colors) && item.colors.every((color: unknown) => typeof color === 'string') &&
-    (item.tokens === undefined || !!item.tokens && typeof item.tokens === 'object') && (item.published === undefined || typeof item.published === 'boolean') &&
-    (item.revision === undefined || (Number.isInteger(item.revision) && item.revision >= 1)) && (item.schemaVersion === undefined || item.schemaVersion === 1 || item.schemaVersion === 2) && (item.hash === undefined || /^[0-9a-f]{64}$/.test(item.hash)) &&
-    (item.guidelines === undefined || typeof item.guidelines === 'string') && (item.components === undefined || Array.isArray(item.components) && item.components.every((c: { name?: unknown; description?: unknown }) => c && typeof c.name === 'string' && typeof c.description === 'string')));
-}
+export { isSystemDrafts as isSystems } from '@rea/design-system';
 export function relativeDate(value: string): string {
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
   if (elapsed < 60_000) return '刚刚更新';

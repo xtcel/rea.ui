@@ -1,4 +1,4 @@
-import { AGENT_SESSIONS_FILE, createManifest, DocumentSession, COMPONENT_FILE } from '@rea/document';
+import { createManifest, DocumentSession, COMPONENT_FILE } from '@rea/document';
 import { decodeReaui, recordFromFiles } from '@rea/storage';
 import type { DocumentRecord } from '@rea/storage';
 import { serializeSystem } from '@rea/design-system';
@@ -10,7 +10,8 @@ import type { ProjectContext } from './client';
  * token references are legal: an unpinned document would reject `var(--rea-ds-*)` at validation,
  * so the prompt must ask for literals instead of pretending the system is enforced.
  */
-function systemContext(system: AgentSystemInput): string {
+function systemContext(system: AgentSystemInput | null): string {
+  if (!system) return '当前项目未设置设计系统。沿用已有页面的视觉语言和用户要求，使用具体颜色与 px 数值，不要引用 var(--rea-ds-*)。需要设置系统时请使用项目的设计系统编辑入口。';
   const { pkg, ref, bound } = system;
   const rules = bound
     ? `- 颜色、间距、圆角与阴影只能引用 var(--rea-ds-*)，例如 bg-[var(--rea-ds-color-surface)]、rounded-[var(--rea-ds-radius-md)]、p-[var(--rea-ds-space-24)]；不要写十六进制字面量。
@@ -56,14 +57,14 @@ export function designSources(files: Readonly<Record<string, string>>): Record<s
   return result;
 }
 
-export function workspacePrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
+export function workspacePrompt(prompt: string, system: AgentSystemInput | null, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
   return `${uiPrompt(prompt, system, project, references).replace('不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。', '在宿主提供的临时设计目录中直接编辑设计源文件。')}
 
 本轮使用设计文件交互协议，优先遵循以下工作方式：
 - 当前目录是当前项目的临时设计工作区，已有 rea.json 和 pages/*.page.tsx。先列出文件，读取清单、目标页面和 AGENTS.md，再编辑。
 - 页面源码是唯一设计真源。用工具直接编辑 pages/*.page.tsx；每完成一个画框或区域，立即保存语法完整、可静态校验的页面，宿主会同步到右侧画布。不要等全部完成后才写入。
 - 修改现有节点时保留已有 designId；保留未要求修改的页面、图层、文案和组件。修改布局前可通过节点的 designId、name 和嵌套关系理解图层树。
-- 保持 rea.json 的 id 和 createdAt；新增或删除页面时同步更新清单。使用组件目录 ${COMPONENT_FILE} 时清单 version 必须为 3。
+- 保持 rea.json 的 id 和 createdAt；新增或删除页面时同步更新清单。使用组件目录 ${COMPONENT_FILE} 时清单 version 至少为 3，已有 v4 不得降级。项目设计系统由宿主管理，不修改或替换。
 - 只编辑工作区中的设计文件；关联项目资料已经附在上下文中。不要编辑关联项目、运行生成的 TSX 或下载依赖。
 - 不新建资源；已有资产只保留当前引用，资产索引：${Object.keys(files).filter(path => path.startsWith('assets/')).join(', ') || '无'}。
 - 通过简短的进度说明告知当前正在完成的区域或操作，只提供执行摘要，不输出内部推理。
@@ -92,7 +93,7 @@ ${selectionContext}
  * API 提供商走 HTTP 而非本地 CLI，没有文件工具与 AGENTS.md，
  * 因此把当前设计源直接放进上下文，要求一次返回完整的文件内容。
  */
-export function apiWorkspacePrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
+export function apiWorkspacePrompt(prompt: string, system: AgentSystemInput | null, project: ProjectContext | null, references: string, conversation: string, files: Readonly<Record<string, string>>, selectionContext = ''): string {
   const sources = Object.entries(designSources(files)).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n\n');
   return `你是 REA UI 的界面设计 Agent。根据需求修改当前设计工作区，并返回完整的文件内容。使用中文内容，遵循给定设计系统。
 
@@ -154,7 +155,7 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
     if (file.size > 12 * 1024 * 1024) throw new Error(`「${file.name}」超过 12MB，请缩小后重试。`);
     if (/\.reaui$/i.test(file.name)) {
       const { document } = decodeReaui(new Uint8Array(await file.arrayBuffer()));
-      context += `\n设计参考 ${file.name}（仅参考，不覆盖）：\n${Object.entries(document.files).filter(([path]) => path !== AGENT_SESSIONS_FILE).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n').slice(0, 90_000)}\n`;
+      context += `\n设计参考 ${file.name}（仅参考，不覆盖）：\n${Object.entries(document.files).filter(([path]) => !path.startsWith('agent/')).map(([path, source]) => `--- ${path} ---\n${source}`).join('\n').slice(0, 90_000)}\n`;
     } else if (/\.(md|markdown|txt|css|scss|json|tsx|jsx|ts|js)$/i.test(file.name)) {
       if (file.size > 150_000) throw new Error(`「${file.name}」超过文本参考限制 150KB。`);
       context += `\n参考 ${file.name}:\n${(await file.text()).slice(0, 60_000)}\n`;
@@ -164,7 +165,7 @@ export async function attachmentContext(files: readonly File[]): Promise<string>
   return context;
 }
 
-export function uiPrompt(prompt: string, system: AgentSystemInput, project: ProjectContext | null, references = '', previous = ''): string {
+export function uiPrompt(prompt: string, system: AgentSystemInput | null, project: ProjectContext | null, references = '', previous = ''): string {
   return `你是 REA UI 的界面设计 Agent。根据需求设计完成度高的可编辑界面，使用中文内容，遵循给定设计系统。不要修改任何本地文件。仅将结构化结果作为最终回复，不使用工具来编辑代码。\n
 需求：${prompt}\n
 设计系统：

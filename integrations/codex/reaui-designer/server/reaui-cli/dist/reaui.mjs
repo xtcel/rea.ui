@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire as createRequire$1 } from "module";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 // \0rolldown/runtime.js
 var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod, mod.exports), cb = null), mod.exports);
 var __require = /* #__PURE__ */ (() => createRequire(import.meta.url))();
-// packages/reaui-cli/src/errors.ts
+// src/errors.ts
 var CliError = class extends Error {
 	code;
 	path;
@@ -106,7 +106,7 @@ function printErrors(errors, json) {
 		if (error.hint) console.error(`    提示：${error.hint}`);
 	}
 }
-// packages/reaui-cli/src/args.ts
+// src/args.ts
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
 	"name",
 	"page",
@@ -171,7 +171,7 @@ function value(args, name, fallback) {
 function values(args, name) {
 	return args.values.get(name) ?? [];
 }
-// node_modules/.pnpm/@babel+parser@8.0.10/node_modules/@babel/parser/lib/index.js
+// ../../node_modules/.pnpm/@babel+parser@8.0.10/node_modules/@babel/parser/lib/index.js
 var Position = class {
 	constructor(line, col, index) {
 		this.line = void 0;
@@ -11751,7 +11751,7 @@ function getParserClass(pluginsMap) {
 	}
 	return cls;
 }
-// node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react.production.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react.production.js
 /**
 * @license React
 * react.production.js
@@ -12137,7 +12137,7 @@ var require_react_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	};
 	exports.version = "19.3.1";
 }));
-// node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react.development.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react.development.js
 /**
 * @license React
 * react.development.js
@@ -12916,12 +12916,12 @@ var require_react_development = /* @__PURE__ */ __commonJSMin(((exports, module)
 		"undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
 	})();
 }));
-// node_modules/.pnpm/react@19.3.1/node_modules/react/index.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/index.js
 var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	if (process.env.NODE_ENV === "production") module.exports = require_react_production();
 	else module.exports = require_react_development();
 }));
-// packages/design/src/primitives.tsx
+// ../design/src/primitives.tsx
 var import_react = require_react();
 function Page(_props) {
 	return null;
@@ -12995,7 +12995,7 @@ var isVectorKind = (kind) => [
 	"Polygon",
 	"Star"
 ].includes(kind);
-// packages/design/src/vector.ts
+// ../design/src/vector.ts
 function shapePath(kind, props) {
 	if (kind === "Vector") return props.path ? pathData(props.path) : props.d ?? "";
 	if (kind === "Line") return `M ${props.x1 ?? 0} ${props.y1 ?? 50} L ${props.x2 ?? 100} ${props.y2 ?? 50}`;
@@ -13042,7 +13042,7 @@ function validatePath(value) {
 		ids.add(a.id);
 	}
 }
-// packages/design/src/inspect.ts
+// ../design/src/inspect.ts
 var PAGE_ID = /^[a-z][a-z0-9-]{0,63}$/;
 var DESIGN_ID = /^[a-z][a-z0-9-]{1,63}$/;
 function isAssetPath(path) {
@@ -13178,7 +13178,7 @@ function inspectPage(source, derived = false) {
 		nodes
 	};
 }
-// packages/document/src/parsePage.ts
+// ../document/src/parsePage.ts
 function jsxText(value) {
 	const lines = value.replace(/\t/g, " ").split(/\r\n|\n|\r/);
 	let last = 0;
@@ -13301,9 +13301,44 @@ function parsePage(code, path = "page.tsx") {
 		throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
-// packages/design-system/src/types.ts
+// ../design-system/src/types.ts
 var SYSTEM_FORMAT = "reaui-design-system";
 var SYSTEM_FILE = "design/system.json";
+/** Core role every system must declare; the rest are optional semantic roles. */
+var REQUIRED_COLOR_ROLES = ["primary"];
+var OPTIONAL_COLOR_ROLES = [
+	"background",
+	"surface",
+	"text",
+	"muted",
+	"border",
+	"primaryHover",
+	"onPrimary",
+	"selected",
+	"hover",
+	"success",
+	"warning",
+	"danger",
+	"foreground",
+	"onSurface",
+	"surfaceRaised",
+	"overlay",
+	"focusRing",
+	"disabled",
+	"disabledText",
+	"card",
+	"cardForeground",
+	"popover",
+	"popoverForeground",
+	"secondary",
+	"secondaryForeground",
+	"accent",
+	"accentForeground",
+	"destructive",
+	"destructiveForeground",
+	"inverse",
+	"inverseText"
+];
 var COMPONENT_TOKEN_SLOTS = [
 	"background",
 	"text",
@@ -13323,7 +13358,7 @@ var DesignSystemError = class extends Error {
 		this.name = "DesignSystemError";
 	}
 };
-// packages/design-system/src/hash.ts
+// ../design-system/src/hash.ts
 var K$1 = new Uint32Array([
 	1116352408,
 	1899447441,
@@ -13453,41 +13488,65 @@ function canonicalJson(value) {
 	const record = value;
 	return `{${Object.keys(record).filter((key) => record[key] !== void 0).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
 }
-// packages/design-system/src/tokens.ts
+// ../design-system/src/tokens.ts
 var TOKEN_VAR_PATTERN = /var\(\s*(--rea-ds-[a-z0-9-]+)\s*\)/g;
-var HEX = /^#[0-9a-f]{6}$/i;
-var KEY = /^[a-z][a-z0-9-]*$/;
+var HEX = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+var HEX_V1 = /^#[0-9a-f]{6}$/i;
+var ALIAS = /^var\(\s*(--rea-ds-color-[a-z0-9-]+)\s*\)$/;
+var KEY = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 var SHADOW_FORBIDDEN = /[;@{}]|url\(|var\(/i;
-var COLOR_REQUIRED = [
-	"primary",
-	"background",
-	"surface",
-	"text",
-	"muted",
-	"border"
-];
-var COLOR_OPTIONAL = [
-	"primaryHover",
-	"onPrimary",
-	"selected",
-	"hover",
-	"success",
-	"warning",
-	"danger"
-];
-var TYPOGRAPHY_ROLES = [
+var EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|cubic-bezier\([-\d.,\s]{7,80}\)|steps\(\d{1,3}(,\s*(start|end|jump-start|jump-end))?\))$/;
+var COLOR_OPTIONAL = OPTIONAL_COLOR_ROLES;
+var TYPE_ROLES_V1 = [
 	"body",
 	"heading",
 	"caption"
 ];
-var RADIUS_KEYS = [
+var COMPAT_TYPE_ROLES = new Set(TYPE_ROLES_V1);
+var RADIUS_KEYS_V1 = [
 	"sm",
 	"md",
 	"lg"
 ];
+var RADIUS_KEYS = [
+	"sm",
+	"md",
+	"lg",
+	"xl",
+	"full"
+];
+var TYPE_FIELDS = [
+	"size",
+	"lineHeight",
+	"weight",
+	"letterSpacing",
+	"family"
+];
 var record$2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var finite = (value) => typeof value === "number" && Number.isFinite(value);
-var kebab = (value) => value.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+var kebab = (value) => value.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replace(/_+/g, "-").toLowerCase();
+function isV2Tokens(tokens) {
+	return record$2(tokens.typography) && "roles" in tokens.typography;
+}
+/** Follow `var(--rea-ds-color-*)` aliases until a hex value or a dead end. */
+function resolveColor(tokens, key) {
+	const palette = tokens.color;
+	const seen = /* @__PURE__ */ new Set();
+	let current = key;
+	for (let hop = 0; hop < 8; hop++) {
+		if (seen.has(current)) return void 0;
+		seen.add(current);
+		const value = palette[current];
+		if (typeof value !== "string") return void 0;
+		if (HEX.test(value)) return value;
+		const alias = ALIAS.exec(value);
+		if (!alias) return void 0;
+		const next = Object.entries(palette).find(([name]) => `--rea-ds-color-${kebab(name)}` === alias[1]);
+		if (!next) return void 0;
+		current = next[0];
+	}
+}
+var lineValue = (value) => value < 4 ? String(value) : `${value}px`;
 /** Paths that can be referenced from component specs, mapped to their CSS variable names. */
 function systemVariables(tokens) {
 	const variables = [];
@@ -13501,16 +13560,55 @@ function systemVariables(tokens) {
 		value: tokens.typography.family,
 		path: "typography.family"
 	});
-	for (const role of TYPOGRAPHY_ROLES) {
+	if (isV2Tokens(tokens)) for (const role of Object.keys(tokens.typography.roles).sort()) {
+		const value = tokens.typography.roles[role];
+		const roleKey = kebab(role);
+		variables.push({
+			name: `--rea-ds-type-${roleKey}-size`,
+			value: `${value.size}px`,
+			path: `type.${role}.size`
+		}, {
+			name: `--rea-ds-type-${roleKey}-line`,
+			value: lineValue(value.lineHeight),
+			path: `type.${role}.lineHeight`
+		}, {
+			name: `--rea-ds-type-${roleKey}-weight`,
+			value: String(value.weight),
+			path: `type.${role}.weight`
+		});
+		if (value.letterSpacing !== void 0) variables.push({
+			name: `--rea-ds-type-${roleKey}-tracking`,
+			value: `${value.letterSpacing}px`,
+			path: `type.${role}.letterSpacing`
+		});
+		if (value.family) variables.push({
+			name: `--rea-ds-type-${roleKey}-family`,
+			value: value.family,
+			path: `type.${role}.family`
+		});
+		if (COMPAT_TYPE_ROLES.has(roleKey)) variables.push({
+			name: `--rea-ds-typography-${roleKey}-size`,
+			value: `${value.size}px`,
+			path: `typography.${role}.size`
+		}, {
+			name: `--rea-ds-typography-${roleKey}-line`,
+			value: lineValue(value.lineHeight),
+			path: `typography.${role}.lineHeight`
+		}, {
+			name: `--rea-ds-typography-${roleKey}-weight`,
+			value: String(value.weight),
+			path: `typography.${role}.weight`
+		});
+	}
+	else for (const role of TYPE_ROLES_V1) {
 		const value = tokens.typography[role];
-		const line = value.lineHeight <= 3 ? String(value.lineHeight) : `${value.lineHeight}px`;
 		variables.push({
 			name: `--rea-ds-typography-${role}-size`,
 			value: `${value.size}px`,
 			path: `typography.${role}.size`
 		}, {
 			name: `--rea-ds-typography-${role}-line`,
-			value: line,
+			value: lineValue(value.lineHeight),
 			path: `typography.${role}.lineHeight`
 		}, {
 			name: `--rea-ds-typography-${role}-weight`,
@@ -13523,16 +13621,32 @@ function systemVariables(tokens) {
 		value: `${value}px`,
 		path: `space.${value}`
 	});
-	for (const key of RADIUS_KEYS) variables.push({
-		name: `--rea-ds-radius-${key}`,
-		value: `${tokens.radius[key]}px`,
-		path: `radius.${key}`
-	});
+	const radiusKeys = isV2Tokens(tokens) ? [...RADIUS_KEYS, ...Object.keys(tokens.radius).filter((key) => !RADIUS_KEYS.includes(key)).sort()] : RADIUS_KEYS_V1;
+	for (const key of radiusKeys) {
+		const value = tokens.radius[key];
+		if (typeof value === "number") variables.push({
+			name: `--rea-ds-radius-${kebab(key)}`,
+			value: `${value}px`,
+			path: `radius.${key}`
+		});
+	}
 	for (const [key, value] of Object.entries(tokens.shadow ?? {})) variables.push({
 		name: `--rea-ds-shadow-${kebab(key)}`,
 		value,
 		path: `shadow.${key}`
 	});
+	if (isV2Tokens(tokens) && tokens.motion) {
+		for (const [key, value] of Object.entries(tokens.motion.duration)) variables.push({
+			name: `--rea-ds-motion-duration-${kebab(key)}`,
+			value: `${value}ms`,
+			path: `motion.duration.${key}`
+		});
+		for (const [key, value] of Object.entries(tokens.motion.easing)) variables.push({
+			name: `--rea-ds-motion-easing-${kebab(key)}`,
+			value,
+			path: `motion.easing.${key}`
+		});
+	}
 	return variables;
 }
 function declaredVariables(tokens) {
@@ -13555,7 +13669,7 @@ function extractTokenRefs(source) {
 function cssVariables(tokens, selector = ":host") {
 	return `${selector}{${systemVariables(tokens).map((variable) => `${variable.name}:${variable.value}`).join(";")}}`;
 }
-function colorIssues(color, issues) {
+function colorIssues(color, issues, v2) {
 	if (!record$2(color)) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13564,24 +13678,61 @@ function colorIssues(color, issues) {
 		});
 		return;
 	}
-	for (const key of COLOR_REQUIRED) if (!(key in color)) issues.push({
+	const entries = Object.entries(color);
+	if (entries.length > 48) issues.push({
+		code: "DS_TOKEN_INVALID",
+		path: "tokens.color",
+		message: "颜色角色最多 48 项。"
+	});
+	for (const key of REQUIRED_COLOR_ROLES) if (!(key in color)) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.color.${key}`,
 		message: `缺少必需颜色 ${key}。`
 	});
-	const allowed = /* @__PURE__ */ new Set([...COLOR_REQUIRED, ...COLOR_OPTIONAL]);
-	for (const [key, value] of Object.entries(color)) if (!allowed.has(key) && !/^[a-z][a-zA-Z0-9-]*$/.test(key)) issues.push({
+	const allowed = /* @__PURE__ */ new Set([...REQUIRED_COLOR_ROLES, ...COLOR_OPTIONAL]);
+	const hexPattern = v2 ? HEX : HEX_V1;
+	for (const [key, value] of entries) if (!allowed.has(key) && !KEY.test(key)) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.color.${key}`,
 		message: `颜色令牌名不合法：${key}。`
 	});
-	else if (typeof value !== "string" || !HEX.test(value)) issues.push({
+	else if (typeof value !== "string") issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.color.${key}`,
-		message: "颜色必须是六位十六进制，例如 #356AF0。"
+		message: "颜色必须是十六进制或别名 var(--rea-ds-color-*)。"
 	});
+	else if (hexPattern.test(value)) continue;
+	else if (v2 && ALIAS.test(value)) continue;
+	else issues.push({
+		code: "DS_TOKEN_INVALID",
+		path: `tokens.color.${key}`,
+		message: v2 ? "颜色必须是十六进制（#RGB / #RRGGBB / #RRGGBBAA）或别名 var(--rea-ds-color-*)。" : "颜色必须是六位十六进制，例如 #356AF0。"
+	});
+	if (v2) {
+		const names = new Set(Object.keys(color).map((name) => `--rea-ds-color-${kebab(name)}`));
+		for (const [key, value] of entries) {
+			if (typeof value !== "string") continue;
+			const alias = ALIAS.exec(value);
+			if (!alias) continue;
+			if (alias[1] === `--rea-ds-color-${kebab(key)}`) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.color.${key}`,
+				message: "颜色不能引用自身。"
+			});
+			else if (!names.has(alias[1])) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.color.${key}`,
+				message: `别名指向未声明的颜色 ${alias[1]}。`
+			});
+			else if (resolveColor({ color }, key) === void 0) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.color.${key}`,
+				message: "颜色别名存在循环引用。"
+			});
+		}
+	}
 }
-function typographyIssues(typography, issues) {
+function typographyIssues(typography, issues, v2) {
 	if (!record$2(typography)) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13590,53 +13741,85 @@ function typographyIssues(typography, issues) {
 		});
 		return;
 	}
-	const allowed = /* @__PURE__ */ new Set(["family", ...TYPOGRAPHY_ROLES]);
-	for (const key of Object.keys(typography)) if (!allowed.has(key)) issues.push({
-		code: "DS_TOKEN_INVALID",
-		path: `tokens.typography.${key}`,
-		message: `未知排版令牌 ${key}。`
-	});
 	const family = typography.family;
 	if (typeof family !== "string" || !family.trim() || family.length > 240 || /[;@{}<>]/.test(family)) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: "tokens.typography.family",
 		message: "字体栈必须是 1–240 字符的静态 CSS 字体栈。"
 	});
-	for (const role of TYPOGRAPHY_ROLES) {
-		const value = typography[role];
+	const role = (name, value, path) => {
 		if (!record$2(value)) {
 			issues.push({
 				code: "DS_TOKEN_INVALID",
-				path: `tokens.typography.${role}`,
-				message: `${role} 必须是 { size, lineHeight, weight }。`
+				path,
+				message: `${name} 必须是 { size, lineHeight, weight }。`
 			});
-			continue;
+			return;
 		}
-		for (const key of Object.keys(value)) if (![
-			"size",
-			"lineHeight",
-			"weight"
-		].includes(key)) issues.push({
+		for (const key of Object.keys(value)) if (!TYPE_FIELDS.includes(key)) issues.push({
 			code: "DS_TOKEN_INVALID",
-			path: `tokens.typography.${role}.${key}`,
+			path: `${path}.${key}`,
 			message: `未知字段 ${key}。`
 		});
-		if (!finite(value.size) || value.size < 8 || value.size > 96) issues.push({
+		if (!finite(value.size) || value.size < 4 || value.size > 240) issues.push({
 			code: "DS_TOKEN_INVALID",
-			path: `tokens.typography.${role}.size`,
-			message: "字号必须在 8–96 之间。"
+			path: `${path}.size`,
+			message: "字号必须在 4–240 之间。"
 		});
-		if (!finite(value.lineHeight) || !(value.lineHeight >= 1 && value.lineHeight <= 3 || value.lineHeight >= 8 && value.lineHeight <= 96)) issues.push({
+		if (!finite(value.lineHeight) || !(value.lineHeight >= .5 && value.lineHeight <= 4 || value.lineHeight >= 4 && value.lineHeight <= 300)) issues.push({
 			code: "DS_TOKEN_INVALID",
-			path: `tokens.typography.${role}.lineHeight`,
-			message: "行高必须是 1–3 的倍数或 8–96 的 px 值。"
+			path: `${path}.lineHeight`,
+			message: "行高必须是 0.5–4 的倍数或 4–300 的 px 值。"
 		});
-		if (!finite(value.weight) || value.weight < 100 || value.weight > 900 || value.weight % 100 !== 0) issues.push({
+		if (!finite(value.weight) || !Number.isInteger(value.weight) || value.weight < 100 || value.weight > 900) issues.push({
 			code: "DS_TOKEN_INVALID",
-			path: `tokens.typography.${role}.weight`,
-			message: "字重必须是 100–900 的整百数。"
+			path: `${path}.weight`,
+			message: "字重必须是 100–900 的整数。"
 		});
+		if (value.letterSpacing !== void 0 && (!finite(value.letterSpacing) || value.letterSpacing < -16 || value.letterSpacing > 32)) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: `${path}.letterSpacing`,
+			message: "字距必须在 -16–32 之间。"
+		});
+		if (value.family !== void 0 && (typeof value.family !== "string" || !value.family.trim() || value.family.length > 240 || /[;@{}<>]/.test(value.family))) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: `${path}.family`,
+			message: "角色字体栈必须是 1–240 字符的静态 CSS 字体栈。"
+		});
+	};
+	if (v2) {
+		const roles = typography.roles;
+		if (!record$2(roles)) {
+			issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: "tokens.typography.roles",
+				message: "typography.roles 必须是对象。"
+			});
+			return;
+		}
+		const names = Object.keys(roles);
+		if (!names.length || names.length > 48) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: "tokens.typography.roles",
+			message: "排版角色需要 1–48 项。"
+		});
+		for (const name of names) {
+			if (!KEY.test(name)) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.typography.roles.${name}`,
+				message: `排版角色名不合法：${name}。`
+			});
+			role(name, roles[name], `tokens.typography.roles.${name}`);
+		}
+		return;
 	}
+	const allowed = /* @__PURE__ */ new Set(["family", ...TYPE_ROLES_V1]);
+	for (const key of Object.keys(typography)) if (!allowed.has(key)) issues.push({
+		code: "DS_TOKEN_INVALID",
+		path: `tokens.typography.${key}`,
+		message: `未知排版令牌 ${key}。`
+	});
+	for (const name of TYPE_ROLES_V1) role(name, typography[name], `tokens.typography.${name}`);
 }
 function spaceIssues(space, issues) {
 	if (!record$2(space)) {
@@ -13678,7 +13861,7 @@ function spaceIssues(space, issues) {
 	});
 	else previous = value;
 }
-function radiusIssues(radius, issues) {
+function radiusIssues(radius, issues, v2) {
 	if (!record$2(radius)) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13687,18 +13870,43 @@ function radiusIssues(radius, issues) {
 		});
 		return;
 	}
-	const allowed = new Set(RADIUS_KEYS);
-	for (const key of Object.keys(radius)) if (!allowed.has(key)) issues.push({
-		code: "DS_TOKEN_INVALID",
-		path: `tokens.radius.${key}`,
-		message: `未知圆角令牌 ${key}。`
-	});
-	for (const key of RADIUS_KEYS) {
-		const value = radius[key];
-		if (!finite(value) || value < 0 || value > 96) issues.push({
+	if (!v2) {
+		const allowed = new Set(RADIUS_KEYS_V1);
+		for (const key of Object.keys(radius)) if (!allowed.has(key)) issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: `tokens.radius.${key}`,
-			message: "圆角必须是 0–96 的有限数字。"
+			message: `未知圆角令牌 ${key}。`
+		});
+		for (const key of RADIUS_KEYS_V1) {
+			const value = radius[key];
+			if (!finite(value) || value < 0 || value > 9999) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.radius.${key}`,
+				message: "圆角必须是 0–9999 的有限数字。"
+			});
+		}
+		return;
+	}
+	for (const key of RADIUS_KEYS_V1) {
+		const value = radius[key];
+		if (!finite(value) || value < 0 || value > 9999) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: `tokens.radius.${key}`,
+			message: "圆角必须是 0–9999 的有限数字。"
+		});
+	}
+	for (const [key, value] of Object.entries(radius)) {
+		if (RADIUS_KEYS_V1.includes(key)) continue;
+		if (value === void 0) continue;
+		if (!KEY.test(key)) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: `tokens.radius.${key}`,
+			message: `圆角令牌名不合法：${key}。`
+		});
+		else if (!finite(value) || value < 0 || value > 9999) issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: `tokens.radius.${key}`,
+			message: "圆角必须是 0–9999 的有限数字。"
 		});
 	}
 }
@@ -13716,7 +13924,7 @@ function shadowIssues(shadow, issues) {
 		if (!KEY.test(key)) issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: `tokens.shadow.${key}`,
-			message: "阴影名必须是小写标识符。"
+			message: "阴影名必须是合法标识符。"
 		});
 		if (typeof value !== "string" || !value.trim() || value.length > 200 || SHADOW_FORBIDDEN.test(value)) issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13725,7 +13933,54 @@ function shadowIssues(shadow, issues) {
 		});
 	}
 }
-function validateTokens(tokens, issues) {
+function motionIssues(motion, issues) {
+	if (motion === void 0) return;
+	if (!record$2(motion)) {
+		issues.push({
+			code: "DS_TOKEN_INVALID",
+			path: "tokens.motion",
+			message: "motion 必须是对象。"
+		});
+		return;
+	}
+	for (const key of Object.keys(motion)) if (!["duration", "easing"].includes(key)) issues.push({
+		code: "DS_TOKEN_INVALID",
+		path: `tokens.motion.${key}`,
+		message: `未知字段 ${key}。`
+	});
+	const group = (name, values) => {
+		if (!record$2(values) || !Object.keys(values).length || Object.keys(values).length > 8) {
+			issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.motion.${name}`,
+				message: `motion.${name} 需要 1–8 项。`
+			});
+			return;
+		}
+		for (const [key, value] of Object.entries(values)) {
+			if (!KEY.test(key)) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.motion.${name}.${key}`,
+				message: "动效名必须是合法标识符。"
+			});
+			if (name === "duration" && (!finite(value) || !Number.isInteger(value) || value < 0 || value > 2e3)) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.motion.duration.${key}`,
+				message: "时长必须是 0–2000 的整数毫秒。"
+			});
+			if (name === "easing" && (typeof value !== "string" || !EASING.test(value))) issues.push({
+				code: "DS_TOKEN_INVALID",
+				path: `tokens.motion.easing.${key}`,
+				message: "缓动必须是 linear / ease* / cubic-bezier / steps。"
+			});
+		}
+	};
+	if (motion.duration !== void 0 || motion.easing !== void 0) {
+		group("duration", motion.duration);
+		group("easing", motion.easing);
+	}
+}
+function validateTokens(tokens, issues, schemaVersion = 1) {
 	if (!record$2(tokens)) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13734,23 +13989,26 @@ function validateTokens(tokens, issues) {
 		});
 		return null;
 	}
+	const v2 = schemaVersion >= 2;
 	const allowed = /* @__PURE__ */ new Set([
 		"color",
 		"typography",
 		"space",
 		"radius",
-		"shadow"
+		"shadow",
+		...v2 ? ["motion"] : []
 	]);
 	for (const key of Object.keys(tokens)) if (!allowed.has(key)) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.${key}`,
 		message: `未知令牌分组 ${key}。`
 	});
-	colorIssues(tokens.color, issues);
-	typographyIssues(tokens.typography, issues);
+	colorIssues(tokens.color, issues, v2);
+	typographyIssues(tokens.typography, issues, v2);
 	spaceIssues(tokens.space, issues);
-	radiusIssues(tokens.radius, issues);
+	radiusIssues(tokens.radius, issues, v2);
 	shadowIssues(tokens.shadow, issues);
+	if (v2) motionIssues(tokens.motion, issues);
 	if (issues.length) return null;
 	const value = tokens;
 	const seen = /* @__PURE__ */ new Map();
@@ -13766,11 +14024,11 @@ function validateTokens(tokens, issues) {
 	return issues.length ? null : value;
 }
 function validateComponentSpecs(value, tokens, issues) {
-	if (!Array.isArray(value) || !value.length || value.length > 24) {
+	if (!Array.isArray(value) || value.length > 48) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: "components",
-			message: "组件规范需要 1–24 项。"
+			message: "组件规范需要 0–48 项。"
 		});
 		return;
 	}
@@ -13800,10 +14058,10 @@ function validateComponentSpecs(value, tokens, issues) {
 			path: `${at}.${key}`,
 			message: `未知字段 ${key}。`
 		});
-		if (typeof entry.key !== "string" || !/^[a-z][a-z0-9-]{1,63}$/.test(entry.key)) issues.push({
+		if (typeof entry.key !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]{1,63}$/.test(entry.key)) issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: `${at}.key`,
-			message: "key 必须是小写字母开头、2–64 位的连字符标识。"
+			message: "key 必须是字母开头、2–64 位的标识符。"
 		});
 		else if (keys.has(entry.key)) issues.push({
 			code: "DS_TOKEN_INVALID",
@@ -13821,7 +14079,7 @@ function validateComponentSpecs(value, tokens, issues) {
 			path: `${at}.description`,
 			message: "组件说明最长 2000 字符。"
 		});
-		if (entry.component !== void 0 && (typeof entry.component !== "string" || !/^[a-z][a-z0-9-]{1,63}$/.test(entry.component))) issues.push({
+		if (entry.component !== void 0 && (typeof entry.component !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]{1,63}$/.test(entry.component))) issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: `${at}.component`,
 			message: "component 必须是组件目录中的合法 id。"
@@ -13852,7 +14110,7 @@ function validateComponentSpecs(value, tokens, issues) {
 			if (!Array.isArray(entry.states) || !entry.states.length || !entry.states.includes("default") || !entry.states.every((state) => typeof state === "string" && KEY.test(state)) || new Set(entry.states).size !== entry.states.length) issues.push({
 				code: "DS_TOKEN_INVALID",
 				path: `${at}.states`,
-				message: "states 必须包含 default，取值为唯一的小写标识符。"
+				message: "states 必须包含 default，取值为唯一的标识符。"
 			});
 		}
 		if (entry.variants !== void 0) {
@@ -13884,7 +14142,7 @@ var channel = (value) => {
 };
 function relativeLuminance(hex) {
 	const value = hex.replace("#", "");
-	const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+	const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value.slice(0, 6);
 	const [r, g, b] = [
 		0,
 		2,
@@ -13900,10 +14158,24 @@ function contrastRatio(a, b) {
 function nearestToken(tokens, kind, value) {
 	if (kind === "color") return void 0;
 	if (kind === "space") return tokens.space.scale.includes(value) ? `space.${value}` : void 0;
-	if (kind === "radius") return RADIUS_KEYS.find((key) => tokens.radius[key] === value) ? `radius.${RADIUS_KEYS.find((key) => tokens.radius[key] === value)}` : void 0;
-	return TYPOGRAPHY_ROLES.find((role) => tokens.typography[role].size === value) ? `typography.${TYPOGRAPHY_ROLES.find((role) => tokens.typography[role].size === value)}.size` : void 0;
+	if (kind === "radius") {
+		const hit = (isV2Tokens(tokens) ? RADIUS_KEYS : RADIUS_KEYS_V1).find((key) => tokens.radius[key] === value);
+		return hit ? `radius.${hit}` : void 0;
+	}
+	if (isV2Tokens(tokens)) {
+		const hit = Object.entries(tokens.typography.roles).find(([, role]) => role.size === value);
+		return hit ? `type.${hit[0]}.size` : void 0;
+	}
+	const hit = TYPE_ROLES_V1.find((role) => tokens.typography[role].size === value);
+	return hit ? `typography.${hit}.size` : void 0;
 }
-// packages/design-system/src/system.ts
+function typeRoleSizes(tokens) {
+	return isV2Tokens(tokens) ? Object.values(tokens.typography.roles).map((role) => role.size) : TYPE_ROLES_V1.map((role) => tokens.typography[role].size);
+}
+function radiusValues(tokens) {
+	return (isV2Tokens(tokens) ? RADIUS_KEYS : RADIUS_KEYS_V1).map((key) => tokens.radius[key]).filter((value) => typeof value === "number");
+}
+// ../design-system/src/system.ts
 var ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 var HASH = /^[0-9a-f]{64}$/;
 var record$1 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
@@ -13932,21 +14204,23 @@ function validateSystem(value, requireHash = true) {
 		path: "format",
 		message: `format 必须是 ${SYSTEM_FORMAT}。`
 	});
+	let schemaVersion = 0;
 	if (typeof value.schemaVersion !== "number" || !Number.isInteger(value.schemaVersion) || value.schemaVersion < 1) issues.push({
 		code: "DS_SCHEMA",
 		path: "schemaVersion",
 		message: "schemaVersion 必须是正整数。"
 	});
-	else if (value.schemaVersion > 1) issues.push({
+	else if (value.schemaVersion > 2) issues.push({
 		code: "DS_SCHEMA_UNSUPPORTED",
 		path: "schemaVersion",
-		message: `只支持 schemaVersion ≤ 1，收到 ${value.schemaVersion}。`
+		message: `只支持 schemaVersion ≤ 2，收到 ${value.schemaVersion}。`
 	});
 	else if (value.schemaVersion < 1) issues.push({
 		code: "DS_SCHEMA",
 		path: "schemaVersion",
 		message: `schemaVersion ${value.schemaVersion} 需要先迁移。`
 	});
+	else schemaVersion = value.schemaVersion;
 	if (typeof value.id !== "string" || !ID.test(value.id)) issues.push({
 		code: "DS_SCHEMA",
 		path: "id",
@@ -13972,7 +14246,7 @@ function validateSystem(value, requireHash = true) {
 		path: "guidelines",
 		message: "指南必须是 0–16000 字符的字符串。"
 	});
-	const tokens = validateTokens(value.tokens, issues);
+	const tokens = validateTokens(value.tokens, issues, schemaVersion || 2);
 	if (tokens) validateComponentSpecs(value.components, tokens, issues);
 	if (requireHash) {
 		if (typeof value.hash !== "string" || !HASH.test(value.hash)) issues.push({
@@ -13999,8 +14273,32 @@ function parseSystem(source) {
 	if (issues.length) throw new DesignSystemError(issues[0].code, issues[0].message, issues);
 	return value;
 }
-// packages/design-system/src/conformance.ts
+// ../design-system/src/conformance.ts
 var LITERAL_COLOR = /(?:bg|text|border|stroke|fill|ring|outline|from|via|to|divide|decoration|shadow)-\[(#[0-9a-f]{3,8})\]/gi;
+var NAMED_COLOR = new RegExp(`(?:^|\\s)(?:bg|text|border|stroke|fill|ring|outline|divide|decoration)-(?:white|black|(?:${[
+	"slate",
+	"gray",
+	"zinc",
+	"neutral",
+	"stone",
+	"red",
+	"orange",
+	"amber",
+	"yellow",
+	"lime",
+	"green",
+	"emerald",
+	"teal",
+	"cyan",
+	"sky",
+	"blue",
+	"indigo",
+	"violet",
+	"purple",
+	"fuchsia",
+	"pink",
+	"rose"
+].join("|")})-(?:50|[1-9]00|950))(?:\\s|$)`);
 var SPACING = /(?:^|\s)(?:p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|gap|gap-x|gap-y|space-x|space-y)-\[(\d+(?:\.\d+)?)px\]/g;
 var RADIUS = /rounded(?:-[trbl]{1,2})?-\[(\d+(?:\.\d+)?)px\]/g;
 var FONT_SIZE = /(?:^|\s)text-\[(\d+(?:\.\d+)?)px\]/g;
@@ -14026,7 +14324,7 @@ function tokenUsage(files) {
 }
 var rgb = (hex) => {
 	const value = hex.replace("#", "");
-	const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+	const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value.slice(0, 6);
 	return [
 		0,
 		2,
@@ -14038,7 +14336,9 @@ function nearestColor(tokens, hex) {
 	let best;
 	for (const [key, value] of Object.entries(tokens.color)) {
 		if (typeof value !== "string") continue;
-		const [dr, dg, db] = rgb(value);
+		const resolved = resolveColor(tokens, key) ?? (value.startsWith("#") ? value : void 0);
+		if (!resolved) continue;
+		const [dr, dg, db] = rgb(resolved);
 		const distance = Math.sqrt((r - dr) ** 2 * .3 + (g - dg) ** 2 * .59 + (b - db) ** 2 * .11);
 		if (!best || distance < best.distance) best = {
 			path: `color.${key}`,
@@ -14085,6 +14385,13 @@ function conformance(files, system) {
 				value
 			});
 		}
+		if (NAMED_COLOR.test(source)) issues.push({
+			code: "DS_LITERAL_COLOR",
+			severity: "warning",
+			path,
+			message: "使用了 Tailwind 调色板颜色类，未引用设计系统令牌。",
+			hint: "改用 bg-[var(--rea-ds-color-*)] 等令牌引用。"
+		});
 		for (const match of source.matchAll(SPACING)) {
 			const value = Number(match[1]);
 			if (system.tokens.space.scale.includes(value)) continue;
@@ -14106,7 +14413,7 @@ function conformance(files, system) {
 				severity: "warning",
 				path,
 				message: `圆角 ${value}px 不在系统圆角中。`,
-				hint: `可用圆角：${Object.values(system.tokens.radius).join(", ")}。`,
+				hint: `可用圆角：${radiusValues(system.tokens).join(", ")}。`,
 				value: `${value}px`
 			});
 		}
@@ -14118,7 +14425,7 @@ function conformance(files, system) {
 				severity: "warning",
 				path,
 				message: `字号 ${value}px 不在系统排版中。`,
-				hint: `可用字号：${Object.values(system.tokens.typography).filter((role) => typeof role === "object").map((role) => role.size).join(", ")}。`,
+				hint: `可用字号：${typeRoleSizes(system.tokens).join(", ")}。`,
 				value: `${value}px`
 			});
 		}
@@ -14126,34 +14433,63 @@ function conformance(files, system) {
 	if (system) issues.push(...contrastIssues(system));
 	return issues;
 }
-var CONTRAST_PAIRS = [
-	["text", "background"],
-	["text", "surface"],
-	["muted", "surface"],
-	["muted", "background"],
-	["onPrimary", "primary"]
-];
+/** Explicit pairs plus the conventional `<role>Foreground` / `on<Role>` pairs. */
+function contrastPairs(tokens) {
+	const pairs = [
+		["text", "background"],
+		["text", "surface"],
+		["muted", "surface"],
+		["muted", "background"],
+		["onPrimary", "primary"],
+		["foreground", "background"]
+	];
+	const keys = Object.keys(tokens.color);
+	for (const key of keys) {
+		if (key.endsWith("Foreground") && key.length > 10) {
+			const base = key.slice(0, -10);
+			if (base && keys.includes(base)) pairs.push([key, base]);
+		}
+		const on = /^on([A-Z].*)$/.exec(key);
+		if (on) {
+			const base = on[1][0].toLowerCase() + on[1].slice(1);
+			if (keys.includes(base)) pairs.push([key, base]);
+		}
+	}
+	const unique = /* @__PURE__ */ new Map();
+	for (const pair of pairs) if (tokens.color[pair[0]] && tokens.color[pair[1]]) unique.set(pair.join("/"), pair);
+	return [...unique.values()];
+}
 function contrastIssues(system) {
 	const issues = [];
-	for (const [foreground, background] of CONTRAST_PAIRS) {
-		const fg = system.tokens.color[foreground], bg = system.tokens.color[background];
-		if (typeof fg !== "string" || typeof bg !== "string") continue;
+	for (const [foreground, background] of contrastPairs(system.tokens)) {
+		const fg = resolveColor(system.tokens, foreground), bg = resolveColor(system.tokens, background);
+		if (!fg || !bg) continue;
 		const ratio = contrastRatio(fg, bg);
 		if (ratio >= 4.5) continue;
 		issues.push({
 			code: "DS_CONTRAST",
 			severity: "warning",
 			path: "design/system.json",
-			message: `${String(foreground)} 与 ${String(background)} 的对比度为 ${ratio.toFixed(1)}:1，低于 4.5:1。`,
+			message: `${foreground} 与 ${background} 的对比度为 ${ratio.toFixed(1)}:1，低于 4.5:1。`,
 			hint: "调整前景或背景令牌，或在大字号场景显式豁免。",
 			value: ratio.toFixed(2)
 		});
 	}
 	return issues;
 }
-// packages/document/src/manifest.ts
+Object.fromEntries(Object.entries({
+	background: "backgroundColor",
+	text: "textColor",
+	border: "borderColor",
+	radius: "rounded",
+	height: "height",
+	padding: "padding",
+	gap: "gap"
+}).map(([slot, css]) => [css, slot]));
+// ../document/src/manifest.ts
 /** Non-design, document-owned metadata (not design sources). They travel inside .reaui but are never sent to the Agent workspace. */
 var AGENT_SESSIONS_FILE = "agent/sessions.json";
+var SYSTEM_AGENT_SESSIONS_FILE = "agent/system-sessions.json";
 var EDITOR_GUIDES_FILE = "editor/guides.json";
 function parseManifest(code) {
 	const value = JSON.parse(code);
@@ -14193,7 +14529,7 @@ function createManifest(id, name, pages, createdAt = (/* @__PURE__ */ new Date()
 function newPageSource(id, name = "新页面") {
 	return `import { Page, Frame, Group, Rect, Ellipse, Text, Image, Vector } from '@rea/design';\n\nexport default <Page id={${JSON.stringify(id)}} designId="page-root" name={${JSON.stringify(name)}} />;\n`;
 }
-// packages/tailwind/src/parser.ts
+// ../tailwind/src/parser.ts
 /**
 * Split a class string into raw class tokens, preserving space delimiters.
 */
@@ -14312,7 +14648,7 @@ function parseClassToken(raw) {
 function parseClassNames(className) {
 	return splitClassNames(className).map(parseClassToken);
 }
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-DCG7AFIE.mjs
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-DCG7AFIE.mjs
 var o = {
 	inherit: "inherit",
 	current: "currentcolor",
@@ -14658,7 +14994,7 @@ var o = {
 		950: "oklch(27.1% 0.105 12.094)"
 	}
 };
-// packages/tailwind/src/colors.ts
+// ../tailwind/src/colors.ts
 function normalizeHex(hex) {
 	const value = hex.trim();
 	if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) throw new Error("颜色必须是 #RGB 或 #RRGGBB。");
@@ -14718,7 +15054,7 @@ function parseColorToken(value) {
 		opacity
 	};
 }
-// packages/tailwind/src/extended.ts
+// ../tailwind/src/extended.ts
 var inner = (t) => (t.value ?? "").replace(/^\[|\]$/g, "");
 var numeric = (v) => {
 	if (typeof v !== "number" || !Number.isFinite(v)) throw new Error("请输入有限数值。");
@@ -15046,7 +15382,7 @@ function parseShadows(value) {
 	}
 	return shadows;
 }
-// packages/tailwind/src/groups.ts
+// ../tailwind/src/groups.ts
 var SPACING_SCALE = Object.fromEntries([
 	0,
 	2,
@@ -15318,7 +15654,7 @@ function fixedValue(className, key) {
 	const value = PROPERTY_GROUPS[key].read(matches[0]);
 	return value && typeof value === "object" && "type" in value && value.type === "fixed" ? value.value : void 0;
 }
-// packages/tailwind/src/patch.ts
+// ../tailwind/src/patch.ts
 /**
 * Patch a single property group in a className string.
 */
@@ -15403,7 +15739,7 @@ function readProperty(className, groupKey) {
 	if (matches.length > 1) return "conflict";
 	return group.read(matches[0]);
 }
-// packages/tailwind/src/preview.ts
+// ../tailwind/src/preview.ts
 /**
 * Declarations a transient preview must paint in the very frame the pointer moves.
 *
@@ -15461,7 +15797,7 @@ function previewDeclarations(className, patch) {
 	}
 	return declarations;
 }
-// packages/tailwind/src/filter.ts
+// ../tailwind/src/filter.ts
 function filterCandidates(candidates) {
 	const safe = [], diagnostics = [];
 	for (const candidate of new Set(candidates)) {
@@ -15485,7 +15821,7 @@ function filterCandidates(candidates) {
 		diagnostics
 	};
 }
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-C2OYBFIH.mjs
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-C2OYBFIH.mjs
 var S = /* @__PURE__ */ new Set([
 	"black",
 	"silver",
@@ -17073,7 +17409,7 @@ var ye$1 = {
 		...g$1
 	}
 };
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-5JIJA4QV.mjs
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/chunk-5JIJA4QV.mjs
 function h(n) {
 	if (arguments.length === 0) throw new TypeError("`CSS.escape` requires an argument.");
 	let e = String(n), i = e.length, r = -1, t, s = "", l = e.charCodeAt(0);
@@ -17238,7 +17574,7 @@ var p = class {
 		return Array.from(this.keyframes);
 	}
 };
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/lib.mjs
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/dist/lib.mjs
 var yr = "4.3.3";
 function mn(e) {
 	return {
@@ -26663,11 +26999,11 @@ async function zf(e, i = {}) {
 		}
 	};
 }
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/theme.css?raw
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/theme.css?raw
 var theme_default = "@theme default {\n  --font-sans:\n    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial,\n    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';\n  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;\n  --font-mono:\n    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',\n    monospace;\n\n  --color-red-50: oklch(97.1% 0.013 17.38);\n  --color-red-100: oklch(93.6% 0.032 17.717);\n  --color-red-200: oklch(88.5% 0.062 18.334);\n  --color-red-300: oklch(80.8% 0.114 19.571);\n  --color-red-400: oklch(70.4% 0.191 22.216);\n  --color-red-500: oklch(63.7% 0.237 25.331);\n  --color-red-600: oklch(57.7% 0.245 27.325);\n  --color-red-700: oklch(50.5% 0.213 27.518);\n  --color-red-800: oklch(44.4% 0.177 26.899);\n  --color-red-900: oklch(39.6% 0.141 25.723);\n  --color-red-950: oklch(25.8% 0.092 26.042);\n\n  --color-orange-50: oklch(98% 0.016 73.684);\n  --color-orange-100: oklch(95.4% 0.038 75.164);\n  --color-orange-200: oklch(90.1% 0.076 70.697);\n  --color-orange-300: oklch(83.7% 0.128 66.29);\n  --color-orange-400: oklch(75% 0.183 55.934);\n  --color-orange-500: oklch(70.5% 0.213 47.604);\n  --color-orange-600: oklch(64.6% 0.222 41.116);\n  --color-orange-700: oklch(55.3% 0.195 38.402);\n  --color-orange-800: oklch(47% 0.157 37.304);\n  --color-orange-900: oklch(40.8% 0.123 38.172);\n  --color-orange-950: oklch(26.6% 0.079 36.259);\n\n  --color-amber-50: oklch(98.7% 0.022 95.277);\n  --color-amber-100: oklch(96.2% 0.059 95.617);\n  --color-amber-200: oklch(92.4% 0.12 95.746);\n  --color-amber-300: oklch(87.9% 0.169 91.605);\n  --color-amber-400: oklch(82.8% 0.189 84.429);\n  --color-amber-500: oklch(76.9% 0.188 70.08);\n  --color-amber-600: oklch(66.6% 0.179 58.318);\n  --color-amber-700: oklch(55.5% 0.163 48.998);\n  --color-amber-800: oklch(47.3% 0.137 46.201);\n  --color-amber-900: oklch(41.4% 0.112 45.904);\n  --color-amber-950: oklch(27.9% 0.077 45.635);\n\n  --color-yellow-50: oklch(98.7% 0.026 102.212);\n  --color-yellow-100: oklch(97.3% 0.071 103.193);\n  --color-yellow-200: oklch(94.5% 0.129 101.54);\n  --color-yellow-300: oklch(90.5% 0.182 98.111);\n  --color-yellow-400: oklch(85.2% 0.199 91.936);\n  --color-yellow-500: oklch(79.5% 0.184 86.047);\n  --color-yellow-600: oklch(68.1% 0.162 75.834);\n  --color-yellow-700: oklch(55.4% 0.135 66.442);\n  --color-yellow-800: oklch(47.6% 0.114 61.907);\n  --color-yellow-900: oklch(42.1% 0.095 57.708);\n  --color-yellow-950: oklch(28.6% 0.066 53.813);\n\n  --color-lime-50: oklch(98.6% 0.031 120.757);\n  --color-lime-100: oklch(96.7% 0.067 122.328);\n  --color-lime-200: oklch(93.8% 0.127 124.321);\n  --color-lime-300: oklch(89.7% 0.196 126.665);\n  --color-lime-400: oklch(84.1% 0.238 128.85);\n  --color-lime-500: oklch(76.8% 0.233 130.85);\n  --color-lime-600: oklch(64.8% 0.2 131.684);\n  --color-lime-700: oklch(53.2% 0.157 131.589);\n  --color-lime-800: oklch(45.3% 0.124 130.933);\n  --color-lime-900: oklch(40.5% 0.101 131.063);\n  --color-lime-950: oklch(27.4% 0.072 132.109);\n\n  --color-green-50: oklch(98.2% 0.018 155.826);\n  --color-green-100: oklch(96.2% 0.044 156.743);\n  --color-green-200: oklch(92.5% 0.084 155.995);\n  --color-green-300: oklch(87.1% 0.15 154.449);\n  --color-green-400: oklch(79.2% 0.209 151.711);\n  --color-green-500: oklch(72.3% 0.219 149.579);\n  --color-green-600: oklch(62.7% 0.194 149.214);\n  --color-green-700: oklch(52.7% 0.154 150.069);\n  --color-green-800: oklch(44.8% 0.119 151.328);\n  --color-green-900: oklch(39.3% 0.095 152.535);\n  --color-green-950: oklch(26.6% 0.065 152.934);\n\n  --color-emerald-50: oklch(97.9% 0.021 166.113);\n  --color-emerald-100: oklch(95% 0.052 163.051);\n  --color-emerald-200: oklch(90.5% 0.093 164.15);\n  --color-emerald-300: oklch(84.5% 0.143 164.978);\n  --color-emerald-400: oklch(76.5% 0.177 163.223);\n  --color-emerald-500: oklch(69.6% 0.17 162.48);\n  --color-emerald-600: oklch(59.6% 0.145 163.225);\n  --color-emerald-700: oklch(50.8% 0.118 165.612);\n  --color-emerald-800: oklch(43.2% 0.095 166.913);\n  --color-emerald-900: oklch(37.8% 0.077 168.94);\n  --color-emerald-950: oklch(26.2% 0.051 172.552);\n\n  --color-teal-50: oklch(98.4% 0.014 180.72);\n  --color-teal-100: oklch(95.3% 0.051 180.801);\n  --color-teal-200: oklch(91% 0.096 180.426);\n  --color-teal-300: oklch(85.5% 0.138 181.071);\n  --color-teal-400: oklch(77.7% 0.152 181.912);\n  --color-teal-500: oklch(70.4% 0.14 182.503);\n  --color-teal-600: oklch(60% 0.118 184.704);\n  --color-teal-700: oklch(51.1% 0.096 186.391);\n  --color-teal-800: oklch(43.7% 0.078 188.216);\n  --color-teal-900: oklch(38.6% 0.063 188.416);\n  --color-teal-950: oklch(27.7% 0.046 192.524);\n\n  --color-cyan-50: oklch(98.4% 0.019 200.873);\n  --color-cyan-100: oklch(95.6% 0.045 203.388);\n  --color-cyan-200: oklch(91.7% 0.08 205.041);\n  --color-cyan-300: oklch(86.5% 0.127 207.078);\n  --color-cyan-400: oklch(78.9% 0.154 211.53);\n  --color-cyan-500: oklch(71.5% 0.143 215.221);\n  --color-cyan-600: oklch(60.9% 0.126 221.723);\n  --color-cyan-700: oklch(52% 0.105 223.128);\n  --color-cyan-800: oklch(45% 0.085 224.283);\n  --color-cyan-900: oklch(39.8% 0.07 227.392);\n  --color-cyan-950: oklch(30.2% 0.056 229.695);\n\n  --color-sky-50: oklch(97.7% 0.013 236.62);\n  --color-sky-100: oklch(95.1% 0.026 236.824);\n  --color-sky-200: oklch(90.1% 0.058 230.902);\n  --color-sky-300: oklch(82.8% 0.111 230.318);\n  --color-sky-400: oklch(74.6% 0.16 232.661);\n  --color-sky-500: oklch(68.5% 0.169 237.323);\n  --color-sky-600: oklch(58.8% 0.158 241.966);\n  --color-sky-700: oklch(50% 0.134 242.749);\n  --color-sky-800: oklch(44.3% 0.11 240.79);\n  --color-sky-900: oklch(39.1% 0.09 240.876);\n  --color-sky-950: oklch(29.3% 0.066 243.157);\n\n  --color-blue-50: oklch(97% 0.014 254.604);\n  --color-blue-100: oklch(93.2% 0.032 255.585);\n  --color-blue-200: oklch(88.2% 0.059 254.128);\n  --color-blue-300: oklch(80.9% 0.105 251.813);\n  --color-blue-400: oklch(70.7% 0.165 254.624);\n  --color-blue-500: oklch(62.3% 0.214 259.815);\n  --color-blue-600: oklch(54.6% 0.245 262.881);\n  --color-blue-700: oklch(48.8% 0.243 264.376);\n  --color-blue-800: oklch(42.4% 0.199 265.638);\n  --color-blue-900: oklch(37.9% 0.146 265.522);\n  --color-blue-950: oklch(28.2% 0.091 267.935);\n\n  --color-indigo-50: oklch(96.2% 0.018 272.314);\n  --color-indigo-100: oklch(93% 0.034 272.788);\n  --color-indigo-200: oklch(87% 0.065 274.039);\n  --color-indigo-300: oklch(78.5% 0.115 274.713);\n  --color-indigo-400: oklch(67.3% 0.182 276.935);\n  --color-indigo-500: oklch(58.5% 0.233 277.117);\n  --color-indigo-600: oklch(51.1% 0.262 276.966);\n  --color-indigo-700: oklch(45.7% 0.24 277.023);\n  --color-indigo-800: oklch(39.8% 0.195 277.366);\n  --color-indigo-900: oklch(35.9% 0.144 278.697);\n  --color-indigo-950: oklch(25.7% 0.09 281.288);\n\n  --color-violet-50: oklch(96.9% 0.016 293.756);\n  --color-violet-100: oklch(94.3% 0.029 294.588);\n  --color-violet-200: oklch(89.4% 0.057 293.283);\n  --color-violet-300: oklch(81.1% 0.111 293.571);\n  --color-violet-400: oklch(70.2% 0.183 293.541);\n  --color-violet-500: oklch(60.6% 0.25 292.717);\n  --color-violet-600: oklch(54.1% 0.281 293.009);\n  --color-violet-700: oklch(49.1% 0.27 292.581);\n  --color-violet-800: oklch(43.2% 0.232 292.759);\n  --color-violet-900: oklch(38% 0.189 293.745);\n  --color-violet-950: oklch(28.3% 0.141 291.089);\n\n  --color-purple-50: oklch(97.7% 0.014 308.299);\n  --color-purple-100: oklch(94.6% 0.033 307.174);\n  --color-purple-200: oklch(90.2% 0.063 306.703);\n  --color-purple-300: oklch(82.7% 0.119 306.383);\n  --color-purple-400: oklch(71.4% 0.203 305.504);\n  --color-purple-500: oklch(62.7% 0.265 303.9);\n  --color-purple-600: oklch(55.8% 0.288 302.321);\n  --color-purple-700: oklch(49.6% 0.265 301.924);\n  --color-purple-800: oklch(43.8% 0.218 303.724);\n  --color-purple-900: oklch(38.1% 0.176 304.987);\n  --color-purple-950: oklch(29.1% 0.149 302.717);\n\n  --color-fuchsia-50: oklch(97.7% 0.017 320.058);\n  --color-fuchsia-100: oklch(95.2% 0.037 318.852);\n  --color-fuchsia-200: oklch(90.3% 0.076 319.62);\n  --color-fuchsia-300: oklch(83.3% 0.145 321.434);\n  --color-fuchsia-400: oklch(74% 0.238 322.16);\n  --color-fuchsia-500: oklch(66.7% 0.295 322.15);\n  --color-fuchsia-600: oklch(59.1% 0.293 322.896);\n  --color-fuchsia-700: oklch(51.8% 0.253 323.949);\n  --color-fuchsia-800: oklch(45.2% 0.211 324.591);\n  --color-fuchsia-900: oklch(40.1% 0.17 325.612);\n  --color-fuchsia-950: oklch(29.3% 0.136 325.661);\n\n  --color-pink-50: oklch(97.1% 0.014 343.198);\n  --color-pink-100: oklch(94.8% 0.028 342.258);\n  --color-pink-200: oklch(89.9% 0.061 343.231);\n  --color-pink-300: oklch(82.3% 0.12 346.018);\n  --color-pink-400: oklch(71.8% 0.202 349.761);\n  --color-pink-500: oklch(65.6% 0.241 354.308);\n  --color-pink-600: oklch(59.2% 0.249 0.584);\n  --color-pink-700: oklch(52.5% 0.223 3.958);\n  --color-pink-800: oklch(45.9% 0.187 3.815);\n  --color-pink-900: oklch(40.8% 0.153 2.432);\n  --color-pink-950: oklch(28.4% 0.109 3.907);\n\n  --color-rose-50: oklch(96.9% 0.015 12.422);\n  --color-rose-100: oklch(94.1% 0.03 12.58);\n  --color-rose-200: oklch(89.2% 0.058 10.001);\n  --color-rose-300: oklch(81% 0.117 11.638);\n  --color-rose-400: oklch(71.2% 0.194 13.428);\n  --color-rose-500: oklch(64.5% 0.246 16.439);\n  --color-rose-600: oklch(58.6% 0.253 17.585);\n  --color-rose-700: oklch(51.4% 0.222 16.935);\n  --color-rose-800: oklch(45.5% 0.188 13.697);\n  --color-rose-900: oklch(41% 0.159 10.272);\n  --color-rose-950: oklch(27.1% 0.105 12.094);\n\n  --color-slate-50: oklch(98.4% 0.003 247.858);\n  --color-slate-100: oklch(96.8% 0.007 247.896);\n  --color-slate-200: oklch(92.9% 0.013 255.508);\n  --color-slate-300: oklch(86.9% 0.022 252.894);\n  --color-slate-400: oklch(70.4% 0.04 256.788);\n  --color-slate-500: oklch(55.4% 0.046 257.417);\n  --color-slate-600: oklch(44.6% 0.043 257.281);\n  --color-slate-700: oklch(37.2% 0.044 257.287);\n  --color-slate-800: oklch(27.9% 0.041 260.031);\n  --color-slate-900: oklch(20.8% 0.042 265.755);\n  --color-slate-950: oklch(12.9% 0.042 264.695);\n\n  --color-gray-50: oklch(98.5% 0.002 247.839);\n  --color-gray-100: oklch(96.7% 0.003 264.542);\n  --color-gray-200: oklch(92.8% 0.006 264.531);\n  --color-gray-300: oklch(87.2% 0.01 258.338);\n  --color-gray-400: oklch(70.7% 0.022 261.325);\n  --color-gray-500: oklch(55.1% 0.027 264.364);\n  --color-gray-600: oklch(44.6% 0.03 256.802);\n  --color-gray-700: oklch(37.3% 0.034 259.733);\n  --color-gray-800: oklch(27.8% 0.033 256.848);\n  --color-gray-900: oklch(21% 0.034 264.665);\n  --color-gray-950: oklch(13% 0.028 261.692);\n\n  --color-zinc-50: oklch(98.5% 0 none);\n  --color-zinc-100: oklch(96.7% 0.001 286.375);\n  --color-zinc-200: oklch(92% 0.004 286.32);\n  --color-zinc-300: oklch(87.1% 0.006 286.286);\n  --color-zinc-400: oklch(70.5% 0.015 286.067);\n  --color-zinc-500: oklch(55.2% 0.016 285.938);\n  --color-zinc-600: oklch(44.2% 0.017 285.786);\n  --color-zinc-700: oklch(37% 0.013 285.805);\n  --color-zinc-800: oklch(27.4% 0.006 286.033);\n  --color-zinc-900: oklch(21% 0.006 285.885);\n  --color-zinc-950: oklch(14.1% 0.005 285.823);\n\n  --color-neutral-50: oklch(98.5% 0 none);\n  --color-neutral-100: oklch(97% 0 none);\n  --color-neutral-200: oklch(92.2% 0 none);\n  --color-neutral-300: oklch(87% 0 none);\n  --color-neutral-400: oklch(70.8% 0 none);\n  --color-neutral-500: oklch(55.6% 0 none);\n  --color-neutral-600: oklch(43.9% 0 none);\n  --color-neutral-700: oklch(37.1% 0 none);\n  --color-neutral-800: oklch(26.9% 0 none);\n  --color-neutral-900: oklch(20.5% 0 none);\n  --color-neutral-950: oklch(14.5% 0 none);\n\n  --color-stone-50: oklch(98.5% 0.001 106.423);\n  --color-stone-100: oklch(97% 0.001 106.424);\n  --color-stone-200: oklch(92.3% 0.003 48.717);\n  --color-stone-300: oklch(86.9% 0.005 56.366);\n  --color-stone-400: oklch(70.9% 0.01 56.259);\n  --color-stone-500: oklch(55.3% 0.013 58.071);\n  --color-stone-600: oklch(44.4% 0.011 73.639);\n  --color-stone-700: oklch(37.4% 0.01 67.558);\n  --color-stone-800: oklch(26.8% 0.007 34.298);\n  --color-stone-900: oklch(21.6% 0.006 56.043);\n  --color-stone-950: oklch(14.7% 0.004 49.25);\n\n  --color-mauve-50: oklch(98.5% 0 none);\n  --color-mauve-100: oklch(96% 0.003 325.6);\n  --color-mauve-200: oklch(92.2% 0.005 325.62);\n  --color-mauve-300: oklch(86.5% 0.012 325.68);\n  --color-mauve-400: oklch(71.1% 0.019 323.02);\n  --color-mauve-500: oklch(54.2% 0.034 322.5);\n  --color-mauve-600: oklch(43.5% 0.029 321.78);\n  --color-mauve-700: oklch(36.4% 0.029 323.89);\n  --color-mauve-800: oklch(26.3% 0.024 320.12);\n  --color-mauve-900: oklch(21.2% 0.019 322.12);\n  --color-mauve-950: oklch(14.5% 0.008 326);\n\n  --color-olive-50: oklch(98.8% 0.003 106.5);\n  --color-olive-100: oklch(96.6% 0.005 106.5);\n  --color-olive-200: oklch(93% 0.007 106.5);\n  --color-olive-300: oklch(88% 0.011 106.6);\n  --color-olive-400: oklch(73.7% 0.021 106.9);\n  --color-olive-500: oklch(58% 0.031 107.3);\n  --color-olive-600: oklch(46.6% 0.025 107.3);\n  --color-olive-700: oklch(39.4% 0.023 107.4);\n  --color-olive-800: oklch(28.6% 0.016 107.4);\n  --color-olive-900: oklch(22.8% 0.013 107.4);\n  --color-olive-950: oklch(15.3% 0.006 107.1);\n\n  --color-mist-50: oklch(98.7% 0.002 197.1);\n  --color-mist-100: oklch(96.3% 0.002 197.1);\n  --color-mist-200: oklch(92.5% 0.005 214.3);\n  --color-mist-300: oklch(87.2% 0.007 219.6);\n  --color-mist-400: oklch(72.3% 0.014 214.4);\n  --color-mist-500: oklch(56% 0.021 213.5);\n  --color-mist-600: oklch(45% 0.017 213.2);\n  --color-mist-700: oklch(37.8% 0.015 216);\n  --color-mist-800: oklch(27.5% 0.011 216.9);\n  --color-mist-900: oklch(21.8% 0.008 223.9);\n  --color-mist-950: oklch(14.8% 0.004 228.8);\n\n  --color-taupe-50: oklch(98.6% 0.002 67.8);\n  --color-taupe-100: oklch(96% 0.002 17.2);\n  --color-taupe-200: oklch(92.2% 0.005 34.3);\n  --color-taupe-300: oklch(86.8% 0.007 39.5);\n  --color-taupe-400: oklch(71.4% 0.014 41.2);\n  --color-taupe-500: oklch(54.7% 0.021 43.1);\n  --color-taupe-600: oklch(43.8% 0.017 39.3);\n  --color-taupe-700: oklch(36.7% 0.016 35.7);\n  --color-taupe-800: oklch(26.8% 0.011 36.5);\n  --color-taupe-900: oklch(21.4% 0.009 43.1);\n  --color-taupe-950: oklch(14.7% 0.004 49.3);\n\n  --color-black: #000;\n  --color-white: #fff;\n\n  --spacing: 0.25rem;\n\n  --breakpoint-sm: 40rem;\n  --breakpoint-md: 48rem;\n  --breakpoint-lg: 64rem;\n  --breakpoint-xl: 80rem;\n  --breakpoint-2xl: 96rem;\n\n  --container-3xs: 16rem;\n  --container-2xs: 18rem;\n  --container-xs: 20rem;\n  --container-sm: 24rem;\n  --container-md: 28rem;\n  --container-lg: 32rem;\n  --container-xl: 36rem;\n  --container-2xl: 42rem;\n  --container-3xl: 48rem;\n  --container-4xl: 56rem;\n  --container-5xl: 64rem;\n  --container-6xl: 72rem;\n  --container-7xl: 80rem;\n\n  --text-xs: 0.75rem;\n  --text-xs--line-height: calc(1 / 0.75);\n  --text-sm: 0.875rem;\n  --text-sm--line-height: calc(1.25 / 0.875);\n  --text-base: 1rem;\n  --text-base--line-height: calc(1.5 / 1);\n  --text-lg: 1.125rem;\n  --text-lg--line-height: calc(1.75 / 1.125);\n  --text-xl: 1.25rem;\n  --text-xl--line-height: calc(1.75 / 1.25);\n  --text-2xl: 1.5rem;\n  --text-2xl--line-height: calc(2 / 1.5);\n  --text-3xl: 1.875rem;\n  --text-3xl--line-height: calc(2.25 / 1.875);\n  --text-4xl: 2.25rem;\n  --text-4xl--line-height: calc(2.5 / 2.25);\n  --text-5xl: 3rem;\n  --text-5xl--line-height: 1;\n  --text-6xl: 3.75rem;\n  --text-6xl--line-height: 1;\n  --text-7xl: 4.5rem;\n  --text-7xl--line-height: 1;\n  --text-8xl: 6rem;\n  --text-8xl--line-height: 1;\n  --text-9xl: 8rem;\n  --text-9xl--line-height: 1;\n\n  --font-weight-thin: 100;\n  --font-weight-extralight: 200;\n  --font-weight-light: 300;\n  --font-weight-normal: 400;\n  --font-weight-medium: 500;\n  --font-weight-semibold: 600;\n  --font-weight-bold: 700;\n  --font-weight-extrabold: 800;\n  --font-weight-black: 900;\n\n  --tracking-tighter: -0.05em;\n  --tracking-tight: -0.025em;\n  --tracking-normal: 0em;\n  --tracking-wide: 0.025em;\n  --tracking-wider: 0.05em;\n  --tracking-widest: 0.1em;\n\n  --leading-tight: 1.25;\n  --leading-snug: 1.375;\n  --leading-normal: 1.5;\n  --leading-relaxed: 1.625;\n  --leading-loose: 2;\n\n  --radius-xs: 0.125rem;\n  --radius-sm: 0.25rem;\n  --radius-md: 0.375rem;\n  --radius-lg: 0.5rem;\n  --radius-xl: 0.75rem;\n  --radius-2xl: 1rem;\n  --radius-3xl: 1.5rem;\n  --radius-4xl: 2rem;\n\n  --shadow-2xs: 0 1px rgb(0 0 0 / 0.05);\n  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);\n  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);\n  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);\n  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);\n  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);\n  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);\n\n  --inset-shadow-2xs: inset 0 1px rgb(0 0 0 / 0.05);\n  --inset-shadow-xs: inset 0 1px 1px rgb(0 0 0 / 0.05);\n  --inset-shadow-sm: inset 0 2px 4px rgb(0 0 0 / 0.05);\n\n  --drop-shadow-xs: 0 1px 1px rgb(0 0 0 / 0.05);\n  --drop-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.15);\n  --drop-shadow-md: 0 3px 3px rgb(0 0 0 / 0.12);\n  --drop-shadow-lg: 0 4px 4px rgb(0 0 0 / 0.15);\n  --drop-shadow-xl: 0 9px 7px rgb(0 0 0 / 0.1);\n  --drop-shadow-2xl: 0 25px 25px rgb(0 0 0 / 0.15);\n\n  --text-shadow-2xs: 0px 1px 0px rgb(0 0 0 / 0.15);\n  --text-shadow-xs: 0px 1px 1px rgb(0 0 0 / 0.2);\n  --text-shadow-sm:\n    0px 1px 0px rgb(0 0 0 / 0.075), 0px 1px 1px rgb(0 0 0 / 0.075), 0px 2px 2px rgb(0 0 0 / 0.075);\n  --text-shadow-md:\n    0px 1px 1px rgb(0 0 0 / 0.1), 0px 1px 2px rgb(0 0 0 / 0.1), 0px 2px 4px rgb(0 0 0 / 0.1);\n  --text-shadow-lg:\n    0px 1px 2px rgb(0 0 0 / 0.1), 0px 3px 2px rgb(0 0 0 / 0.1), 0px 4px 8px rgb(0 0 0 / 0.1);\n\n  --ease-in: cubic-bezier(0.4, 0, 1, 1);\n  --ease-out: cubic-bezier(0, 0, 0.2, 1);\n  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);\n\n  --animate-spin: spin 1s linear infinite;\n  --animate-ping: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;\n  --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;\n  --animate-bounce: bounce 1s infinite;\n\n  @keyframes spin {\n    to {\n      transform: rotate(360deg);\n    }\n  }\n\n  @keyframes ping {\n    75%,\n    100% {\n      transform: scale(2);\n      opacity: 0;\n    }\n  }\n\n  @keyframes pulse {\n    50% {\n      opacity: 0.5;\n    }\n  }\n\n  @keyframes bounce {\n    0%,\n    100% {\n      transform: translateY(-25%);\n      animation-timing-function: cubic-bezier(0.8, 0, 1, 1);\n    }\n\n    50% {\n      transform: none;\n      animation-timing-function: cubic-bezier(0, 0, 0.2, 1);\n    }\n  }\n\n  --blur-xs: 4px;\n  --blur-sm: 8px;\n  --blur-md: 12px;\n  --blur-lg: 16px;\n  --blur-xl: 24px;\n  --blur-2xl: 40px;\n  --blur-3xl: 64px;\n\n  --perspective-dramatic: 100px;\n  --perspective-near: 300px;\n  --perspective-normal: 500px;\n  --perspective-midrange: 800px;\n  --perspective-distant: 1200px;\n\n  --aspect-video: 16 / 9;\n\n  --default-transition-duration: 150ms;\n  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);\n  --default-font-family: --theme(--font-sans, initial);\n  --default-font-feature-settings: --theme(--font-sans--font-feature-settings, initial);\n  --default-font-variation-settings: --theme(--font-sans--font-variation-settings, initial);\n  --default-mono-font-family: --theme(--font-mono, initial);\n  --default-mono-font-feature-settings: --theme(--font-mono--font-feature-settings, initial);\n  --default-mono-font-variation-settings: --theme(--font-mono--font-variation-settings, initial);\n}\n\n/* Deprecated */\n@theme default inline reference {\n  --blur: 8px;\n  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);\n  --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);\n  --drop-shadow: 0 1px 2px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.06);\n  --radius: 0.25rem;\n  --max-width-prose: 65ch;\n}\n";
-// node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/preflight.css?raw
+// ../../node_modules/.pnpm/tailwindcss@4.3.3/node_modules/tailwindcss/preflight.css?raw
 var preflight_default = "/*\n  1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)\n  2. Remove default margins and padding\n  3. Reset all borders.\n*/\n\n*,\n::after,\n::before,\n::backdrop,\n::file-selector-button {\n  box-sizing: border-box; /* 1 */\n  margin: 0; /* 2 */\n  padding: 0; /* 2 */\n  border: 0 solid; /* 3 */\n}\n\n/*\n  1. Use a consistent sensible line-height in all browsers.\n  2. Prevent adjustments of font size after orientation changes in iOS.\n  3. Use a more readable tab size.\n  4. Use the user's configured `sans` font-family by default.\n  5. Use the user's configured `sans` font-feature-settings by default.\n  6. Use the user's configured `sans` font-variation-settings by default.\n  7. Disable tap highlights on iOS.\n*/\n\nhtml,\n:host {\n  line-height: 1.5; /* 1 */\n  -webkit-text-size-adjust: 100%; /* 2 */\n  tab-size: 4; /* 3 */\n  font-family: --theme(\n    --default-font-family,\n    -apple-system,\n    BlinkMacSystemFont,\n    'Segoe UI',\n    Roboto,\n    'Helvetica Neue',\n    'Noto Sans',\n    Arial,\n    sans-serif,\n    'Apple Color Emoji',\n    'Segoe UI Emoji',\n    'Segoe UI Symbol',\n    'Noto Color Emoji'\n  ); /* 4 */\n  font-feature-settings: --theme(--default-font-feature-settings, normal); /* 5 */\n  font-variation-settings: --theme(--default-font-variation-settings, normal); /* 6 */\n  -webkit-tap-highlight-color: transparent; /* 7 */\n}\n\n/*\n  1. Add the correct height in Firefox.\n  2. Correct the inheritance of border color in Firefox. (https://bugzilla.mozilla.org/show_bug.cgi?id=190655)\n  3. Reset the default border style to a 1px solid border.\n*/\n\nhr {\n  height: 0; /* 1 */\n  color: inherit; /* 2 */\n  border-top-width: 1px; /* 3 */\n}\n\n/*\n  Add the correct text decoration in Chrome, Edge, and Safari.\n*/\n\nabbr:where([title]) {\n  -webkit-text-decoration: underline dotted;\n  text-decoration: underline dotted;\n}\n\n/*\n  Remove the default font size and weight for headings.\n*/\n\nh1,\nh2,\nh3,\nh4,\nh5,\nh6 {\n  font-size: inherit;\n  font-weight: inherit;\n}\n\n/*\n  Reset links to optimize for opt-in styling instead of opt-out.\n*/\n\na {\n  color: inherit;\n  -webkit-text-decoration: inherit;\n  text-decoration: inherit;\n}\n\n/*\n  Add the correct font weight in Edge and Safari.\n*/\n\nb,\nstrong {\n  font-weight: bolder;\n}\n\n/*\n  1. Use the user's configured `mono` font-family by default.\n  2. Use the user's configured `mono` font-feature-settings by default.\n  3. Use the user's configured `mono` font-variation-settings by default.\n  4. Correct the odd `em` font sizing in all browsers.\n*/\n\ncode,\nkbd,\nsamp,\npre {\n  font-family: --theme(\n    --default-mono-font-family,\n    ui-monospace,\n    SFMono-Regular,\n    Menlo,\n    Monaco,\n    Consolas,\n    'Liberation Mono',\n    'Courier New',\n    monospace\n  ); /* 1 */\n  font-feature-settings: --theme(--default-mono-font-feature-settings, normal); /* 2 */\n  font-variation-settings: --theme(--default-mono-font-variation-settings, normal); /* 3 */\n  font-size: 1em; /* 4 */\n}\n\n/*\n  Add the correct font size in all browsers.\n*/\n\nsmall {\n  font-size: 80%;\n}\n\n/*\n  Prevent `sub` and `sup` elements from affecting the line height in all browsers.\n*/\n\nsub,\nsup {\n  font-size: 75%;\n  line-height: 0;\n  position: relative;\n  vertical-align: baseline;\n}\n\nsub {\n  bottom: -0.25em;\n}\n\nsup {\n  top: -0.5em;\n}\n\n/*\n  1. Remove text indentation from table contents in Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=999088, https://bugs.webkit.org/show_bug.cgi?id=201297)\n  2. Correct table border color inheritance in all Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=935729, https://bugs.webkit.org/show_bug.cgi?id=195016)\n  3. Remove gaps between table borders by default.\n*/\n\ntable {\n  text-indent: 0; /* 1 */\n  border-color: inherit; /* 2 */\n  border-collapse: collapse; /* 3 */\n}\n\n/*\n  Use the modern Firefox focus style for all focusable elements.\n*/\n\n:-moz-focusring:where(:not(iframe)) {\n  outline: auto;\n}\n\n/*\n  Add the correct vertical alignment in Chrome and Firefox.\n*/\n\nprogress {\n  vertical-align: baseline;\n}\n\n/*\n  Add the correct display in Chrome and Safari.\n*/\n\nsummary {\n  display: list-item;\n}\n\n/*\n  Make lists unstyled by default.\n*/\n\nol,\nul,\nmenu {\n  list-style: none;\n}\n\n/*\n  1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)\n  2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)\n      This can trigger a poorly considered lint error in some tools but is included by design.\n*/\n\nimg,\nsvg,\nvideo,\ncanvas,\naudio,\niframe,\nembed,\nobject {\n  display: block; /* 1 */\n  vertical-align: middle; /* 2 */\n}\n\n/*\n  Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)\n*/\n\nimg,\nvideo {\n  max-width: 100%;\n  height: auto;\n}\n\n/*\n  1. Inherit font styles in all browsers.\n  2. Remove border radius in all browsers.\n  3. Remove background color in all browsers.\n  4. Ensure consistent opacity for disabled states in all browsers.\n*/\n\nbutton,\ninput,\nselect,\noptgroup,\ntextarea,\n::file-selector-button {\n  font: inherit; /* 1 */\n  font-feature-settings: inherit; /* 1 */\n  font-variation-settings: inherit; /* 1 */\n  letter-spacing: inherit; /* 1 */\n  color: inherit; /* 1 */\n  border-radius: 0; /* 2 */\n  background-color: transparent; /* 3 */\n  opacity: 1; /* 4 */\n}\n\n/*\n  Restore default font weight.\n*/\n\n:where(select:is([multiple], [size])) optgroup {\n  font-weight: bolder;\n}\n\n/*\n  Restore indentation.\n*/\n\n:where(select:is([multiple], [size])) optgroup option {\n  padding-inline-start: 20px;\n}\n\n/*\n  Restore space after button.\n*/\n\n::file-selector-button {\n  margin-inline-end: 4px;\n}\n\n/*\n  Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)\n*/\n\n::placeholder {\n  opacity: 1;\n}\n\n/*\n  Set the default placeholder color to a semi-transparent version of the current text color in browsers that do not\n  crash when using `color-mix(…)` with `currentcolor`. (https://github.com/tailwindlabs/tailwindcss/issues/17194)\n*/\n\n@supports (not (-webkit-appearance: -apple-pay-button)) /* Not Safari */ or\n  (contain-intrinsic-size: 1px) /* Safari 17+ */ {\n  ::placeholder {\n    color: color-mix(in oklab, currentcolor 50%, transparent);\n  }\n}\n\n/*\n  Prevent resizing textareas horizontally by default.\n*/\n\ntextarea {\n  resize: vertical;\n}\n\n/*\n  Remove the inner padding in Chrome and Safari on macOS.\n*/\n\n::-webkit-search-decoration {\n  -webkit-appearance: none;\n}\n\n/*\n  1. Ensure date/time inputs have the same height when empty in iOS Safari.\n  2. Ensure text alignment can be changed on date/time inputs in iOS Safari.\n*/\n\n::-webkit-date-and-time-value {\n  min-height: 1lh; /* 1 */\n  text-align: inherit; /* 2 */\n}\n\n/*\n  Prevent height from changing on date/time inputs in macOS Safari when the input is set to `display: block`.\n*/\n\n::-webkit-datetime-edit {\n  display: inline-flex;\n}\n\n/*\n  Remove excess padding from pseudo-elements in date/time inputs to ensure consistent height across browsers.\n*/\n\n::-webkit-datetime-edit-fields-wrapper {\n  padding: 0;\n}\n\n::-webkit-datetime-edit,\n::-webkit-datetime-edit-year-field,\n::-webkit-datetime-edit-month-field,\n::-webkit-datetime-edit-day-field,\n::-webkit-datetime-edit-hour-field,\n::-webkit-datetime-edit-minute-field,\n::-webkit-datetime-edit-second-field,\n::-webkit-datetime-edit-millisecond-field,\n::-webkit-datetime-edit-meridiem-field {\n  padding-block: 0;\n}\n\n/*\n  Center dropdown marker shown on inputs with paired `<datalist>`s in Chrome. (https://github.com/tailwindlabs/tailwindcss/issues/18499)\n*/\n\n::-webkit-calendar-picker-indicator {\n  line-height: 1;\n}\n\n/*\n  Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)\n*/\n\n:-moz-ui-invalid {\n  box-shadow: none;\n}\n\n/*\n  Correct the inability to style the border radius in iOS Safari.\n*/\n\nbutton,\ninput:where([type='button'], [type='reset'], [type='submit']),\n::file-selector-button {\n  appearance: button;\n}\n\n/*\n  Correct the cursor style of increment and decrement buttons in Safari.\n*/\n\n::-webkit-inner-spin-button,\n::-webkit-outer-spin-button {\n  height: auto;\n}\n\n/*\n  Make elements with the HTML hidden attribute stay hidden by default.\n*/\n\n[hidden]:where(:not([hidden='until-found'])) {\n  display: none !important;\n}\n";
-// packages/tailwind/src/compiler.ts
+// ../tailwind/src/compiler.ts
 function collectCandidates(classNames) {
 	return [...new Set([...classNames].flatMap(splitClassNames))];
 }
@@ -26694,7 +27030,7 @@ var TailwindCompiler = class {
 		return run;
 	}
 };
-// packages/document/src/structure.ts
+// ../document/src/structure.ts
 var uid = () => `node-${crypto.randomUUID().replaceAll("-", "")}`;
 function edit(code, edits) {
 	return edits.sort((a, b) => b.start - a.start).reduce((s, e) => s.slice(0, e.start) + e.text + s.slice(e.end), code);
@@ -26889,7 +27225,7 @@ function applyStructure(parsed, op) {
 		text: fragments.join("\n")
 	}]);
 }
-// packages/document/src/serialize.ts
+// ../document/src/serialize.ts
 function sourceLiteral(value) {
 	let count = 0;
 	function check(v, depth) {
@@ -26923,7 +27259,7 @@ function serializeElement(element) {
 	const children = import_react.Children.toArray(props.children).map((child) => typeof child === "string" ? `{${JSON.stringify(child)}}` : (0, import_react.isValidElement)(child) ? serializeElement(child) : "").join("\n");
 	return sourceElement(getNodeKind(element), props, children || void 0);
 }
-// packages/document/src/components.ts
+// ../document/src/components.ts
 var COMPONENT_FILE = "components/main.components.tsx";
 var ALL_IMPORTS = "Page, Frame, Group, Rect, Ellipse, Text, Image, Vector, Line, Polygon, Star, Components, Component, Instance, Slot, SlotContent";
 var emptyCatalog = () => /* @__PURE__ */ new Map();
@@ -27295,7 +27631,7 @@ function withComponentRoot(code, key, rootSource) {
 	const root = componentRoot(def), syntax = tree.syntax.get(root.props.designId);
 	return code.slice(0, syntax.start) + rootSource + code.slice(syntax.end);
 }
-// packages/document/src/session.ts
+// ../document/src/session.ts
 function range(node) {
 	if (node.start == null || node.end == null) throw new Error("源码位置不可用。");
 	return [node.start, node.end];
@@ -27586,7 +27922,7 @@ var DocumentSession = class DocumentSession {
 		this.manifest = parseManifest(files["rea.json"]);
 		this.system = readSystem(files, this.manifest.version);
 		this.components = parseCatalog(files[COMPONENT_FILE]);
-		if (files["components/main.components.tsx"] && this.manifest.version !== 3) throw new Error("组件目录需要文档格式 v3。");
+		if (files["components/main.components.tsx"] && this.manifest.version < 3) throw new Error("组件目录需要文档格式 v3 或以上。");
 		const componentPages = /* @__PURE__ */ new Map();
 		for (const [key, def] of this.components) {
 			const parsed = componentEditor(def);
@@ -27632,7 +27968,7 @@ var DocumentSession = class DocumentSession {
 			files[COMPONENT_FILE] = op.source;
 			manifest = {
 				...manifest,
-				version: 3
+				version: manifest.version === 4 ? 4 : 3
 			};
 			writeManifest();
 		} else if (op.type === "system") {
@@ -27796,7 +28132,7 @@ var DocumentSession = class DocumentSession {
 		return new DocumentSession(files, this.rev + 1, past, future);
 	}
 };
-// node_modules/.pnpm/fflate@0.8.3/node_modules/fflate/esm/index.mjs
+// ../../node_modules/.pnpm/fflate@0.8.3/node_modules/fflate/esm/index.mjs
 var require$2 = createRequire$1("/");
 var _a;
 try {
@@ -28733,7 +29069,7 @@ function unzipSync(data, opts) {
 	}
 	return files;
 }
-// packages/storage/src/reaui.ts
+// ../storage/src/reaui.ts
 var MAX_ENTRIES = 5e3;
 var MAX_SIZE = 268435456;
 var MAX_RATIO = 200;
@@ -28799,6 +29135,7 @@ async function exportReaui(doc, assets = []) {
 	for (const { file } of session.manifest.pages) content[file] = strToU8(doc.files[file]);
 	if (doc.files["components/main.components.tsx"]) content[COMPONENT_FILE] = strToU8(doc.files[COMPONENT_FILE]);
 	if (doc.files["agent/sessions.json"]) content[AGENT_SESSIONS_FILE] = strToU8(doc.files[AGENT_SESSIONS_FILE]);
+	if (doc.files["agent/system-sessions.json"]) content[SYSTEM_AGENT_SESSIONS_FILE] = strToU8(doc.files[SYSTEM_AGENT_SESSIONS_FILE]);
 	if (doc.files["editor/guides.json"]) content[EDITOR_GUIDES_FILE] = strToU8(doc.files[EDITOR_GUIDES_FILE]);
 	if (doc.files["design/system.json"]) content[SYSTEM_FILE] = strToU8(doc.files[SYSTEM_FILE]);
 	for (const asset of assets) {
@@ -28830,18 +29167,18 @@ function readReaui(bytes) {
 	const names = inspectZip(bytes), warnings = [];
 	if (!names.has("rea.json")) throw new Error("ZIP 缺少 rea.json。");
 	const entries = unzipSync(bytes, { filter: (entry) => {
-		const allowed = entry.name === "rea.json" || entry.name === "components/main.components.tsx" || entry.name === "agent/sessions.json" || entry.name === "editor/guides.json" || entry.name === "design/system.json" || entry.name.startsWith("pages/") || entry.name.startsWith("assets/");
+		const allowed = entry.name === "rea.json" || entry.name === "components/main.components.tsx" || entry.name === "agent/sessions.json" || entry.name === "agent/system-sessions.json" || entry.name === "editor/guides.json" || entry.name === "design/system.json" || entry.name.startsWith("pages/") || entry.name.startsWith("assets/");
 		if (!allowed) warnings.push(`已忽略未知条目：${entry.name}`);
 		return allowed;
 	} });
 	for (const [path, data] of Object.entries(entries)) if (crc32(data) !== names.get(path)) throw new Error(`ZIP 校验和错误：${path}`);
 	const files = Object.create(null);
-	for (const [path, data] of Object.entries(entries)) if (path === "rea.json" || path === "components/main.components.tsx" || path === "agent/sessions.json" || path === "editor/guides.json" || path === "design/system.json" || path.startsWith("pages/")) files[path] = new TextDecoder("utf-8", { fatal: true }).decode(data);
+	for (const [path, data] of Object.entries(entries)) if (path === "rea.json" || path === "components/main.components.tsx" || path === "agent/sessions.json" || path === "agent/system-sessions.json" || path === "editor/guides.json" || path === "design/system.json" || path.startsWith("pages/")) files[path] = new TextDecoder("utf-8", { fatal: true }).decode(data);
 	checkSystemFile(files, warnings);
 	const session = new DocumentSession(files);
-	for (const path of Object.keys(files)) if (path !== "rea.json" && path !== "components/main.components.tsx" && path !== "agent/sessions.json" && path !== "editor/guides.json" && path !== "design/system.json" && !session.manifest.pages.some((page) => page.file === path)) throw new Error(`清单未引用页面：${path}`);
-	if (files["agent/sessions.json"] !== void 0) {
-		const source = files[AGENT_SESSIONS_FILE];
+	for (const path of Object.keys(files)) if (path !== "rea.json" && path !== "components/main.components.tsx" && path !== "agent/sessions.json" && path !== "agent/system-sessions.json" && path !== "editor/guides.json" && path !== "design/system.json" && !session.manifest.pages.some((page) => page.file === path)) throw new Error(`清单未引用页面：${path}`);
+	for (const metadata of [AGENT_SESSIONS_FILE, SYSTEM_AGENT_SESSIONS_FILE]) if (files[metadata] !== void 0) {
+		const source = files[metadata];
 		let damaged = source.length > 524288;
 		if (!damaged) try {
 			const value = JSON.parse(source);
@@ -28851,7 +29188,7 @@ function readReaui(bytes) {
 		}
 		if (damaged) {
 			warnings.push("已忽略损坏或过大的 AI 会话记录。");
-			delete files[AGENT_SESSIONS_FILE];
+			delete files[metadata];
 		}
 	}
 	if (files["editor/guides.json"] !== void 0) {
@@ -28882,7 +29219,7 @@ function readReaui(bytes) {
 		warnings
 	};
 }
-// packages/reaui-cli/src/files.ts
+// src/files.ts
 var SKIP_DIRS = /* @__PURE__ */ new Set([
 	"node_modules",
 	".git",
@@ -28903,7 +29240,7 @@ function isSafeRelative(file) {
 	return file.length > 0 && file.length <= 512 && !file.startsWith("/") && !/^[a-zA-Z]:/.test(file) && !file.includes("\\") && !/[\u0000-\u001f]/.test(file) && file.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 function isDocumentTextFile(file) {
-	return file === "rea.json" || file === "components/main.components.tsx" || file === "agent/sessions.json" || file === "editor/guides.json" || file === "design/system.json" || /^pages\/[^/]+\.page\.tsx$/.test(file);
+	return file === "rea.json" || file === "components/main.components.tsx" || file === "agent/sessions.json" || file === "agent/system-sessions.json" || file === "editor/guides.json" || file === "design/system.json" || /^pages\/[^/]+\.page\.tsx$/.test(file);
 }
 async function readDocumentFiles(dir) {
 	const root = path.resolve(dir);
@@ -28969,7 +29306,7 @@ async function writeDocumentFiles(dir, files, assets = []) {
 		await writeFile(target, asset.data);
 	}
 }
-// packages/reaui-cli/src/document.ts
+// src/document.ts
 async function loadDocument(target) {
 	const info = await stat(target).catch(() => void 0);
 	if (!info) throw new CliError("IO_NOT_FOUND", `路径不存在：${target}`, target, "检查路径拼写，或先运行 reaui init。");
@@ -28990,7 +29327,7 @@ async function loadDocument(target) {
 function openSession(files) {
 	return new DocumentSession(files);
 }
-// packages/reaui-cli/src/commands/diff.ts
+// src/commands/diff.ts
 function lineStats(before, after) {
 	const a = before.split("\n"), b = after.split("\n");
 	if (a.length * b.length > 4e6) return {
@@ -29050,7 +29387,7 @@ async function runDiff(args) {
 	console.log(`共 ${changes.length} 个文件发生变化。`);
 	return 0;
 }
-// packages/reaui-cli/src/commands/init.ts
+// src/commands/init.ts
 function pageSource(id, name, width, height) {
 	return `import { Page, Frame, Text } from '@rea/design';
 
@@ -29089,9 +29426,16 @@ async function runInit(args) {
 		file: `pages/${id}.page.tsx`
 	}));
 	const manifest = createManifest(`doc_${crypto.randomUUID()}`, name.trim(), pages);
+	const systemPath = value(args, "system");
+	const system = systemPath ? parseSystem(await readFile(path.resolve(systemPath), "utf8")) : null;
+	if (system) manifest.version = 4;
 	await mkdir(target, { recursive: true });
 	await mkdir(path.join(target, "pages"), { recursive: true });
 	await writeFile(path.join(target, "rea.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+	if (system) {
+		await mkdir(path.join(target, "design"), { recursive: true });
+		await writeFile(path.join(target, SYSTEM_FILE), serializeSystem(system), "utf8");
+	}
 	for (const [index, id] of pageIds.entries()) {
 		const pageName = (names[index] ?? (index === 0 ? name.trim() : `页面 ${index + 1}`)).trim() || `页面 ${index + 1}`;
 		await writeFile(path.join(target, `pages/${id}.page.tsx`), pageSource(id, pageName, width, height), "utf8");
@@ -29102,7 +29446,7 @@ async function runInit(args) {
 	console.log(`画板尺寸：${width}×${height}，页面数：${pageIds.length}`);
 	return 0;
 }
-// packages/reaui-cli/src/commands/mcp.ts
+// src/commands/mcp.ts
 var require$1 = createRequire(import.meta.url);
 /**
 * 找到已安装的 @xtcel/reaui-mcp 入口。
@@ -29139,7 +29483,7 @@ async function runMcp(rest) {
 		});
 	});
 }
-// packages/reaui-cli/src/commands/pack.ts
+// src/commands/pack.ts
 var MIME = {
 	png: "image/png",
 	jpg: "image/jpeg",
@@ -29180,7 +29524,7 @@ async function runPack(args) {
 	for (const warning of loaded.warnings) console.log(`  警告：${warning}`);
 	return 0;
 }
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom.production.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom.production.js
 /**
 * @license React
 * react-dom.production.js
@@ -29332,7 +29676,7 @@ var require_react_dom_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	};
 	exports.version = "19.3.1";
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom.development.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom.development.js
 /**
 * @license React
 * react-dom.development.js
@@ -29520,7 +29864,7 @@ var require_react_dom_development = /* @__PURE__ */ __commonJSMin(((exports) => 
 		"undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
 	})();
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/index.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/index.js
 var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function checkDCE() {
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -29536,7 +29880,7 @@ var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_dom_production();
 	} else module.exports = require_react_dom_development();
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server-legacy.node.production.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server-legacy.node.production.js
 /**
 * @license React
 * react-dom-server-legacy.node.production.js
@@ -33629,7 +33973,7 @@ var require_react_dom_server_legacy_node_production = /* @__PURE__ */ __commonJS
 	};
 	exports.version = "19.3.1";
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server.node.production.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server.node.production.js
 /**
 * @license React
 * react-dom-server.node.production.js
@@ -38227,7 +38571,7 @@ var require_react_dom_server_node_production = /* @__PURE__ */ __commonJSMin(((e
 	};
 	exports.version = "19.3.1";
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server-legacy.node.development.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server-legacy.node.development.js
 /**
 * @license React
 * react-dom-server-legacy.node.development.js
@@ -43724,7 +44068,7 @@ var require_react_dom_server_legacy_node_development = /* @__PURE__ */ __commonJ
 		exports.version = "19.3.1";
 	})();
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server.node.development.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/cjs/react-dom-server.node.development.js
 /**
 * @license React
 * react-dom-server.node.development.js
@@ -49586,7 +49930,7 @@ var require_react_dom_server_node_development = /* @__PURE__ */ __commonJSMin(((
 		exports.version = "19.3.1";
 	})();
 }));
-// node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/server.node.js
+// ../../node_modules/.pnpm/react-dom@19.3.1_react@19.3.1/node_modules/react-dom/server.node.js
 var require_server_node = /* @__PURE__ */ __commonJSMin(((exports) => {
 	var l;
 	var s;
@@ -49605,7 +49949,7 @@ var require_server_node = /* @__PURE__ */ __commonJSMin(((exports) => {
 	exports.resumeToPipeableStream = s.resumeToPipeableStream;
 	exports.resume = s.resume;
 }));
-// node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react-jsx-runtime.production.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react-jsx-runtime.production.js
 /**
 * @license React
 * react-jsx-runtime.production.js
@@ -49639,7 +49983,7 @@ var require_react_jsx_runtime_production = /* @__PURE__ */ __commonJSMin(((expor
 	exports.jsx = jsxProd;
 	exports.jsxs = jsxProd;
 }));
-// node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react-jsx-runtime.development.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/cjs/react-jsx-runtime.development.js
 /**
 * @license React
 * react-jsx-runtime.development.js
@@ -49850,12 +50194,12 @@ var require_react_jsx_runtime_development = /* @__PURE__ */ __commonJSMin(((expo
 		};
 	})();
 }));
-// node_modules/.pnpm/react@19.3.1/node_modules/react/jsx-runtime.js
+// ../../node_modules/.pnpm/react@19.3.1/node_modules/react/jsx-runtime.js
 var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	if (process.env.NODE_ENV === "production") module.exports = require_react_jsx_runtime_production();
 	else module.exports = require_react_jsx_runtime_development();
 }));
-// packages/renderer-dom/src/render.tsx
+// ../renderer-dom/src/render.tsx
 var import_server_node = require_server_node();
 var import_jsx_runtime = require_jsx_runtime();
 /** Render only the parsed element tree; previews patch className without touching source. */
@@ -49972,7 +50316,7 @@ function PageRenderer({ page, selectedId, onSelect, interactive = true, preview,
 	}
 	return render(page);
 }
-// packages/reaui-cli/src/preview/artboards.ts
+// src/preview/artboards.ts
 var DEFAULT_ARTBOARD = {
 	width: 1440,
 	height: 1024
@@ -50004,7 +50348,7 @@ function artboardsOf(page) {
 		fallback: true
 	}];
 }
-// packages/reaui-cli/src/preview/html.ts
+// src/preview/html.ts
 var ESCAPES = {
 	"&": "&amp;",
 	"<": "&lt;",
@@ -50067,7 +50411,7 @@ ${systemCss ? `<style>${systemCss.replace(/<\/style/gi, "<\\/style")}
 </html>
 `;
 }
-// packages/reaui-cli/src/commands/preview.ts
+// src/commands/preview.ts
 async function runPreview(args) {
 	const target = args.positionals[0] ?? ".";
 	const output = path.resolve(value(args, "out", path.join(process.cwd(), "preview.html")));
@@ -50112,7 +50456,7 @@ async function runPreview(args) {
 	for (const warning of loaded.warnings) console.log(`  警告：${warning}`);
 	return 0;
 }
-// packages/reaui-cli/src/commands/unpack.ts
+// src/commands/unpack.ts
 async function runUnpack(args) {
 	const target = args.positionals[0];
 	if (!target) throw new CliError("USAGE_TARGET", "请提供 .reaui 文件路径。", void 0, "用法：reaui unpack design.reaui --out ./design");
@@ -50129,7 +50473,7 @@ async function runUnpack(args) {
 	for (const warning of loaded.warnings) console.log(`  警告：${warning}`);
 	return 0;
 }
-// packages/reaui-cli/src/commands/validate.ts
+// src/commands/validate.ts
 async function runValidate(args) {
 	const target = args.positionals[0] ?? ".";
 	const json = args.flags.has("json");
@@ -50248,7 +50592,56 @@ async function runValidate(args) {
 		return 1;
 	}
 }
-// packages/reaui-cli/src/cli.ts
+// src/commands/system.ts
+async function runSystem(args) {
+	const [action = "get", target = "."] = args.positionals;
+	if (![
+		"get",
+		"set",
+		"remove"
+	].includes(action)) throw new CliError("USAGE_SYSTEM", "用法：system get|set|remove <项目目录> [--system <包JSON文件>]");
+	const loaded = await loadDocument(target);
+	const session = openSession(loaded.files);
+	if (action === "get") {
+		console.log(JSON.stringify({ system: session.system }, null, 2));
+		return 0;
+	}
+	if (loaded.kind !== "dir") throw new CliError("USAGE_SYSTEM", "修改设计系统前请先将 .reaui 解包为项目目录。");
+	const systemPath = value(args, "system") ?? args.positionals[2];
+	if (action === "set" && !systemPath) throw new CliError("USAGE_SYSTEM", "设置系统需要 --system <包JSON文件>。");
+	const source = action === "set" ? serializeSystem(parseSystem(await readFile(path.resolve(systemPath), "utf8"))) : null;
+	const next = session.commit({
+		label: "设置项目设计系统",
+		ops: [{
+			type: "system",
+			source
+		}]
+	});
+	const root = path.resolve(target), systemFile = path.join(root, SYSTEM_FILE), manifestFile = path.join(root, "rea.json");
+	const suffix = `.tmp-${crypto.randomUUID()}`;
+	const systemTemp = systemFile + suffix, manifestTemp = manifestFile + suffix;
+	try {
+		await mkdir(path.dirname(systemFile), { recursive: true });
+		if (source !== null) await writeFile(systemTemp, next.files[SYSTEM_FILE], "utf8");
+		await writeFile(manifestTemp, next.files["rea.json"], "utf8");
+		if (source !== null) await rename(systemTemp, systemFile);
+		else await rm(systemFile, { force: true });
+		await rename(manifestTemp, manifestFile);
+	} catch (error) {
+		await writeFile(manifestFile, loaded.files["rea.json"], "utf8");
+		if (loaded.files["design/system.json"] !== void 0) await writeFile(systemFile, loaded.files[SYSTEM_FILE], "utf8");
+		else await rm(systemFile, { force: true });
+		throw error;
+	} finally {
+		await Promise.all([rm(systemTemp, { force: true }), rm(manifestTemp, { force: true })]);
+	}
+	console.log(JSON.stringify({
+		ok: true,
+		system: next.system
+	}, null, 2));
+	return 0;
+}
+// src/cli.ts
 var VERSION = "0.1.3";
 var HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
@@ -50261,6 +50654,7 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
   unpack     解包 .reaui 为文档目录
   diff       比较两个设计源
   preview    生成自包含 HTML 预览
+  system     get|set|remove 项目设计系统（set 使用 --system <JSON文件>）
   mcp        启动 MCP server（转发到 @xtcel/reaui-mcp）
 
 通用选项：
@@ -50276,6 +50670,8 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
   reaui pack ./demo --out demo.reaui
   reaui unpack demo.reaui --out ./restored
   reaui preview ./demo --out preview.html
+  reaui init ./brand --system ./brand.system.json
+  reaui system set ./demo --system ./brand.system.json
 `;
 async function main(argv) {
 	if (argv[0] === "mcp") return await runMcp(argv.slice(1));
@@ -50297,6 +50693,7 @@ async function main(argv) {
 			case "unpack": return await runUnpack(args);
 			case "diff": return await runDiff(args);
 			case "preview": return await runPreview(args);
+			case "system": return await runSystem(args);
 			default: throw new CliError("USAGE_COMMAND", `未知命令：${args.command}`, void 0, "运行 reaui help 查看可用命令。");
 		}
 	} catch (error) {
