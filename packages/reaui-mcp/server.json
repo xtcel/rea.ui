@@ -3,7 +3,7 @@
   "name": "io.github.xtcel/reaui",
   "title": "REA UI",
   "description": "Create, validate and pack .reaui React TSX design documents that open in an editor.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "websiteUrl": "https://reaui.xtcel.com/",
   "repository": {
     "url": "https://github.com/xtcel/rea.ui",
@@ -21,7 +21,7 @@
     {
       "registryType": "npm",
       "identifier": "@xtcel/reaui-mcp",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

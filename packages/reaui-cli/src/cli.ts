@@ -11,7 +11,7 @@ import { runSystem } from './commands/system';
 import { runComponents } from './commands/components';
 import { runAudit } from './commands/audit';
 
-export const VERSION = '0.1.3';
+export const VERSION = '0.2.0';
 
 const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
