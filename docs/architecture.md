@@ -34,8 +34,7 @@ rea.json + pages/*.page.tsx + components/main.components.tsx? + assets
 | `renderer-dom` | 原语渲染、class 预览修补、Shadow DOM、blob URL、composedPath 命中 |
 | `editor` | 选区、工具、相机、文档管理、页面/图层导航、Design/Inspect 外壳与共享 UI 控件；标尺 / 手动参考线屏幕覆盖层与视图偏好 |
 | `geometry` / `crates/geometry` | 加载真实 WASM；Rust 计算矩形归一化、吸附和缩放边界，不保存文档或场景 |
-| `reaui-cli` | 面向外部 Agent 的文档命令：init / validate / pack / unpack / diff / preview；复用 `document` 校验与 `storage` ZIP 封解包，不复制规则 |
-| `integrations/workbuddy` | WorkBuddy 专家包源（Agent 定义、技能、模板）；薄封装，通过绝对路径调用 `reaui-cli` |
+| `reaui-cli` | 面向外部 Agent 的文档命令：init / validate / audit / components / pack / unpack / diff / preview；复用 `document` 校验与 `storage` ZIP 封解包，不复制规则 |
 | `apps/web` | 初始化 WASM 并装配编辑器 |
 
 ## 事务与历史
@@ -162,10 +161,10 @@ Rust 几何 ABI 导出 `alloc / dealloc / snap_rects / distribute_marks`。长�
 
 ## 外部 Agent 与 reaui CLI
 
-`add-workbuddy-design-agent` 让 WorkBuddy 的 Agent 在不打开编辑器的情况下产出可编辑设计稿。`packages/reaui-cli` 只做文件 I/O、命令编排与错误整形：校验调用 `new DocumentSession(files)`，打包调用 `storage/reaui.ts` 的 `exportReaui()`，解包前的 ZIP 安全校验复用同一套 `inspectZip` / CRC / 路径检查（`readReaui()` 保留原文档 id，不做改名）。因此 CLI 与编辑器的接受标准天然一致，不存在第二份规则。
+外部 Agent（WorkBuddy、Codex 等）通过 `reaui` 在不打开编辑器的情况下产出可编辑设计稿。`packages/reaui-cli` 只做文件 I/O、命令编排与错误整形：校验调用 `new DocumentSession(files)`，打包调用 `storage/reaui.ts` 的 `exportReaui()`，解包前的 ZIP 安全校验复用同一套 `inspectZip` / CRC / 路径检查（`readReaui()` 保留原文档 id，不做改名）。因此 CLI 与编辑器的接受标准天然一致，不存在第二份规则。
 
 CLI 源码是 TS/TSX 且使用无扩展名导入，Node 无法直接加载。`bin/reaui.mjs` 用 Vite 的 `createServer({ server: { middlewareMode: true } })` + `ssrLoadModule()` 加载 `src/cli.ts`，复用项目已有的转译与 `?raw` 能力，不新增构建步骤；`ssr.noExternal` 必须包含 `@rea/`，否则 workspace 包会被外部化并交给 Node 解析。
 
 预览复用画布的 `PageRenderer` 与 `TailwindCompiler`：按顶层 `Frame` 的 `fixedValue()` 计算画板包围盒（非固定尺寸回退 `1440×1024` 并标注），用 `renderToStaticMarkup()` 输出 HTML，把编译后的 CSS 内联为单文件。组件实例先由 `DocumentSession` 的 `resolvePage()` 展开，因此预览看到的是最终图层树；图片资源与字体不加载。
 
-WorkBuddy 专家包位于 `integrations/workbuddy/reaui-designer`，`plugin.json` 只声明 Agent 与技能，技能通过 `REAUI_ROOT` 指向的仓库绝对路径调用 CLI。协议文本在 [agent-protocol.md](agent-protocol.md)。本期不做 MCP 画布联动与 PNG 截图。
+WorkBuddy 专家包不在此仓库维护：已上架的「ReaUI 设计专家」是独立专家包，安装在 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/reaui-designer`，内置 `@xtcel/reaui-cli`（`server/reaui-cli`）并由技能按自身位置解析，不依赖仓库路径。协议文本在 [agent-protocol.md](agent-protocol.md)。本期不做 MCP 画布联动与 PNG 截图。

@@ -13,7 +13,7 @@ Cursor reads MCP servers from a JSON file. Use `.cursor/mcp.json` inside a proje
 }
 ```
 
-Restart Cursor, then open **Settings → MCP** and confirm `reaui` is listed with eight tools. In Agent mode the tools appear as callable actions.
+Restart Cursor, then open **Settings → MCP** and confirm `reaui` is listed with twelve tools. In Agent mode the tools appear as callable actions.
 
 `--root` must be absolute. It defines the only directory the server will write into — the agent cannot escape it with `..` or an absolute path in a tool argument.
 

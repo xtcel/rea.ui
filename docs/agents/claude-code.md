@@ -14,7 +14,7 @@ claude mcp add reaui -s user -- npx -y @xtcel/reaui-mcp --root "$HOME/designs"
 
 `--root` is the workspace the agent may write inside. Everything it creates lands there; absolute paths and `..` escapes are rejected, so the agent cannot wander out of the directory you gave it.
 
-Verify with `/mcp` inside a session. You should see `reaui` connected with eight tools.
+Verify with `/mcp` inside a session. You should see `reaui` connected with twelve tools.
 
 ## Make it read the protocol first
 

@@ -338,15 +338,14 @@ Image 与资源格式/渲染已实现，图片添加 UI 留待后续。旋转/�
 
 吸管的系统拾色过程、Pointer Lock 在不同操作系统的无边界行为以及读屏器实机交互没有跨平台人工验收。M3 中系统中文输入法等未验收项仍按该提案单独跟踪。
 
-## WorkBuddy Agent 与 reaui CLI
+## 外部 Agent 与 reaui CLI
 
-对应 `add-workbuddy-design-agent`。验证环境：macOS、Node 22.22.2、pnpm 12.4.1、Vite 8.3.5。
+对应 `packages/reaui-cli` 与离线预览（2026-11-07 首次验证）。验证环境：macOS、Node 22.22.2、pnpm 12.4.1、Vite 8.3.5。
 
 ### 自动化
 
 - `pnpm exec vitest run packages/reaui-cli`：3 个文件、15 项通过（参数解析 4、文档命令 6、预览与画板 5）。
 - `pnpm typecheck`：通过。
-- `openspec validate add-workbuddy-design-agent --strict`：通过。
 
 ### 端到端
 

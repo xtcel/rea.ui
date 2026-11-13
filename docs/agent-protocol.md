@@ -85,7 +85,11 @@ core/full profile 仅描述语言能力，不再决定复用策略。默认评�
 ## 7. CLI 工作流
 
 ```bash
-REAUI="node $REAUI_ROOT/packages/reaui-cli/bin/reaui.mjs"
+# 外部 Agent：用已发布的 CLI，免安装
+REAUI="npx -y @xtcel/reaui-cli@0.2.0"
+
+# 仓库内开发：改用本地入口
+# REAUI="node packages/reaui-cli/bin/reaui.mjs"
 
 $REAUI init ./design --name "我的应用" --page main --page-name 首页 --width 1440 --height 1024
 $REAUI validate ./design --json

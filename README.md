@@ -115,12 +115,12 @@ Inside the repo use `pnpm reaui` (loads TS through Vite, so source edits take ef
 | Consumer | Integration |
 |---|---|
 | Codex CLI / Claude Code / other agents | Call the `reaui` command and follow the [design protocol](docs/agent-protocol.md) |
-| WorkBuddy | Ships an expert that wraps the CLI, see `integrations/workbuddy/reaui-designer` |
-| MCP clients (Claude Code, Cursor, Codex CLI, Cline) | `npx @xtcel/reaui-mcp` — eight tools plus the design protocol as a resource, over stdio or Streamable HTTP. Per-client setup: [agent recipes](docs/agents/README.md) · [MCP server](packages/reaui-mcp/README.md) |
+| WorkBuddy | Install the 「ReaUI 设计专家」expert package — it bundles `@xtcel/reaui-cli` 0.2.0, resolves the CLI from its own location and runs offline |
+| MCP clients (Claude Code, Cursor, Codex CLI, Cline) | `npx @xtcel/reaui-mcp` — twelve tools plus the design protocol as a resource, over stdio or Streamable HTTP. Per-client setup: [agent recipes](docs/agents/README.md) · [MCP server](packages/reaui-mcp/README.md) |
 
 `preview.html` is a self-contained offline preview that opens in the WorkBuddy result pane; `demo.reaui` opens in REA UI for continued editing. Command reference, error codes and delivery rules: [agent design protocol](docs/agent-protocol.md).
 
-The WorkBuddy expert source lives in `integrations/workbuddy/reaui-designer`. To update it, sync that directory to `~/.workbuddy/plugins/marketplaces/my-experts/plugins/` and re-run the expert validation and registration scripts. The skill calls the CLI from `REAUI_ROOT` (default `~/workspace/rea.ui`); set that variable if the repo moves.
+The WorkBuddy expert is not maintained in this repository. 「ReaUI 设计专家」ships as a standalone expert package installed at `~/.workbuddy/plugins/marketplaces/my-experts/plugins/reaui-designer`; it bundles `@xtcel/reaui-cli` 0.2.0 under `server/reaui-cli` and resolves the CLI from its own location, so no `REAUI_ROOT` is needed. To upgrade the CLI, replace `server/reaui-cli` in that directory and re-run the expert validation and registration scripts.
 
 ## Editing reference
 
