@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="reaui preview">
+<title>可编辑工作台示例 · 设计预览</title>
+<style>/*! tailwindcss v4.3.3 | MIT License | https://tailwindcss.com */
+@layer properties;
+@layer theme, base, components, utilities;
+@layer theme {
+  :root, :host {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial,
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+    --color-white: #fff;
+    --spacing: 0.25rem;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --default-font-family: var(--font-sans);
+    --default-mono-font-family: var(--font-mono);
+  }
+}
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+  html, :host {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+    font-family: var(--default-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji');
+    font-feature-settings: var(--default-font-feature-settings, normal);
+    font-variation-settings: var(--default-font-variation-settings, normal);
+    -webkit-tap-highlight-color: transparent;
+  }
+  hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+  abbr:where([title]) {
+    -webkit-text-decoration: underline dotted;
+    text-decoration: underline dotted;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  a {
+    color: inherit;
+    -webkit-text-decoration: inherit;
+    text-decoration: inherit;
+  }
+  b, strong {
+    font-weight: bolder;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--default-mono-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
+    font-feature-settings: var(--default-mono-font-feature-settings, normal);
+    font-variation-settings: var(--default-mono-font-variation-settings, normal);
+    font-size: 1em;
+  }
+  small {
+    font-size: 80%;
+  }
+  sub, sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+  sub {
+    bottom: -0.25em;
+  }
+  sup {
+    top: -0.5em;
+  }
+  table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+  :-moz-focusring:where(:not(iframe)) {
+    outline: auto;
+  }
+  progress {
+    vertical-align: baseline;
+  }
+  summary {
+    display: list-item;
+  }
+  ol, ul, menu {
+    list-style: none;
+  }
+  img, svg, video, canvas, audio, iframe, embed, object {
+    display: block;
+    vertical-align: middle;
+  }
+  img, video {
+    max-width: 100%;
+    height: auto;
+  }
+  button, input, select, optgroup, textarea, ::file-selector-button {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
+  :where(select:is([multiple], [size])) optgroup {
+    font-weight: bolder;
+  }
+  :where(select:is([multiple], [size])) optgroup option {
+    padding-inline-start: 20px;
+  }
+  ::file-selector-button {
+    margin-inline-end: 4px;
+  }
+  ::placeholder {
+    opacity: 1;
+  }
+  @supports (not (-webkit-appearance: -apple-pay-button))  or (contain-intrinsic-size: 1px) {
+    ::placeholder {
+      color: currentcolor;
+      @supports (color: color-mix(in lab, red, red)) {
+        color: color-mix(in oklab, currentcolor 50%, transparent);
+      }
+    }
+  }
+  textarea {
+    resize: vertical;
+  }
+  ::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+  ::-webkit-date-and-time-value {
+    min-height: 1lh;
+    text-align: inherit;
+  }
+  ::-webkit-datetime-edit {
+    display: inline-flex;
+  }
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+  ::-webkit-datetime-edit, ::-webkit-datetime-edit-year-field, ::-webkit-datetime-edit-month-field, ::-webkit-datetime-edit-day-field, ::-webkit-datetime-edit-hour-field, ::-webkit-datetime-edit-minute-field, ::-webkit-datetime-edit-second-field, ::-webkit-datetime-edit-millisecond-field, ::-webkit-datetime-edit-meridiem-field {
+    padding-block: 0;
+  }
+  ::-webkit-calendar-picker-indicator {
+    line-height: 1;
+  }
+  :-moz-ui-invalid {
+    box-shadow: none;
+  }
+  button, input:where([type='button'], [type='reset'], [type='submit']), ::file-selector-button {
+    appearance: button;
+  }
+  ::-webkit-inner-spin-button, ::-webkit-outer-spin-button {
+    height: auto;
+  }
+  [hidden]:where(:not([hidden='until-found'])) {
+    display: none !important;
+  }
+}
+.absolute {
+  position: absolute;
+}
+.relative {
+  position: relative;
+}
+.top-0 {
+  top: 0px;
+}
+.top-\[3px\] {
+  top: 3px;
+}
+.top-\[4px\] {
+  top: 4px;
+}
+.top-\[8px\] {
+  top: 8px;
+}
+.top-\[10px\] {
+  top: 10px;
+}
+.top-\[11px\] {
+  top: 11px;
+}
+.top-\[12px\] {
+  top: 12px;
+}
+.top-\[14px\] {
+  top: 14px;
+}
+.top-\[16px\] {
+  top: 16px;
+}
+.top-\[17px\] {
+  top: 17px;
+}
+.top-\[20px\] {
+  top: 20px;
+}
+.top-\[21px\] {
+  top: 21px;
+}
+.top-\[22px\] {
+  top: 22px;
+}
+.top-\[24px\] {
+  top: 24px;
+}
+.top-\[26px\] {
+  top: 26px;
+}
+.top-\[28px\] {
+  top: 28px;
+}
+.top-\[46px\] {
+  top: 46px;
+}
+.top-\[48px\] {
+  top: 48px;
+}
+.top-\[50px\] {
+  top: 50px;
+}
+.top-\[52px\] {
+  top: 52px;
+}
+.top-\[64px\] {
+  top: 64px;
+}
+.top-\[72px\] {
+  top: 72px;
+}
+.top-\[78px\] {
+  top: 78px;
+}
+.top-\[104px\] {
+  top: 104px;
+}
+.top-\[108px\] {
+  top: 108px;
+}
+.top-\[112px\] {
+  top: 112px;
+}
+.top-\[156px\] {
+  top: 156px;
+}
+.top-\[172px\] {
+  top: 172px;
+}
+.top-\[234px\] {
+  top: 234px;
+}
+.top-\[272px\] {
+  top: 272px;
+}
+.top-\[280px\] {
+  top: 280px;
+}
+.top-\[796px\] {
+  top: 796px;
+}
+.top-\[952px\] {
+  top: 952px;
+}
+.left-0 {
+  left: 0px;
+}
+.left-\[8px\] {
+  left: 8px;
+}
+.left-\[10px\] {
+  left: 10px;
+}
+.left-\[14px\] {
+  left: 14px;
+}
+.left-\[16px\] {
+  left: 16px;
+}
+.left-\[24px\] {
+  left: 24px;
+}
+.left-\[40px\] {
+  left: 40px;
+}
+.left-\[42px\] {
+  left: 42px;
+}
+.left-\[44px\] {
+  left: 44px;
+}
+.left-\[76px\] {
+  left: 76px;
+}
+.left-\[240px\] {
+  left: 240px;
+}
+.left-\[280px\] {
+  left: 280px;
+}
+.left-\[284px\] {
+  left: 284px;
+}
+.left-\[548px\] {
+  left: 548px;
+}
+.left-\[568px\] {
+  left: 568px;
+}
+.left-\[680px\] {
+  left: 680px;
+}
+.left-\[720px\] {
+  left: 720px;
+}
+.left-\[852px\] {
+  left: 852px;
+}
+.left-\[1080px\] {
+  left: 1080px;
+}
+.h-11 {
+  height: calc(var(--spacing) * 11);
+}
+.h-16 {
+  height: calc(var(--spacing) * 16);
+}
+.h-\[16px\] {
+  height: 16px;
+}
+.h-\[18px\] {
+  height: 18px;
+}
+.h-\[20px\] {
+  height: 20px;
+}
+.h-\[22px\] {
+  height: 22px;
+}
+.h-\[24px\] {
+  height: 24px;
+}
+.h-\[26px\] {
+  height: 26px;
+}
+.h-\[28px\] {
+  height: 28px;
+}
+.h-\[36px\] {
+  height: 36px;
+}
+.h-\[40px\] {
+  height: 40px;
+}
+.h-\[46px\] {
+  height: 46px;
+}
+.h-\[76px\] {
+  height: 76px;
+}
+.h-\[78px\] {
+  height: 78px;
+}
+.h-\[80px\] {
+  height: 80px;
+}
+.h-\[84px\] {
+  height: 84px;
+}
+.h-\[140px\] {
+  height: 140px;
+}
+.h-\[208px\] {
+  height: 208px;
+}
+.h-\[312px\] {
+  height: 312px;
+}
+.h-\[400px\] {
+  height: 400px;
+}
+.h-\[476px\] {
+  height: 476px;
+}
+.h-\[864px\] {
+  height: 864px;
+}
+.h-\[1024px\] {
+  height: 1024px;
+}
+.h-full {
+  height: 100%;
+}
+.w-48 {
+  width: calc(var(--spacing) * 48);
+}
+.w-\[16px\] {
+  width: 16px;
+}
+.w-\[20px\] {
+  width: 20px;
+}
+.w-\[28px\] {
+  width: 28px;
+}
+.w-\[36px\] {
+  width: 36px;
+}
+.w-\[56px\] {
+  width: 56px;
+}
+.w-\[76px\] {
+  width: 76px;
+}
+.w-\[80px\] {
+  width: 80px;
+}
+.w-\[132px\] {
+  width: 132px;
+}
+.w-\[152px\] {
+  width: 152px;
+}
+.w-\[176px\] {
+  width: 176px;
+}
+.w-\[192px\] {
+  width: 192px;
+}
+.w-\[212px\] {
+  width: 212px;
+}
+.w-\[240px\] {
+  width: 240px;
+}
+.w-\[260px\] {
+  width: 260px;
+}
+.w-\[268px\] {
+  width: 268px;
+}
+.w-\[300px\] {
+  width: 300px;
+}
+.w-\[320px\] {
+  width: 320px;
+}
+.w-\[392px\] {
+  width: 392px;
+}
+.w-\[420px\] {
+  width: 420px;
+}
+.w-\[440px\] {
+  width: 440px;
+}
+.w-\[648px\] {
+  width: 648px;
+}
+.w-\[700px\] {
+  width: 700px;
+}
+.w-\[1120px\] {
+  width: 1120px;
+}
+.w-\[1200px\] {
+  width: 1200px;
+}
+.w-\[1440px\] {
+  width: 1440px;
+}
+.w-full {
+  width: 100%;
+}
+.rounded-full {
+  border-radius: calc(infinity * 1px);
+}
+.rounded-lg {
+  border-radius: var(--radius-lg);
+}
+.rounded-xl {
+  border-radius: var(--radius-xl);
+}
+.border {
+  border-style: var(--tw-border-style);
+  border-width: 1px;
+}
+.border-r {
+  border-right-style: var(--tw-border-style);
+  border-right-width: 1px;
+}
+.border-b {
+  border-bottom-style: var(--tw-border-style);
+  border-bottom-width: 1px;
+}
+.border-\[\#e1e7ef\] {
+  border-color: #e1e7ef;
+}
+.border-\[\#edf0f5\] {
+  border-color: #edf0f5;
+}
+.bg-\[\#E8F0FF\] {
+  background-color: #E8F0FF;
+}
+.bg-\[\#e8f5ee\] {
+  background-color: #e8f5ee;
+}
+.bg-\[\#f0f4fc\] {
+  background-color: #f0f4fc;
+}
+.bg-\[\#f5f7fb\] {
+  background-color: #f5f7fb;
+}
+.bg-white {
+  background-color: var(--color-white);
+}
+.fill-\[\#356af0\] {
+  fill: #356af0;
+}
+.fill-none {
+  fill: none;
+}
+.stroke-\[\#7b8798\] {
+  stroke: #7b8798;
+}
+.stroke-\[\#7d889a\] {
+  stroke: #7d889a;
+}
+.stroke-\[\#356af0\] {
+  stroke: #356af0;
+}
+.stroke-\[1\.5px\] {
+  stroke-width: 1.5px;
+}
+.stroke-\[2px\] {
+  stroke-width: 2px;
+}
+.text-center {
+  text-align: center;
+}
+.text-right {
+  text-align: right;
+}
+.font-sans {
+  font-family: var(--font-sans);
+}
+.text-\[12px\] {
+  font-size: 12px;
+}
+.text-\[13px\] {
+  font-size: 13px;
+}
+.text-\[14px\] {
+  font-size: 14px;
+}
+.text-\[16px\] {
+  font-size: 16px;
+}
+.text-\[20px\] {
+  font-size: 20px;
+}
+.text-\[28px\] {
+  font-size: 28px;
+}
+.text-\[32px\] {
+  font-size: 32px;
+}
+.leading-\[18px\] {
+  --tw-leading: 18px;
+  line-height: 18px;
+}
+.leading-\[20px\] {
+  --tw-leading: 20px;
+  line-height: 20px;
+}
+.leading-\[22px\] {
+  --tw-leading: 22px;
+  line-height: 22px;
+}
+.leading-\[24px\] {
+  --tw-leading: 24px;
+  line-height: 24px;
+}
+.leading-\[36px\] {
+  --tw-leading: 36px;
+  line-height: 36px;
+}
+.leading-\[40px\] {
+  --tw-leading: 40px;
+  line-height: 40px;
+}
+.font-medium {
+  --tw-font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-medium);
+}
+.font-semibold {
+  --tw-font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-semibold);
+}
+.text-\[\#1b2b43\] {
+  color: #1b2b43;
+}
+.text-\[\#7d889a\] {
+  color: #7d889a;
+}
+.text-\[\#356AF0\] {
+  color: #356AF0;
+}
+.text-\[\#356af0\] {
+  color: #356af0;
+}
+.text-\[\#23754f\] {
+  color: #23754f;
+}
+.text-\[\#26364c\] {
+  color: #26364c;
+}
+.text-\[\#69758a\] {
+  color: #69758a;
+}
+.text-\[\#526073\] {
+  color: #526073;
+}
+.\[fill-rule\:evenodd\] {
+  fill-rule: evenodd;
+}
+@property --tw-border-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
+@property --tw-leading {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-font-weight {
+  syntax: "*";
+  inherits: false;
+}
+@layer properties {
+  @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
+    *, ::before, ::after, ::backdrop {
+      --tw-border-style: solid;
+      --tw-leading: initial;
+      --tw-font-weight: initial;
+    }
+  }
+}
+</style>
+<style>
+:root{color-scheme:light}
+html,body{margin:0;padding:0}
+body{background:#eef0f4;color:#30343b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px}
+header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;padding:12px 24px;background:rgba(255,255,255,.94);border-bottom:1px solid #e5e7eb}
+header h1{margin:0;font-size:14px;font-weight:500}
+header .meta{font-size:12px;color:#656d79}
+main{padding:24px}
+.page{margin:0 0 40px}
+.page-head{display:flex;align-items:baseline;gap:8px;margin:0 0 12px}
+.page-head h2{margin:0;font-size:13px;font-weight:500}
+.page-head span{font-size:12px;color:#656d79}
+.board-row{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.board{max-width:100%;overflow:auto;background:#fff;border:1px solid #e5e7eb;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.board-head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #eef0f3;font-size:11px;color:#656d79;white-space:nowrap}
+.board-head b{font-weight:500;color:#30343b}
+.board-canvas{position:relative;overflow:hidden;background:#fff}
+.board-shift{position:absolute}
+.board-error{padding:16px;font-size:12px;color:#a32d2d;background:#fcebeb;max-width:520px}
+.note{margin:0 24px 16px;font-size:12px;color:#656d79}
+</style>
+</head>
+<body>
+<header><h1>可编辑工作台示例</h1><span class="meta">静态预览 · 1 页 · 1 个画板 · 2026-11-13T04:05:02.362Z</span></header>
+<p class="note">这是 REA UI 设计源的离线预览，不是可交互原型。文字与图层来自静态 TSX，实例已展开；图片资源与字体不做加载。</p>
+<main><section class="page"><div class="page-head"><h2>工作台</h2><span>main · 1 个画板</span></div><div class="board-row"><div class="board"><div class="board-head"><b>研发工作台</b><span>1440×1024</span></div><div class="board-canvas" style="width:1440px;height:1024px"><div class="board-shift" style="left:0px;top:0px;width:1440px;height:1024px"><div data-design-id="page-root" data-design-name="工作台" data-design-kind="Page" class="" data-page-origin=""><div data-design-id="desktop-artboard" data-design-name="研发工作台" data-design-kind="Frame" class="absolute left-0 top-0 w-[1440px] h-[1024px] bg-[#f5f7fb] font-sans"><div data-design-id="sidebar" data-design-name="侧边栏" data-design-kind="Frame" class="absolute left-0 top-0 w-[240px] h-[1024px] border-r border-[#e1e7ef] bg-white"><div data-design-id="brand" data-design-name="品牌区域" data-design-kind="Frame" class="absolute left-[24px] top-[28px] w-[192px] h-[36px]"><svg data-design-id="compound-icon" data-design-name="研发镂空图标" data-design-kind="Vector" class="absolute left-0 top-[4px] w-[28px] h-[28px] fill-[#356af0] [fill-rule:evenodd]" role="img" aria-label="研发镂空图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M 12 2 C 17.52285 2 22 6.47715 22 12 C 22 17.52285 17.52285 22 12 22 C 6.47715 22 2 17.52285 2 12 C 2 6.47715 6.47715 2 12 2 Z M 12 8 C 14.20914 8 16 9.79086 16 12 C 16 14.20914 14.20914 16 12 16 C 9.79086 16 8 14.20914 8 12 C 8 9.79086 9.79086 8 12 8 Z" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M 12 2 C 17.52285 2 22 6.47715 22 12 C 22 17.52285 17.52285 22 12 22 C 6.47715 22 2 17.52285 2 12 C 2 6.47715 6.47715 2 12 2 Z M 12 8 C 14.20914 8 16 9.79086 16 12 C 16 14.20914 14.20914 16 12 16 C 9.79086 16 8 14.20914 8 12 C 8 9.79086 9.79086 8 12 8 Z" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="brand-name" data-design-name="品牌名称" data-design-kind="Text" class="absolute left-[40px] top-0 w-[152px] h-[36px] text-[20px] leading-[36px] font-semibold text-[#1b2b43]">REA Research</p></div><div data-design-id="primary-navigation" data-design-name="主导航" data-design-kind="Frame" class="absolute left-[24px] top-[112px] w-[192px] h-[208px]"><div data-design-id="nav-home" data-design-name="工作台导航" data-design-kind="Instance" class="absolute left-0 top-0 w-48 h-11"><div data-design-id="nav-home/navigation-content" data-design-name="导航内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg bg-[#E8F0FF]"><svg data-design-id="nav-home/navigation-icon" data-design-name="导航方框图标" data-design-kind="Vector" class="absolute left-[16px] top-[14px] w-[16px] h-[16px] fill-none stroke-[#7b8798] stroke-[2px]" role="img" aria-label="导航方框图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M4 4 H20 V20 H4 Z" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M4 4 H20 V20 H4 Z" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="nav-home/navigation-label" data-design-name="导航名称" data-design-kind="Text" class="absolute left-[44px] top-[11px] w-[132px] h-[22px] text-[14px] leading-[22px] text-[#356AF0]">工作台</p></div></div><div data-design-id="nav-projects" data-design-name="项目导航" data-design-kind="Instance" class="absolute left-0 top-[52px] w-48 h-11"><div data-design-id="nav-projects/navigation-content" data-design-name="导航内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg"><svg data-design-id="nav-projects/navigation-icon" data-design-name="导航方框图标" data-design-kind="Vector" class="absolute left-[16px] top-[14px] w-[16px] h-[16px] fill-none stroke-[#7b8798] stroke-[2px]" role="img" aria-label="导航方框图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M4 4 H20 V20 H4 Z" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M4 4 H20 V20 H4 Z" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="nav-projects/navigation-label" data-design-name="导航名称" data-design-kind="Text" class="absolute left-[44px] top-[11px] w-[132px] h-[22px] text-[14px] leading-[22px] text-[#526073]">研发项目</p></div></div><div data-design-id="nav-experiments" data-design-name="实验导航" data-design-kind="Instance" class="absolute left-0 top-[104px] w-48 h-11"><div data-design-id="nav-experiments/navigation-content" data-design-name="导航内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg"><svg data-design-id="nav-experiments/navigation-icon" data-design-name="导航方框图标" data-design-kind="Vector" class="absolute left-[16px] top-[14px] w-[16px] h-[16px] fill-none stroke-[#7b8798] stroke-[2px]" role="img" aria-label="导航方框图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M4 4 H20 V20 H4 Z" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M4 4 H20 V20 H4 Z" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="nav-experiments/navigation-label" data-design-name="导航名称" data-design-kind="Text" class="absolute left-[44px] top-[11px] w-[132px] h-[22px] text-[14px] leading-[22px] text-[#526073]">实验记录</p></div></div><div data-design-id="nav-library" data-design-name="知识库导航" data-design-kind="Instance" class="absolute left-0 top-[156px] w-48 h-11"><div data-design-id="nav-library/navigation-content" data-design-name="导航内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg"><svg data-design-id="nav-library/navigation-icon" data-design-name="导航方框图标" data-design-kind="Vector" class="absolute left-[16px] top-[14px] w-[16px] h-[16px] fill-none stroke-[#7b8798] stroke-[2px]" role="img" aria-label="导航方框图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M4 4 H20 V20 H4 Z" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M4 4 H20 V20 H4 Z" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="nav-library/navigation-label" data-design-name="导航名称" data-design-kind="Text" class="absolute left-[44px] top-[11px] w-[132px] h-[22px] text-[14px] leading-[22px] text-[#526073]">团队知识库</p></div></div></div><p data-design-id="sidebar-note" data-design-name="团队空间说明" data-design-kind="Text" class="absolute left-[40px] top-[952px] w-[176px] h-[24px] text-[12px] leading-[24px] text-[#7d889a]">研发一组 · 12 位成员</p></div><div data-design-id="topbar" data-design-name="顶部栏" data-design-kind="Frame" class="absolute left-[240px] top-0 w-[1200px] h-[80px] border-b border-[#e1e7ef] bg-white"><p data-design-id="current-location" data-design-name="当前位置" data-design-kind="Text" class="absolute left-[40px] top-[28px] w-[260px] h-[24px] text-[14px] leading-[24px] text-[#526073]">团队空间 / 工作台</p><div data-design-id="search-field" data-design-name="搜索框" data-design-kind="Frame" class="absolute left-[720px] top-[20px] w-[320px] h-[40px] rounded-lg bg-[#f5f7fb]"><svg data-design-id="search-icon" data-design-name="搜索图标" data-design-kind="Vector" class="absolute left-[14px] top-[12px] w-[16px] h-[16px] fill-none stroke-[#7d889a] stroke-[1.5px]" role="img" aria-label="搜索图标" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M15 8 A7 7 0 1 1 1 8 A7 7 0 1 1 15 8 M13 13 L21 21" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M15 8 A7 7 0 1 1 1 8 A7 7 0 1 1 15 8 M13 13 L21 21" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg><p data-design-id="search-placeholder" data-design-name="搜索提示" data-design-kind="Text" class="absolute left-[42px] top-[10px] w-[260px] h-[20px] text-[12px] leading-[20px] text-[#7d889a]">搜索项目、实验或文档</p></div><p data-design-id="user-name" data-design-name="用户名称" data-design-kind="Text" class="absolute left-[1080px] top-[28px] w-[80px] h-[24px] text-[14px] leading-[24px] text-[#26364c]">林晓</p></div><div data-design-id="main-content" data-design-name="首页内容" data-design-kind="Frame" class="absolute left-[280px] top-[112px] w-[1120px] h-[864px]"><div data-design-id="welcome" data-design-name="欢迎区域" data-design-kind="Frame" class="absolute left-0 top-0 w-[1120px] h-[76px]"><p data-design-id="welcome-title" data-design-name="欢迎标题" data-design-kind="Text" class="absolute left-0 top-0 w-[700px] h-[40px] text-[28px] leading-[40px] font-semibold text-[#1b2b43]">早上好，林晓</p><p data-design-id="welcome-description" data-design-name="欢迎说明" data-design-kind="Text" class="absolute left-0 top-[48px] w-[700px] h-[22px] text-[14px] leading-[22px] text-[#69758a]">把每一次发现，变成团队的下一步。</p></div><div data-design-id="research-overview" data-design-name="研发概览" data-design-kind="Frame" class="absolute left-0 top-[108px] w-[1120px] h-[140px]"><div data-design-id="metric-projects" data-design-name="进行中项目统计" data-design-kind="Instance" class="absolute left-0 top-0 w-[260px] h-[140px]"><div data-design-id="metric-projects/metric-content" data-design-name="统计内容" data-design-kind="Frame" class="relative w-full h-full rounded-xl border border-[#e1e7ef] bg-white"><p data-design-id="metric-projects/metric-label" data-design-name="统计名称" data-design-kind="Text" class="absolute left-[24px] top-[20px] w-[212px] h-[22px] text-[13px] leading-[22px] text-[#69758a]">进行中项目</p><p data-design-id="metric-projects/metric-value" data-design-name="统计数值" data-design-kind="Text" class="absolute left-[24px] top-[50px] w-[212px] h-[40px] text-[32px] leading-[40px] font-semibold text-[#1b2b43]">18</p><p data-design-id="metric-projects/metric-detail" data-design-name="统计说明" data-design-kind="Text" class="absolute left-[24px] top-[104px] w-[212px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">本周新增 3 个项目</p></div></div><div data-design-id="metric-experiments" data-design-name="实验记录统计" data-design-kind="Instance" class="absolute left-[284px] top-0 w-[260px] h-[140px]"><div data-design-id="metric-experiments/metric-content" data-design-name="统计内容" data-design-kind="Frame" class="relative w-full h-full rounded-xl border border-[#e1e7ef] bg-white"><p data-design-id="metric-experiments/metric-label" data-design-name="统计名称" data-design-kind="Text" class="absolute left-[24px] top-[20px] w-[212px] h-[22px] text-[13px] leading-[22px] text-[#69758a]">实验记录</p><p data-design-id="metric-experiments/metric-value" data-design-name="统计数值" data-design-kind="Text" class="absolute left-[24px] top-[50px] w-[212px] h-[40px] text-[32px] leading-[40px] font-semibold text-[#1b2b43]">246</p><p data-design-id="metric-experiments/metric-detail" data-design-name="统计说明" data-design-kind="Text" class="absolute left-[24px] top-[104px] w-[212px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">本周完成 24 次实验</p></div></div><div data-design-id="metric-todos" data-design-name="待办事项统计" data-design-kind="Instance" class="absolute left-[568px] top-0 w-[260px] h-[140px]"><div data-design-id="metric-todos/metric-content" data-design-name="统计内容" data-design-kind="Frame" class="relative w-full h-full rounded-xl border border-[#e1e7ef] bg-white"><p data-design-id="metric-todos/metric-label" data-design-name="统计名称" data-design-kind="Text" class="absolute left-[24px] top-[20px] w-[212px] h-[22px] text-[13px] leading-[22px] text-[#69758a]">我的待办</p><p data-design-id="metric-todos/metric-value" data-design-name="统计数值" data-design-kind="Text" class="absolute left-[24px] top-[50px] w-[212px] h-[40px] text-[32px] leading-[40px] font-semibold text-[#1b2b43]">7</p><p data-design-id="metric-todos/metric-detail" data-design-name="统计说明" data-design-kind="Text" class="absolute left-[24px] top-[104px] w-[212px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">其中 2 项需要今天处理</p></div></div><div data-design-id="metric-knowledge" data-design-name="知识文档统计" data-design-kind="Instance" class="absolute left-[852px] top-0 w-[260px] h-[140px]"><div data-design-id="metric-knowledge/metric-content" data-design-name="统计内容" data-design-kind="Frame" class="relative w-full h-full rounded-xl border border-[#e1e7ef] bg-white"><p data-design-id="metric-knowledge/metric-label" data-design-name="统计名称" data-design-kind="Text" class="absolute left-[24px] top-[20px] w-[212px] h-[22px] text-[13px] leading-[22px] text-[#69758a]">团队知识</p><p data-design-id="metric-knowledge/metric-value" data-design-name="统计数值" data-design-kind="Text" class="absolute left-[24px] top-[50px] w-[212px] h-[40px] text-[32px] leading-[40px] font-semibold text-[#1b2b43]">89</p><p data-design-id="metric-knowledge/metric-detail" data-design-name="统计说明" data-design-kind="Text" class="absolute left-[24px] top-[104px] w-[212px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">本周沉淀 6 篇文档</p></div></div></div><div data-design-id="two-column-content" data-design-name="双栏内容区" data-design-kind="Frame" class="absolute left-0 top-[280px] w-[1120px] h-[476px]"><div data-design-id="experiment-panel" data-design-name="实验动态" data-design-kind="Frame" class="absolute left-0 top-0 w-[648px] h-[400px] rounded-xl border border-[#e1e7ef] bg-white"><div data-design-id="experiment-heading" data-design-name="实验动态标题" data-design-kind="Instance" class="absolute left-0 top-0 w-[648px] h-16"><div data-design-id="experiment-heading/heading-content" data-design-name="标题内容" data-design-kind="Frame" class="relative w-full h-full"><p data-design-id="experiment-heading/heading-title" data-design-name="面板名称" data-design-kind="Text" class="absolute left-[24px] top-[22px] w-[420px] h-[24px] text-[16px] leading-[24px] font-semibold text-[#26364c]">实验动态</p><p data-design-id="experiment-heading/heading-action" data-design-name="面板操作" data-design-kind="Text" class="absolute left-[548px] top-[24px] w-[76px] h-[20px] text-[12px] leading-[20px] text-right text-[#356af0]">查看全部</p></div></div><div data-design-id="experiment-list" data-design-name="实验记录列表" data-design-kind="Frame" class="absolute left-0 top-[64px] w-[648px] h-[312px]"><div data-design-id="experiment-one" data-design-name="稳定性实验记录" data-design-kind="Instance" class="absolute left-0 top-0 w-[648px] h-[78px]"><div data-design-id="experiment-one/experiment-content" data-design-name="记录内容" data-design-kind="Frame" class="relative w-full h-full border-b border-[#edf0f5]"><div data-design-id="experiment-one/experiment-symbol" data-design-name="实验图标" data-design-kind="Frame" class="absolute left-[24px] top-[21px] w-[36px] h-[36px] rounded-lg bg-[#f0f4fc]"><svg data-design-id="experiment-one/experiment-path" data-design-name="试管轮廓" data-design-kind="Vector" class="absolute left-[8px] top-[8px] w-[20px] h-[20px] fill-none stroke-[#356af0] stroke-[1.5px]" role="img" aria-label="试管轮廓" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg></div><div data-design-id="experiment-one/experiment-description" data-design-name="实验说明" data-design-kind="Frame" class="absolute left-[76px] top-[17px] w-[420px] h-[46px]"><p data-design-id="experiment-one/experiment-title" data-design-name="实验名称" data-design-kind="Text" class="absolute left-0 top-0 w-[420px] h-[22px] text-[14px] leading-[22px] text-[#26364c]">新材料稳定性验证</p><p data-design-id="experiment-one/experiment-code" data-design-name="实验编号" data-design-kind="Text" class="absolute left-0 top-[26px] w-[420px] h-[18px] text-[12px] leading-[18px] text-[#7d889a]">EXP-2026-024 · 今天 09:20</p></div><div data-design-id="experiment-one/experiment-status" data-design-name="实验状态" data-design-kind="Instance" class="absolute left-[548px] top-[26px] w-[76px] h-[26px]"><div data-design-id="experiment-one/experiment-status/status-content" data-design-name="标签底色" data-design-kind="Frame" class="relative w-full h-full rounded-full bg-[#e8f5ee]"><p data-design-id="experiment-one/experiment-status/status-label" data-design-name="状态文字" data-design-kind="Text" class="absolute left-[10px] top-[3px] w-[56px] h-[20px] text-[12px] leading-[20px] text-center text-[#23754f]">已完成</p></div></div></div></div><div data-design-id="experiment-two" data-design-name="性能实验记录" data-design-kind="Instance" class="absolute left-0 top-[78px] w-[648px] h-[78px]"><div data-design-id="experiment-two/experiment-content" data-design-name="记录内容" data-design-kind="Frame" class="relative w-full h-full border-b border-[#edf0f5]"><div data-design-id="experiment-two/experiment-symbol" data-design-name="实验图标" data-design-kind="Frame" class="absolute left-[24px] top-[21px] w-[36px] h-[36px] rounded-lg bg-[#f0f4fc]"><svg data-design-id="experiment-two/experiment-path" data-design-name="试管轮廓" data-design-kind="Vector" class="absolute left-[8px] top-[8px] w-[20px] h-[20px] fill-none stroke-[#356af0] stroke-[1.5px]" role="img" aria-label="试管轮廓" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg></div><div data-design-id="experiment-two/experiment-description" data-design-name="实验说明" data-design-kind="Frame" class="absolute left-[76px] top-[17px] w-[420px] h-[46px]"><p data-design-id="experiment-two/experiment-title" data-design-name="实验名称" data-design-kind="Text" class="absolute left-0 top-0 w-[420px] h-[22px] text-[14px] leading-[22px] text-[#26364c]">高温环境性能测试</p><p data-design-id="experiment-two/experiment-code" data-design-name="实验编号" data-design-kind="Text" class="absolute left-0 top-[26px] w-[420px] h-[18px] text-[12px] leading-[18px] text-[#7d889a]">EXP-2026-023 · 昨天 16:40</p></div><div data-design-id="experiment-two/experiment-status" data-design-name="实验状态" data-design-kind="Instance" class="absolute left-[548px] top-[26px] w-[76px] h-[26px]"><div data-design-id="experiment-two/experiment-status/status-content" data-design-name="标签底色" data-design-kind="Frame" class="relative w-full h-full rounded-full bg-[#E8F0FF]"><p data-design-id="experiment-two/experiment-status/status-label" data-design-name="状态文字" data-design-kind="Text" class="absolute left-[10px] top-[3px] w-[56px] h-[20px] text-[12px] leading-[20px] text-center text-[#356AF0]">进行中</p></div></div></div></div><div data-design-id="experiment-three" data-design-name="配方实验记录" data-design-kind="Instance" class="absolute left-0 top-[156px] w-[648px] h-[78px]"><div data-design-id="experiment-three/experiment-content" data-design-name="记录内容" data-design-kind="Frame" class="relative w-full h-full border-b border-[#edf0f5]"><div data-design-id="experiment-three/experiment-symbol" data-design-name="实验图标" data-design-kind="Frame" class="absolute left-[24px] top-[21px] w-[36px] h-[36px] rounded-lg bg-[#f0f4fc]"><svg data-design-id="experiment-three/experiment-path" data-design-name="试管轮廓" data-design-kind="Vector" class="absolute left-[8px] top-[8px] w-[20px] h-[20px] fill-none stroke-[#356af0] stroke-[1.5px]" role="img" aria-label="试管轮廓" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg></div><div data-design-id="experiment-three/experiment-description" data-design-name="实验说明" data-design-kind="Frame" class="absolute left-[76px] top-[17px] w-[420px] h-[46px]"><p data-design-id="experiment-three/experiment-title" data-design-name="实验名称" data-design-kind="Text" class="absolute left-0 top-0 w-[420px] h-[22px] text-[14px] leading-[22px] text-[#26364c]">配方优化对照实验</p><p data-design-id="experiment-three/experiment-code" data-design-name="实验编号" data-design-kind="Text" class="absolute left-0 top-[26px] w-[420px] h-[18px] text-[12px] leading-[18px] text-[#7d889a]">EXP-2026-022 · 昨天 14:10</p></div><div data-design-id="experiment-three/experiment-status" data-design-name="实验状态" data-design-kind="Instance" class="absolute left-[548px] top-[26px] w-[76px] h-[26px]"><div data-design-id="experiment-three/experiment-status/status-content" data-design-name="标签底色" data-design-kind="Frame" class="relative w-full h-full rounded-full bg-[#e8f5ee]"><p data-design-id="experiment-three/experiment-status/status-label" data-design-name="状态文字" data-design-kind="Text" class="absolute left-[10px] top-[3px] w-[56px] h-[20px] text-[12px] leading-[20px] text-center text-[#23754f]">已完成</p></div></div></div></div><div data-design-id="experiment-four" data-design-name="寿命实验记录" data-design-kind="Instance" class="absolute left-0 top-[234px] w-[648px] h-[78px]"><div data-design-id="experiment-four/experiment-content" data-design-name="记录内容" data-design-kind="Frame" class="relative w-full h-full border-b border-[#edf0f5]"><div data-design-id="experiment-four/experiment-symbol" data-design-name="实验图标" data-design-kind="Frame" class="absolute left-[24px] top-[21px] w-[36px] h-[36px] rounded-lg bg-[#f0f4fc]"><svg data-design-id="experiment-four/experiment-path" data-design-name="试管轮廓" data-design-kind="Vector" class="absolute left-[8px] top-[8px] w-[20px] h-[20px] fill-none stroke-[#356af0] stroke-[1.5px]" role="img" aria-label="试管轮廓" viewBox="0 0 24 24" preserveAspectRatio="none" overflow="visible" pointer-events="none"><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" vector-effect="non-scaling-stroke" pointer-events="visiblePainted"></path><path d="M8 3 H16 M10 3 V10 L5 19 Q5 21 8 21 H16 Q19 21 19 19 L14 10 V3 M8 14 H16" fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="stroke"></path></svg></div><div data-design-id="experiment-four/experiment-description" data-design-name="实验说明" data-design-kind="Frame" class="absolute left-[76px] top-[17px] w-[420px] h-[46px]"><p data-design-id="experiment-four/experiment-title" data-design-name="实验名称" data-design-kind="Text" class="absolute left-0 top-0 w-[420px] h-[22px] text-[14px] leading-[22px] text-[#26364c]">样品寿命周期分析</p><p data-design-id="experiment-four/experiment-code" data-design-name="实验编号" data-design-kind="Text" class="absolute left-0 top-[26px] w-[420px] h-[18px] text-[12px] leading-[18px] text-[#7d889a]">EXP-2026-021 · 周一 11:30</p></div><div data-design-id="experiment-four/experiment-status" data-design-name="实验状态" data-design-kind="Instance" class="absolute left-[548px] top-[26px] w-[76px] h-[26px]"><div data-design-id="experiment-four/experiment-status/status-content" data-design-name="标签底色" data-design-kind="Frame" class="relative w-full h-full rounded-full bg-[#E8F0FF]"><p data-design-id="experiment-four/experiment-status/status-label" data-design-name="状态文字" data-design-kind="Text" class="absolute left-[10px] top-[3px] w-[56px] h-[20px] text-[12px] leading-[20px] text-center text-[#356AF0]">进行中</p></div></div></div></div></div></div><div data-design-id="quick-panel" data-design-name="快捷开始" data-design-kind="Frame" class="absolute left-[680px] top-0 w-[440px] h-[400px] rounded-xl border border-[#e1e7ef] bg-white"><p data-design-id="quick-panel-title" data-design-name="快捷开始标题" data-design-kind="Text" class="absolute left-[24px] top-[22px] w-[300px] h-[24px] text-[16px] leading-[24px] font-semibold text-[#26364c]">快捷开始</p><div data-design-id="quick-experiment" data-design-name="新建实验入口" data-design-kind="Instance" class="absolute left-[24px] top-[72px] w-[392px] h-[84px]"><div data-design-id="quick-experiment/quick-content" data-design-name="入口内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg bg-[#f5f7fb]"><p data-design-id="quick-experiment/quick-title" data-design-name="入口名称" data-design-kind="Text" class="absolute left-[16px] top-[16px] w-[268px] h-[24px] text-[14px] leading-[24px] font-medium text-[#26364c]">新建实验</p><p data-design-id="quick-experiment/quick-detail" data-design-name="入口说明" data-design-kind="Text" class="absolute left-[16px] top-[46px] w-[268px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">记录新的研发发现</p></div></div><div data-design-id="quick-project" data-design-name="创建项目入口" data-design-kind="Instance" class="absolute left-[24px] top-[172px] w-[392px] h-[84px]"><div data-design-id="quick-project/quick-content" data-design-name="入口内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg bg-[#f5f7fb]"><p data-design-id="quick-project/quick-title" data-design-name="入口名称" data-design-kind="Text" class="absolute left-[16px] top-[16px] w-[268px] h-[24px] text-[14px] leading-[24px] font-medium text-[#26364c]">创建项目</p><p data-design-id="quick-project/quick-detail" data-design-name="入口说明" data-design-kind="Text" class="absolute left-[16px] top-[46px] w-[268px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">和团队一起推进新的想法</p></div></div><div data-design-id="quick-document" data-design-name="知识沉淀入口" data-design-kind="Instance" class="absolute left-[24px] top-[272px] w-[392px] h-[84px]"><div data-design-id="quick-document/quick-content" data-design-name="入口内容" data-design-kind="Frame" class="relative w-full h-full rounded-lg bg-[#f5f7fb]"><p data-design-id="quick-document/quick-title" data-design-name="入口名称" data-design-kind="Text" class="absolute left-[16px] top-[16px] w-[268px] h-[24px] text-[14px] leading-[24px] font-medium text-[#26364c]">沉淀知识</p><p data-design-id="quick-document/quick-detail" data-design-name="入口说明" data-design-kind="Text" class="absolute left-[16px] top-[46px] w-[268px] h-[20px] text-[12px] leading-[20px] text-[#69758a]">让经验成为可复用的团队资产</p></div></div></div></div><p data-design-id="workbench-note" data-design-name="工作台说明" data-design-kind="Text" class="absolute left-0 top-[796px] w-[1120px] h-[24px] text-[12px] leading-[24px] text-[#7d889a]">布局分组、组件参数与独立矢量图标均可在图层树中继续编辑。</p></div></div></div></div></div></div></div></section></main>
+</body>
+</html>

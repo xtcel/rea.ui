@@ -19,13 +19,15 @@ node --version     # 需要 >= 22.18
 - 如需覆盖入口：设置环境变量 `REAUI_CLI=/path/to/reaui.mjs`。
 - 没有内置运行时的环境可回退：
   `npx -y @xtcel/reaui-cli@0.1.3 <command>`（需要 Node 与网络）。
-- 内置 CLI 由 rea.ui `main` 源码构建（2026-11-10），包含 v2/v3/v4 清单与设计系统校验。
+- 内置 CLI 由 rea.ui `main` 源码构建（2026-11-10），包含 v2/v3/v4 清单与设计系统校验。本次构建另含 audit、components；npm 同版本尚未发布这些改动，能力以 help 为准。
 
 ## 2. 命令与选项
 
 | 命令 | 作用 | 关键选项 |
 |---|---|---|
 | `init <dir>` | 创建最小合法文档（`rea.json` + 页面） | `--name`、`--page <id>`（可重复）、`--page-name <名>`（可重复）、`--width`、`--height` |
+| `components init <dir>` | 添加空组件目录，v2 升 v3，保留 v4，已有目录不覆盖 | — |
+| `audit <dir\|file.reaui>` | 启发式可编辑性建议（不改源） | `--json`、`--strict` |
 | `validate <dir\|file.reaui>` | 校验目录或 `.reaui` | `--json`、`--strict`、`--system <system.json>` |
 | `pack <dir>` | 打包为单个 `.reaui` | `--out/-o <file>`、`--force` |
 | `unpack <file.reaui>` | 解包为可编辑目录 | `--out <dir>`、`--force` |
@@ -46,7 +48,7 @@ reaui init ./designs/landing --name "官网首页" \
   --width 1440 --height 1024
 ```
 
-- 生成 **version 2** 清单；多页时重复 `--page`/`--page-name`，名称按顺序对应。
+- 默认生成 **version 2**；`--components` 创建 v3 空组件目录，`--system <JSON>` 创建 v4（可同时携带组件）；多页时重复 `--page`/`--page-name`，名称按顺序对应。
 - 画板宽 `320–4096`，高 `240–4096`。
 - 目标目录已含 `rea.json` 时报 `DOC_EXISTS`，换目录或先备份删除，不要覆盖用户文件。
 
@@ -128,7 +130,7 @@ reaui diff ./designs/landing-before ./designs/landing-edit
 
 ## 4. 设计系统 / 格式 v4
 
-CLI 没有“固定设计系统”命令；v4 = `rea.json` 的 `version: 4` + `design/system.json`。
+CLI 支持 `system get|set|remove`；优先 `reaui system set <dir> --system <JSON>`。v4 = `rea.json` 的 `version: 4` + `design/system.json`。
 不要手改这一对字段，使用：
 
 ```bash
@@ -171,3 +173,9 @@ Error: listen EPERM: operation not permitted 0.0.0.0:24678
 | 打包后编辑器打不开 | 多为 v4 文档 + 旧编辑器，或文件被手工改过 | 用 CLI 重新 `validate`；确认编辑器版本；不要手改清单 |
 | 预览 HTML 打开空白 | 预览未生成成功/路径错误 | 检查 `preview` 退出码与输出文件是否存在 |
 | `DOC_INVALID` / `ENOENT` | 输出父目录不存在或路径不可写 | `mkdir -p` 目标目录后重试 |
+
+## 可编辑性审计
+
+`reaui audit <dir|file.reaui> --json` 输出 `{ok,kind:"editability",heuristic:true,document,issues,warnings}`。每条 issues 含 code、severity、path、node、message、hint。默认建议退出 0；`--strict` 遇建议退出 1；格式错误退出 1。检查命名、容器下至少 12 个且占比 80% 的直接叶节点、重复两次的含文本复合结构、相距远大于尺寸的轮廓和无法转换的路径。阈值是启发式，不证明视觉质量；不自动重写，不改变 validate/pack。
+
+新增 code：EDIT_NAME、EDIT_FLAT_HIERARCHY、EDIT_REPEATED_STRUCTURE、EDIT_MERGED_VECTOR、EDIT_PATH_UNEDITABLE。

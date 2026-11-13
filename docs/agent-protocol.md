@@ -49,9 +49,9 @@ export default (
 | `Polygon` | 三角形等 | `count` |
 | `Star` | 星形 | `count`、`innerRatio` |
 
-禁止使用 `Image`（本期不支持资源）、`Instance` / `Slot`（组件实例由编辑器维护）、任何 HTML 标签（`div`、`span`、`p`、`img`、`svg`）。
+禁止 HTML 标签（`div`、`span`、`p`、`img`、`svg`）和业务 React 组件。组件目录可使用 Components/Component/Slot，页面可使用 Instance/SlotContent；Image 仅引用 assets/ 内的本地资产。
 
-以上是 **core profile**。编辑器实际接受的语言更大，称为 **full profile**：额外允许 `Image`（`src` 必须是 `assets/…`）、`Components` / `Component` / `Instance` / `Slot` / `SlotContent` 组件目录。外部 Agent 默认按 core profile 产出；需要图片或组件时，必须在交付说明中声明使用 full profile，并保证 `reaui validate` 通过。
+core/full profile 仅描述语言能力，不再决定复用策略。默认评估并使用组件，无需用户额外授权；通过 CLI 管理组件目录及版本。
 
 ## 4. 属性规则
 
@@ -76,10 +76,10 @@ export default (
 
 ## 6. 硬性限制
 
-- 每页最多 80 个图层；每个文档最多 12 页（与编辑器 AI 限制一致）。
+- 每文档最多 12 页；80 图层仅为软预算，不得为了压缩节点破坏布局分组或合并业务内容。
 - 不执行任何页面代码；页面里没有运行时。
 - 不引用外部字体、图片、图标库；图标用 `Vector` 的 `d` 路径或几何原语绘制。
-- 不写 `library`、`variant`、`overrides`、`parameters` 等组件高级字段（full profile 可写 `parameters` / `variant` / `overrides`，仍不得伪造 `library`）。
+- 可用 parameters / variants / overrides / binding / bindings 表达组件内容与状态；不得伪造 library 来源。
 - 文案使用中文，除非用户明确要求其他语言。
 
 ## 7. CLI 工作流
@@ -181,3 +181,32 @@ $REAUI pack ./design --out ./design.reaui   # 有设计系统 warning 时需要�
 ```
 
 `--system` 用于把外部生成的设计系统与文档固定版本比对，`id` 或 `hash` 不一致报 `DS_SYSTEM_MISMATCH`。默认退出码只看 error；`--strict` 把 warning 也视为失败。错误码：`DS_SCHEMA`、`DS_SCHEMA_UNSUPPORTED`、`DS_HASH_MISMATCH`、`DS_TOKEN_UNDECLARED`、`DS_TOKEN_INVALID`、`DS_LITERAL_COLOR`、`DS_OFF_SCALE`、`DS_CONTRAST`、`DS_SYSTEM_MISMATCH`、`DS_REQUIRES_V4`。`DS_LITERAL_COLOR`、`DS_OFF_SCALE`、`DS_CONTRAST`、`DS_COMPONENT_MISSING` 为 warning，其余为 error。
+
+## 可编辑性要求（格式校验之外）
+
+- 先画布局树：侧边栏 / 顶部栏 / 内容区 / 面板 / 记录行。每区用有业务名称的 Frame/Group，子层使用局部坐标，容器边界贴合内容。例如父 `absolute left-[240px] top-[80px] w-[960px] h-[720px]`，子 `absolute left-[24px] top-[24px]`。
+- 优先使用已有组件。同结构重复两次及以上时评估提取 Component/Instance；文字、数字用参数，状态用变体，图标差异可用实例参数，额外内容用插槽。一次性布局不强行组件化。不需要用户每次强调复用。
+- 一个业务图标对应独立容器、语义名称（如“搜索图标”）和局部 viewBox（如 `0 0 24 24`）。图标内多个轮廓可属于同一 Vector；禁止按颜色跨图标合并路径，禁止跨业务记录合并多行 Text。Rect/Frame/Line 能表达的内容优先用原语。
+- 优先结构化 `path`：`anchors/closed` 为首轮廓，`contours` 为后续轮廓数组，每项也有 `anchors/closed`，锚点 id 全路径唯一。新编辑器支持 A/a 转贝塞尔（转换误差界默认 0.01 SVG 用户单位）和多轮廓锚点编辑。孔洞保留整体 `[fill-rule:evenodd]`，或保留 nonzero 的轮廓方向，不拆成填实形状。
+- 80 图层仅为软预算。复杂还原优先保留语义层级、独立编辑与完整内容，不通过合并业务对象来压缩节点。使用已有字体，不下载字体。
+- `validate` 只证明格式/契约有效。交付前另运行 `reaui audit <dir> --json` 与最终 `.reaui` 审计；按 path/node/hint 修复，人工判断疑似重复和合并提示，披露保留的建议。不得将零格式错误称为视觉验收或可编辑性证明。
+- 新的复合 `path.contours` 需要包含本次改动的编辑器。旧编辑器兼容输出可保留独立 Vector 的原始 d，但必须说明无法在旧编辑器逐点编辑；不得承诺全面可编辑。
+
+### 组件工作流
+
+先使用 `reaui init <dir> --components`；已有文档用 `reaui components init <dir>`。CLI 自动创建合法空目录并按需升级 v3，已有 v4 保留，不手改清单。然后写 `components/main.components.tsx`：
+
+```tsx
+import { Components, Component, Frame, Text } from '@rea/design';
+export default <Components>
+  <Component id="record-row" designId="record-definition" name="实验记录行" parameters={{label:{type:'string',default:'实验名称'}}}>
+    <Frame designId="record-content" name="记录内容" className="relative w-[320px] h-[48px]">
+      <Text designId="record-label" name="实验名称" binding="label" className="absolute left-[16px] top-[12px] w-[280px] h-[24px] text-[14px]" />
+    </Frame>
+  </Component>
+</Components>;
+```
+
+页面 import `Instance`，写静态 `<Instance designId="record-one" name="实验一" component="record-row" values={{label:'稳定性实验'}} className="absolute left-[24px] top-[24px]" />`。每个实例独立 designId；不运行函数、不直接导入业务 React 组件、不伪造 library 来源。
+
+CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这些能力随本次仓库/插件构建提供，尚未发布 npm；旧版 npx 回退没有这些命令时使用更新的仓库/插件构建，不能手改 version 绕过。

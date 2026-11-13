@@ -1,4 +1,5 @@
-import type { Anchor, LineProps, PathData, PolygonProps, StarProps, VectorProps } from './primitives';
+import { normalizePathData } from './svgPath';
+import type { Anchor, LineProps, PathContour, PathData, PolygonProps, StarProps, VectorProps } from './primitives';
 
 // Polygon/star geometry adapted from FigCraft crates/geom/src/lib.rs at 0e86f35.
 // Copyright (c) 2026 ArtCraft Team and the FigCraft contributors. MIT; see third_party/figcraft.
@@ -14,7 +15,9 @@ export function shapePath(kind: string, props: LineProps & PolygonProps & StarPr
   return `M ${points.join(' L ')} Z`;
 }
 const n = (v: number) => Math.round(v * 1e5) / 1e5;
-export function pathData(path: PathData): string {
+export function pathContours(path: PathData): PathContour[] { return [path, ...(path.contours ?? [])]; }
+export function pathData(path: PathData): string { return pathContours(path).map(contourData).join(' '); }
+function contourData(path: PathContour): string {
   const pts = path.anchors;
   if (!pts.length) return '';
   let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
@@ -29,48 +32,55 @@ export function pathData(path: PathData): string {
 export function validatePath(value: unknown): asserts value is PathData {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('路径格式无效。');
   const p = value as PathData;
-  if (Object.keys(p).some(k => !['anchors', 'closed'].includes(k)) || typeof p.closed !== 'boolean' || !Array.isArray(p.anchors) || p.anchors.length < 2 || p.anchors.length > 20000) throw new Error('路径需要 2–20000 个锚点。');
+  if (Object.keys(p).some(k => !['anchors', 'closed', 'contours'].includes(k)) ||
+    (p.contours !== undefined && (!Array.isArray(p.contours) || p.contours.length > 9999))) throw new Error('路径轮廓格式无效。');
   const ids = new Set<string>();
-  for (const a of p.anchors) {
-    if (!a || typeof a.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(a.id) || ids.has(a.id) || !Number.isFinite(a.x) || !Number.isFinite(a.y) || Object.keys(a).some(k => !['id','x','y','in','out','mode'].includes(k))) throw new Error('路径锚点身份或坐标无效。');
-    if (a.mode && !['corner','smooth','mirror'].includes(a.mode)) throw new Error('控制柄模式无效。');
-    for (const h of [a.in, a.out]) if (h !== undefined && (!Array.isArray(h) || h.length !== 2 || !h.every(Number.isFinite))) throw new Error('控制柄需要两个有限数值。');
-    ids.add(a.id);
+  let count = 0;
+  for (const [index, contour] of pathContours(p).entries()) {
+    if (!contour || typeof contour !== 'object' || Array.isArray(contour) ||
+      (index > 0 && Object.keys(contour).some(k => !['anchors','closed'].includes(k))) ||
+      typeof contour.closed !== 'boolean' || !Array.isArray(contour.anchors) || contour.anchors.length < 2 ||
+      (count += contour.anchors.length) > 20000) throw new Error('每个轮廓至少需要 2 个锚点，路径总计不超过 20000 个锚点。');
+    for (const a of contour.anchors) {
+      if (!a || typeof a.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(a.id) || ids.has(a.id) || !Number.isFinite(a.x) || !Number.isFinite(a.y) || Object.keys(a).some(k => !['id','x','y','in','out','mode'].includes(k))) throw new Error('路径锚点身份或坐标无效。');
+      if (a.mode && !['corner','smooth','mirror'].includes(a.mode)) throw new Error('控制柄模式无效。');
+      for (const h of [a.in, a.out]) if (h !== undefined && (!Array.isArray(h) || h.length !== 2 || !h.every(Number.isFinite))) throw new Error('控制柄需要两个有限数值。');
+      ids.add(a.id);
+    }
   }
 }
-/** Expand one SVG contour. Arc/multi-contour inputs are rejected explicitly, never approximated silently. */
+/** Normalize SVG curves into independent, editable contours, preserving winding. */
 export function expandPath(d: string): PathData {
-  const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g) ?? [];
-  if (d.replace(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?|[\s,]/g, '')) throw new Error('SVG 路径语法无效。');
-  const anchors: Anchor[] = []; let i = 0, command = '', x = 0, y = 0, closed = false;
-  let previous = '', quadratic: [number, number] | undefined;
-  const add = (px: number, py: number) => { const a: Anchor = { id: `a-${anchors.length}`, x: px, y: py }; anchors.push(a); x = px; y = py; return a; };
-  const number = () => { const value = Number(tokens[i++]); if (!Number.isFinite(value)) throw new Error('SVG 路径坐标无效。'); return value; };
-  while (i < tokens.length) {
-    if (/^[a-z]$/i.test(tokens[i])) command = tokens[i++];
-    const upper = command.toUpperCase(), relative = command !== upper, ox = x, oy = y;
-    const point = (): [number, number] => [number() + (relative ? ox : 0), number() + (relative ? oy : 0)];
-    if (upper === 'Z') { closed = true; command = ''; previous = upper; continue; }
-    if (closed || !['M','L','H','V','C','S','Q','T'].includes(upper)) throw new Error('此路径包含圆弧或多个轮廓；请保留原 SVG 路径，普通路径编辑暂不支持转换。');
-    if (!anchors.length && upper !== 'M') throw new Error('路径必须从 M 开始。');
-    if (upper === 'M') { if (anchors.length) throw new Error('暂不支持编辑多轮廓 SVG。'); add(...point()); command = relative ? 'l' : 'L'; }
-    else if (upper === 'L') add(...point());
-    else if (upper === 'H') add(number() + (relative ? ox : 0), y);
-    else if (upper === 'V') add(x, number() + (relative ? oy : 0));
+  const contours: PathContour[] = [];
+  let contour: PathContour | undefined, count = 0;
+  const add = (x: number, y: number) => {
+    const a: Anchor = { id: `a-${count++}`, x, y };
+    contour!.anchors.push(a);
+    if (count > 20000) throw new Error('SVG 路径超过 20000 个锚点。');
+    return a;
+  };
+  for (const { cmd, points: p } of normalizePathData(d)) {
+    if (cmd === 'M') { contour = { anchors: [], closed: false }; contours.push(contour); add(p[0], p[1]); }
     else {
-      const a = anchors.at(-1)!;
-      let c1: [number, number], c2: [number, number], end: [number, number];
-      if (upper === 'C') { c1 = point(); c2 = point(); end = point(); }
-      else if (upper === 'S') { c1 = ['C','S'].includes(previous) && a.in ? [x - a.in[0], y - a.in[1]] : [x,y]; c2 = point(); end = point(); }
-      else {
-        const q: [number, number] = upper === 'Q' ? point() : ['Q','T'].includes(previous) && quadratic ? [2*x-quadratic[0],2*y-quadratic[1]] : [x,y];
-        end = point(); quadratic = q;
-        c1 = [x + 2/3*(q[0]-x), y + 2/3*(q[1]-y)]; c2 = [end[0]+2/3*(q[0]-end[0]),end[1]+2/3*(q[1]-end[1])];
+      if (!contour) throw new Error('路径必须从 M 开始。');
+      // A drawing command after Z starts a new contour at the previous start.
+      if (contour.closed && cmd !== 'Z') {
+        const first = contour.anchors[0];
+        contour = { anchors: [], closed: false }; contours.push(contour); add(first.x, first.y);
       }
-      a.out = [c1[0]-a.x,c1[1]-a.y]; const b = add(...end); b.in = [c2[0]-b.x,c2[1]-b.y];
+      if (cmd === 'L') add(p[0], p[1]);
+      else if (cmd === 'C') {
+        const a = contour.anchors.at(-1)!;
+        a.out = [p[0] - a.x, p[1] - a.y];
+        const b = add(p[4], p[5]); b.in = [p[2] - b.x, p[3] - b.y];
+      } else if (cmd === 'Z') contour.closed = true;
     }
-    previous = upper;
   }
-  if (closed && anchors.length > 2 && anchors.at(-1)!.x === anchors[0].x && anchors.at(-1)!.y === anchors[0].y) { anchors[0].in = anchors.at(-1)!.in; anchors.pop(); }
-  const path = { anchors, closed }; validatePath(path); return path;
+  for (const c of contours) {
+    const first = c.anchors[0], last = c.anchors.at(-1)!;
+    if (c.closed && c.anchors.length > 2 && first.x === last.x && first.y === last.y) { first.in = last.in; c.anchors.pop(); }
+  }
+  const [first, ...rest] = contours;
+  const result = { ...first, ...(rest.length ? { contours: rest } : {}) };
+  validatePath(result); return result;
 }

@@ -8,6 +8,8 @@ import { runPreview } from './commands/preview';
 import { runUnpack } from './commands/unpack';
 import { runValidate } from './commands/validate';
 import { runSystem } from './commands/system';
+import { runComponents } from './commands/components';
+import { runAudit } from './commands/audit';
 
 export const VERSION = '0.1.3';
 
@@ -18,11 +20,13 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 命令：
   init       创建最小合法文档（rea.json + 页面）
   validate   校验文档目录或 .reaui
+  audit      可编辑性审计（启发式建议；--strict 警告视为失败）
   pack       打包为 .reaui
   unpack     解包 .reaui 为文档目录
   diff       比较两个设计源
   preview    生成自包含 HTML 预览
   system     get|set|remove 项目设计系统（set 使用 --system <JSON文件>）
+  components init <目录> 添加组件目录，自动升级 v3（保留 v4）
   mcp        启动 MCP server（转发到 @xtcel/reaui-mcp）
 
 通用选项：
@@ -40,6 +44,8 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
   reaui preview ./demo --out preview.html
   reaui init ./brand --system ./brand.system.json
   reaui system set ./demo --system ./brand.system.json
+  reaui init ./dashboard --components
+  reaui components init ./demo
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -58,6 +64,8 @@ export async function main(argv: string[]): Promise<number> {
       case 'diff': return await runDiff(args);
       case 'preview': return await runPreview(args);
       case 'system': return await runSystem(args);
+      case 'components': return await runComponents(args);
+      case 'audit': return await runAudit(args);
       default: throw new CliError('USAGE_COMMAND', `未知命令：${args.command}`, undefined, '运行 reaui help 查看可用命令。');
     }
   } catch (error) {

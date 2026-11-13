@@ -154,3 +154,11 @@ reaui system remove ./design
 ```
 
 系统包保存为项目内的 `design/system.json`，不依赖全局系统库，也不会隐式发布。v4 可同时携带组件目录。设置/移除先验证全部页面与组件引用，冲突时保持原文件；修改 `.reaui` 前先 unpack。项目系统会话 `agent/system-sessions.json` 随打包保存。
+
+## 可编辑性工作流（仓库构建）
+
+`reaui init ./design --components` 创建 v3 组件目录；已有文档使用 `reaui components init ./design`，保留 v4 系统和已有组件，不需手改清单。组件目录用 Components/Component/Slot，页面用 Instance/SlotContent。
+
+交付前运行 `reaui audit ./design --json` 及最终 `.reaui` 审计。它启发式检查平铺层级、通用名称、重复复合结构、疑似跨区域路径和无法转换的路径，每项返回 code/severity/path/node/message/hint。默认警告退出 0，`--strict` 警告退出 1，文档非法退出 1；不修改源，不改变 validate/pack 的行为。80 图层为软预算，优先保留命名布局分组、业务元素的独立编辑和图标的局部 viewBox。
+
+新增能力已进入仓库及重建的插件包，尚未发布 npm；使用 help 检查命令是否存在。复合 `path.contours` 需要更新后的编辑器。

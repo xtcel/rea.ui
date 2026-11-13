@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire as createRequire$1 } from "module";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -148,7 +148,7 @@ function parseArgs(argv) {
 		}
 		const [rawName, inline] = token.replace(/^--?/, "").split("=", 2);
 		const name = ALIASES[rawName] ?? rawName;
-		if (name === "help" || name === "version" || name === "json" || name === "force" || name === "quiet" || name === "strict") {
+		if (name === "help" || name === "version" || name === "json" || name === "force" || name === "quiet" || name === "strict" || name === "components") {
 			if (inline !== void 0) throw new CliError("USAGE_FLAG", `选项 --${name} 不接受值。`, void 0, "移除该选项后的值。");
 			flags.add(name);
 			continue;
@@ -12995,6 +12995,230 @@ var isVectorKind = (kind) => [
 	"Polygon",
 	"Star"
 ].includes(kind);
+// ../design/src/svgPath.ts
+var TOKENS = /[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g;
+/** 圆弧转三次贝塞尔，默认绝对误差界 0.01 SVG 用户单位。
+* 对每段角度 h，Hermite 余项 <= sqrt(2)*R*h^4/384；切线权重差 <=
+* .75*R*abs(4/3*tan(h/4)-h/3)。相加作为保守细分界。
+*/
+function arcToCubics(x1, y1, rx, ry, rotation, largeArc, sweep, x2, y2, tolerance = .01) {
+	if (![
+		x1,
+		y1,
+		rx,
+		ry,
+		rotation,
+		x2,
+		y2,
+		tolerance
+	].every(Number.isFinite) || tolerance <= 0) throw new Error("圆弧参数无效。");
+	if (x1 === x2 && y1 === y2) return [];
+	rx = Math.abs(rx);
+	ry = Math.abs(ry);
+	if (!rx || !ry) return [[
+		x1,
+		y1,
+		x2,
+		y2,
+		x2,
+		y2
+	]];
+	const phi = rotation * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
+	const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+	const x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
+	const lambda = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+	if (lambda > 1) {
+		const scale = Math.sqrt(lambda);
+		rx *= scale;
+		ry *= scale;
+	}
+	const numerator = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+	const denominator = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+	const coefficient = (largeArc === sweep ? -1 : 1) * Math.sqrt(Math.max(0, numerator / denominator || 0));
+	const cxp = coefficient * rx * y1p / ry, cyp = -coefficient * ry * x1p / rx;
+	const cx = cos * cxp - sin * cyp + (x1 + x2) / 2, cy = sin * cxp + cos * cyp + (y1 + y2) / 2;
+	const angle = (ux, uy, vx, vy) => {
+		const dot = ux * vx + uy * vy, length = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+		const value = Math.acos(Math.max(-1, Math.min(1, dot / (length || 1))));
+		return ux * vy - uy * vx < 0 ? -value : value;
+	};
+	const ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry, vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry;
+	const start = angle(1, 0, ux, uy);
+	let delta = angle(ux, uy, vx, vy);
+	if (!sweep && delta > 0) delta -= Math.PI * 2;
+	else if (sweep && delta < 0) delta += Math.PI * 2;
+	let steps = Math.max(1, Math.ceil(Math.abs(delta) / (Math.PI / 2)));
+	const radius = Math.max(rx, ry);
+	const bound = (h) => radius * (Math.SQRT2 * h ** 4 / 384 + .75 * Math.abs(4 / 3 * Math.tan(h / 4) - h / 3));
+	while (bound(Math.abs(delta) / steps) > tolerance / 2) {
+		steps *= 2;
+		if (steps > 19998) throw new Error("圆弧细分超过 20000 个锚点的安全范围。");
+	}
+	const step = delta / steps, weight = 4 / 3 * Math.tan(step / 4);
+	const point = (theta) => [cx + rx * Math.cos(theta) * cos - ry * Math.sin(theta) * sin, cy + rx * Math.cos(theta) * sin + ry * Math.sin(theta) * cos];
+	const derivative = (theta) => [-rx * Math.sin(theta) * cos - ry * Math.cos(theta) * sin, -rx * Math.sin(theta) * sin + ry * Math.cos(theta) * cos];
+	const curves = [];
+	for (let index = 0; index < steps; index++) {
+		const from = start + step * index, to = from + step;
+		const [px, py] = point(from), [qx, qy] = point(to);
+		const [d1x, d1y] = derivative(from), [d2x, d2y] = derivative(to);
+		curves.push([
+			px + weight * d1x,
+			py + weight * d1y,
+			qx - weight * d2x,
+			qy - weight * d2y,
+			qx,
+			qy
+		]);
+	}
+	if (curves.length) curves[curves.length - 1].splice(4, 2, x2, y2);
+	if (!curves.flat().every(Number.isFinite)) throw new Error("圆弧计算超出有限数值范围。");
+	return curves;
+}
+/** 归一化为绝对坐标的 M/L/C/Z 序列：H/V 转 L，S/T 补齐控制点，Q 升三次，A 转贝塞尔。 */
+function normalizePathData(d) {
+	const tokens = d.match(TOKENS) ?? [];
+	if (d.replace(TOKENS, "").replace(/[\s,]/g, "")) throw new Error("SVG 路径语法无效。");
+	const commands = [];
+	let index = 0, letter = "", x = 0, y = 0, startX = 0, startY = 0;
+	let previous = "", cubicControl, quadraticControl;
+	const read = () => {
+		const value = Number(tokens[index++]);
+		if (!Number.isFinite(value)) throw new Error("SVG 路径坐标无效。");
+		return value;
+	};
+	while (index < tokens.length) {
+		if (/^[a-zA-Z]$/.test(tokens[index])) letter = tokens[index++];
+		if (!letter) throw new Error("SVG 路径缺少命令。");
+		const upper = letter.toUpperCase(), relative = letter !== upper;
+		if (!commands.length && upper !== "M") throw new Error("路径必须从 M 开始。");
+		if (commands.length > 4e4) throw new Error("SVG 路径超过安全范围。");
+		if (upper === "Z") {
+			commands.push({
+				cmd: "Z",
+				points: []
+			});
+			x = startX;
+			y = startY;
+			letter = "";
+			previous = "Z";
+			continue;
+		}
+		if (![
+			"M",
+			"L",
+			"H",
+			"V",
+			"C",
+			"S",
+			"Q",
+			"T",
+			"A"
+		].includes(upper)) throw new Error("SVG 路径包含不支持的命令。");
+		if (upper === "M") {
+			x = read() + (relative ? x : 0);
+			y = read() + (relative ? y : 0);
+			commands.push({
+				cmd: "M",
+				points: [x, y]
+			});
+			startX = x;
+			startY = y;
+			letter = relative ? "l" : "L";
+		} else if (upper === "L") {
+			x = read() + (relative ? x : 0);
+			y = read() + (relative ? y : 0);
+			commands.push({
+				cmd: "L",
+				points: [x, y]
+			});
+		} else if (upper === "H") {
+			x = read() + (relative ? x : 0);
+			commands.push({
+				cmd: "L",
+				points: [x, y]
+			});
+		} else if (upper === "V") {
+			y = read() + (relative ? y : 0);
+			commands.push({
+				cmd: "L",
+				points: [x, y]
+			});
+		} else if (upper === "C" || upper === "S") {
+			let c1x, c1y;
+			if (upper === "C") {
+				c1x = read() + (relative ? x : 0);
+				c1y = read() + (relative ? y : 0);
+			} else if (previous === "C" || previous === "S") {
+				c1x = 2 * x - cubicControl[0];
+				c1y = 2 * y - cubicControl[1];
+			} else {
+				c1x = x;
+				c1y = y;
+			}
+			const c2x = read() + (relative ? x : 0), c2y = read() + (relative ? y : 0);
+			const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
+			commands.push({
+				cmd: "C",
+				points: [
+					c1x,
+					c1y,
+					c2x,
+					c2y,
+					ex,
+					ey
+				]
+			});
+			cubicControl = [c2x, c2y];
+			x = ex;
+			y = ey;
+		} else if (upper === "Q" || upper === "T") {
+			let qx, qy;
+			if (upper === "Q") {
+				qx = read() + (relative ? x : 0);
+				qy = read() + (relative ? y : 0);
+			} else if (previous === "Q" || previous === "T") {
+				qx = 2 * x - quadraticControl[0];
+				qy = 2 * y - quadraticControl[1];
+			} else {
+				qx = x;
+				qy = y;
+			}
+			const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
+			const c1x = x + 2 / 3 * (qx - x), c1y = y + 2 / 3 * (qy - y), c2x = ex + 2 / 3 * (qx - ex), c2y = ey + 2 / 3 * (qy - ey);
+			commands.push({
+				cmd: "C",
+				points: [
+					c1x,
+					c1y,
+					c2x,
+					c2y,
+					ex,
+					ey
+				]
+			});
+			quadraticControl = [qx, qy];
+			cubicControl = [c2x, c2y];
+			x = ex;
+			y = ey;
+		} else {
+			const rx = read(), ry = read(), rotation = read();
+			const largeFlag = read(), sweepFlag = read();
+			if (![largeFlag, sweepFlag].every((v) => v === 0 || v === 1)) throw new Error("圆弧标志必须是 0 或 1。");
+			const largeArc = largeFlag === 1, sweep = sweepFlag === 1;
+			const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
+			for (const curve of arcToCubics(x, y, rx, ry, rotation, largeArc, sweep, ex, ey)) commands.push({
+				cmd: "C",
+				points: curve
+			});
+			x = ex;
+			y = ey;
+			cubicControl = void 0;
+		}
+		previous = upper;
+	}
+	return commands;
+}
 // ../design/src/vector.ts
 function shapePath(kind, props) {
 	if (kind === "Vector") return props.path ? pathData(props.path) : props.d ?? "";
@@ -13007,7 +13231,13 @@ function shapePath(kind, props) {
 	}).join(" L ")} Z`;
 }
 var n = (v) => Math.round(v * 1e5) / 1e5;
+function pathContours(path) {
+	return [path, ...path.contours ?? []];
+}
 function pathData(path) {
+	return pathContours(path).map(contourData).join(" ");
+}
+function contourData(path) {
 	const pts = path.anchors;
 	if (!pts.length) return "";
 	let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
@@ -13022,25 +13252,88 @@ function pathData(path) {
 function validatePath(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("路径格式无效。");
 	const p = value;
-	if (Object.keys(p).some((k) => !["anchors", "closed"].includes(k)) || typeof p.closed !== "boolean" || !Array.isArray(p.anchors) || p.anchors.length < 2 || p.anchors.length > 2e4) throw new Error("路径需要 2–20000 个锚点。");
+	if (Object.keys(p).some((k) => ![
+		"anchors",
+		"closed",
+		"contours"
+	].includes(k)) || p.contours !== void 0 && (!Array.isArray(p.contours) || p.contours.length > 9999)) throw new Error("路径轮廓格式无效。");
 	const ids = /* @__PURE__ */ new Set();
-	for (const a of p.anchors) {
-		if (!a || typeof a.id !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(a.id) || ids.has(a.id) || !Number.isFinite(a.x) || !Number.isFinite(a.y) || Object.keys(a).some((k) => ![
-			"id",
-			"x",
-			"y",
-			"in",
-			"out",
-			"mode"
-		].includes(k))) throw new Error("路径锚点身份或坐标无效。");
-		if (a.mode && ![
-			"corner",
-			"smooth",
-			"mirror"
-		].includes(a.mode)) throw new Error("控制柄模式无效。");
-		for (const h of [a.in, a.out]) if (h !== void 0 && (!Array.isArray(h) || h.length !== 2 || !h.every(Number.isFinite))) throw new Error("控制柄需要两个有限数值。");
-		ids.add(a.id);
+	let count = 0;
+	for (const [index, contour] of pathContours(p).entries()) {
+		if (!contour || typeof contour !== "object" || Array.isArray(contour) || index > 0 && Object.keys(contour).some((k) => !["anchors", "closed"].includes(k)) || typeof contour.closed !== "boolean" || !Array.isArray(contour.anchors) || contour.anchors.length < 2 || (count += contour.anchors.length) > 2e4) throw new Error("每个轮廓至少需要 2 个锚点，路径总计不超过 20000 个锚点。");
+		for (const a of contour.anchors) {
+			if (!a || typeof a.id !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(a.id) || ids.has(a.id) || !Number.isFinite(a.x) || !Number.isFinite(a.y) || Object.keys(a).some((k) => ![
+				"id",
+				"x",
+				"y",
+				"in",
+				"out",
+				"mode"
+			].includes(k))) throw new Error("路径锚点身份或坐标无效。");
+			if (a.mode && ![
+				"corner",
+				"smooth",
+				"mirror"
+			].includes(a.mode)) throw new Error("控制柄模式无效。");
+			for (const h of [a.in, a.out]) if (h !== void 0 && (!Array.isArray(h) || h.length !== 2 || !h.every(Number.isFinite))) throw new Error("控制柄需要两个有限数值。");
+			ids.add(a.id);
+		}
 	}
+}
+/** Normalize SVG curves into independent, editable contours, preserving winding. */
+function expandPath(d) {
+	const contours = [];
+	let contour, count = 0;
+	const add = (x, y) => {
+		const a = {
+			id: `a-${count++}`,
+			x,
+			y
+		};
+		contour.anchors.push(a);
+		if (count > 2e4) throw new Error("SVG 路径超过 20000 个锚点。");
+		return a;
+	};
+	for (const { cmd, points: p } of normalizePathData(d)) if (cmd === "M") {
+		contour = {
+			anchors: [],
+			closed: false
+		};
+		contours.push(contour);
+		add(p[0], p[1]);
+	} else {
+		if (!contour) throw new Error("路径必须从 M 开始。");
+		if (contour.closed && cmd !== "Z") {
+			const first = contour.anchors[0];
+			contour = {
+				anchors: [],
+				closed: false
+			};
+			contours.push(contour);
+			add(first.x, first.y);
+		}
+		if (cmd === "L") add(p[0], p[1]);
+		else if (cmd === "C") {
+			const a = contour.anchors.at(-1);
+			a.out = [p[0] - a.x, p[1] - a.y];
+			const b = add(p[4], p[5]);
+			b.in = [p[2] - b.x, p[3] - b.y];
+		} else if (cmd === "Z") contour.closed = true;
+	}
+	for (const c of contours) {
+		const first = c.anchors[0], last = c.anchors.at(-1);
+		if (c.closed && c.anchors.length > 2 && first.x === last.x && first.y === last.y) {
+			first.in = last.in;
+			c.anchors.pop();
+		}
+	}
+	const [first, ...rest] = contours;
+	const result = {
+		...first,
+		...rest.length ? { contours: rest } : {}
+	};
+	validatePath(result);
+	return result;
 }
 // ../design/src/inspect.ts
 var PAGE_ID = /^[a-z][a-z0-9-]{0,63}$/;
@@ -29387,14 +29680,69 @@ async function runDiff(args) {
 	console.log(`共 ${changes.length} 个文件发生变化。`);
 	return 0;
 }
+// src/commands/components.ts
+var EMPTY_COMPONENTS = "import { Components } from '@rea/design';\n\nexport default <Components />;\n";
+async function runComponents(args) {
+	const [action, target = "."] = args.positionals;
+	if (action !== "init") throw new CliError("USAGE_COMPONENTS", "用法：components init <文档目录>");
+	const loaded = await loadDocument(target);
+	if (loaded.kind !== "dir") throw new CliError("USAGE_COMPONENTS", "请先将 .reaui 解包为文档目录。");
+	const session = openSession(loaded.files);
+	if (loaded.files["components/main.components.tsx"] !== void 0) {
+		console.log(JSON.stringify({
+			ok: true,
+			changed: false,
+			version: session.manifest.version,
+			file: COMPONENT_FILE
+		}));
+		return 0;
+	}
+	const manifest = {
+		...session.manifest,
+		version: Math.max(3, session.manifest.version)
+	};
+	const source = JSON.stringify(manifest, null, 2) + "\n";
+	openSession({
+		...loaded.files,
+		"rea.json": source,
+		[COMPONENT_FILE]: EMPTY_COMPONENTS
+	});
+	const root = path.resolve(target), componentFile = path.join(root, COMPONENT_FILE), manifestFile = path.join(root, "rea.json");
+	const suffix = `.tmp-${crypto.randomUUID()}`, componentTemp = componentFile + suffix, manifestTemp = manifestFile + suffix;
+	let created = false;
+	try {
+		await mkdir(path.dirname(componentFile), { recursive: true });
+		await writeFile(componentTemp, EMPTY_COMPONENTS, "utf8");
+		await writeFile(manifestTemp, source, "utf8");
+		await link(componentTemp, componentFile);
+		created = true;
+		await rename(manifestTemp, manifestFile);
+	} catch (error) {
+		if (created) {
+			await writeFile(manifestFile, loaded.files["rea.json"], "utf8");
+			await rm(componentFile, { force: true });
+		}
+		throw error;
+	} finally {
+		await Promise.all([rm(componentTemp, { force: true }), rm(manifestTemp, { force: true })]);
+	}
+	console.log(JSON.stringify({
+		ok: true,
+		changed: true,
+		version: manifest.version,
+		file: COMPONENT_FILE
+	}));
+	return 0;
+}
 // src/commands/init.ts
+var attr = (text) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/{/g, "&#123;").replace(/}/g, "&#125;");
 function pageSource(id, name, width, height) {
 	return `import { Page, Frame, Text } from '@rea/design';
 
 export default (
-  <Page id="${id}" designId="page-root" name="${name}">
+  <Page id="${id}" designId="page-root" name="${attr(name)}">
     <Frame designId="${id}-frame" name="画板" className="absolute left-0 top-0 w-[${width}px] h-[${height}px] bg-white">
-      <Text designId="page-title" name="标题" className="absolute left-[64px] top-[64px] w-[600px] h-[40px] text-[28px] text-[#30343b]">${name}</Text>
+      <Text designId="page-title" name="标题" className="absolute left-[64px] top-[64px] w-[600px] h-[40px] text-[28px] text-[#30343b]">${attr(name)}</Text>
     </Frame>
   </Page>
 );
@@ -29428,17 +29776,31 @@ async function runInit(args) {
 	const manifest = createManifest(`doc_${crypto.randomUUID()}`, name.trim(), pages);
 	const systemPath = value(args, "system");
 	const system = systemPath ? parseSystem(await readFile(path.resolve(systemPath), "utf8")) : null;
-	if (system) manifest.version = 4;
-	await mkdir(target, { recursive: true });
-	await mkdir(path.join(target, "pages"), { recursive: true });
-	await writeFile(path.join(target, "rea.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
-	if (system) {
-		await mkdir(path.join(target, "design"), { recursive: true });
-		await writeFile(path.join(target, SYSTEM_FILE), serializeSystem(system), "utf8");
-	}
+	manifest.version = system ? 4 : args.flags.has("components") ? 3 : 2;
+	const files = { "rea.json": JSON.stringify(manifest, null, 2) + "\n" };
+	if (system) files[SYSTEM_FILE] = serializeSystem(system);
+	if (args.flags.has("components")) files[COMPONENT_FILE] = EMPTY_COMPONENTS;
 	for (const [index, id] of pageIds.entries()) {
 		const pageName = (names[index] ?? (index === 0 ? name.trim() : `页面 ${index + 1}`)).trim() || `页面 ${index + 1}`;
-		await writeFile(path.join(target, `pages/${id}.page.tsx`), pageSource(id, pageName, width, height), "utf8");
+		files[`pages/${id}.page.tsx`] = pageSource(id, pageName, width, height);
+	}
+	openSession(files);
+	const written = [];
+	try {
+		for (const [file, source] of Object.entries(files).sort(([a], [b]) => Number(a === "rea.json") - Number(b === "rea.json"))) {
+			const absolute = path.join(target, file);
+			await mkdir(path.dirname(absolute), { recursive: true });
+			const handle = await open(absolute, "wx");
+			written.push(absolute);
+			try {
+				await handle.writeFile(source, "utf8");
+			} finally {
+				await handle.close();
+			}
+		}
+	} catch (error) {
+		await Promise.all(written.map((file) => rm(file, { force: true })));
+		throw error;
 	}
 	console.log(`已创建文档：${path.relative(process.cwd(), target) || "."}`);
 	console.log(`  rea.json`);
@@ -50641,6 +51003,124 @@ async function runSystem(args) {
 	}, null, 2));
 	return 0;
 }
+// src/audit.ts
+var containers = /* @__PURE__ */ new Set(["Frame", "Group"]);
+var genericName = /^(?:frame|group|rect|text|vector|layer|路径|图层|矩形|分组|文本|画板)(?:[\s_-]*\d+)?$/i;
+var bounds = (contour) => {
+	const xs = contour.anchors.flatMap((a) => [
+		a.x,
+		a.x + (a.in?.[0] ?? 0),
+		a.x + (a.out?.[0] ?? 0)
+	]);
+	const ys = contour.anchors.flatMap((a) => [
+		a.y,
+		a.y + (a.in?.[1] ?? 0),
+		a.y + (a.out?.[1] ?? 0)
+	]);
+	return {
+		left: Math.min(...xs),
+		right: Math.max(...xs),
+		top: Math.min(...ys),
+		bottom: Math.max(...ys)
+	};
+};
+function auditEditability(session) {
+	const issues = [];
+	function scan(page, file, excluded = /* @__PURE__ */ new Set()) {
+		const add = (node, code, message, hint) => issues.push({
+			code,
+			severity: "warning",
+			path: file,
+			node: node.id,
+			message,
+			hint
+		});
+		const fingerprints = /* @__PURE__ */ new Map();
+		function fingerprint(node) {
+			const cached = fingerprints.get(node.id);
+			if (cached) return cached;
+			const children = node.children.map((id) => fingerprint(page.nodes.get(id)));
+			const result = {
+				signature: `${node.kind}(${children.map((c) => c.signature).join(",")})`,
+				count: 1 + children.reduce((n, c) => n + c.count, 0),
+				text: node.kind === "Text" || children.some((c) => c.text)
+			};
+			fingerprints.set(node.id, result);
+			return result;
+		}
+		for (const node of page.nodes.values()) {
+			if (excluded.has(node.id)) continue;
+			const props = node.element.props;
+			if (!props.name?.trim() || props.name === node.id || genericName.test(props.name.trim())) add(node, "EDIT_NAME", "图层缺少业务名称或使用通用名称。", "使用“侧边栏”“搜索图标”“实验记录行”等名称，便于在图层树中定位。");
+			const children = node.children.map((id) => page.nodes.get(id)).filter((c) => !c.hidden);
+			if (containers.has(node.kind)) {
+				const leaves = children.filter((c) => !c.children.length && c.kind !== "Instance");
+				if (leaves.length >= 12 && leaves.length / children.length >= .8) add(node, "EDIT_FLAT_HIERARCHY", `疑似布局平铺：${leaves.length} 个叶节点直接放在同一容器下。`, "按侧栏、顶部栏、卡片和记录行建立命名 Frame/Group，使用局部坐标；不要为图层预算合并业务内容。");
+			}
+			const repeated = /* @__PURE__ */ new Map();
+			for (const child of children) {
+				if (!containers.has(child.kind)) continue;
+				const f = fingerprint(child);
+				if (f.count < 3 || !f.text || child.children.length < 2) continue;
+				repeated.set(f.signature, [...repeated.get(f.signature) ?? [], child]);
+			}
+			for (const matches of repeated.values()) if (matches.length >= 2) add(matches[0], "EDIT_REPEATED_STRUCTURE", `疑似重复结构（${matches.length} 处）：${matches.map((n) => n.id).join("、")}。`, "评估提取 Component/Instance；文字用参数，状态用变体。该检查只比较结构，需人工判断语义。");
+			if (node.kind === "Vector") try {
+				const vector = props;
+				const boxes = pathContours(vector.path ?? expandPath(vector.d ?? "")).map(bounds);
+				let separated = false;
+				for (const axis of ["left", "top"]) {
+					const sorted = [...boxes].sort((a, b) => a[axis] - b[axis]);
+					for (let i = 1; i < sorted.length; i++) {
+						const a = sorted[i - 1], b = sorted[i], size = Math.max(a.right - a.left, a.bottom - a.top, b.right - b.left, b.bottom - b.top, 1);
+						if (Math.hypot(Math.max(0, b.left - a.right, a.left - b.right), Math.max(0, b.top - a.bottom, a.top - b.bottom)) > Math.max(32, size * 4)) {
+							separated = true;
+							break;
+						}
+					}
+					if (separated) break;
+				}
+				if (separated) add(node, "EDIT_MERGED_VECTOR", "疑似跨区域合并路径：轮廓间距远大于各自尺寸。", "一个业务图标使用独立容器和局部 viewBox；镂空图标的内外轮廓仍需保留在同一 Vector。");
+			} catch (error) {
+				add(node, "EDIT_PATH_UNEDITABLE", `路径无法转换为锚点：${error instanceof Error ? error.message : String(error)}`, "修复 SVG 路径或改为受支持的结构化 path；不要将原始 d 的可渲染性等同于锚点可编辑性。");
+			}
+		}
+	}
+	for (const { id, file } of session.manifest.pages) scan(inspectPage(session.pages.get(id).source), file);
+	for (const definition of session.components.values()) scan(componentEditor(definition).page, COMPONENT_FILE, /* @__PURE__ */ new Set(["component-editor-root", "component-editor-surface"]));
+	return issues;
+}
+// src/commands/audit.ts
+async function runAudit(args) {
+	const target = args.positionals[0] ?? ".", json = args.flags.has("json");
+	try {
+		const loaded = await loadDocument(target), session = openSession(loaded.files);
+		const issues = auditEditability(session), strict = args.flags.has("strict");
+		const ok = !(strict && issues.length);
+		const report = {
+			ok,
+			kind: "editability",
+			heuristic: true,
+			document: {
+				id: session.manifest.id,
+				name: session.manifest.name,
+				version: session.manifest.version
+			},
+			issues,
+			warnings: loaded.warnings
+		};
+		if (json) console.log(JSON.stringify(report, null, 2));
+		else {
+			console.log(`可编辑性审计：${session.manifest.name}（${issues.length} 条建议${strict ? "，strict" : ""}；启发式检查，不代表视觉验收）`);
+			for (const issue of issues) console.log(`  [${issue.code}] ${issue.path} · ${issue.node}: ${issue.message}\n    建议：${issue.hint}`);
+			for (const warning of loaded.warnings) console.log(`  警告：${warning}`);
+		}
+		return ok ? 0 : 1;
+	} catch (error) {
+		printErrors([describe(error, target)], json);
+		return 1;
+	}
+}
 // src/cli.ts
 var VERSION = "0.1.3";
 var HELP = `reaui ${VERSION} - REA UI 设计源命令行
@@ -50650,11 +51130,13 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
 命令：
   init       创建最小合法文档（rea.json + 页面）
   validate   校验文档目录或 .reaui
+  audit      可编辑性审计（启发式建议；--strict 警告视为失败）
   pack       打包为 .reaui
   unpack     解包 .reaui 为文档目录
   diff       比较两个设计源
   preview    生成自包含 HTML 预览
   system     get|set|remove 项目设计系统（set 使用 --system <JSON文件>）
+  components init <目录> 添加组件目录，自动升级 v3（保留 v4）
   mcp        启动 MCP server（转发到 @xtcel/reaui-mcp）
 
 通用选项：
@@ -50672,6 +51154,8 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
   reaui preview ./demo --out preview.html
   reaui init ./brand --system ./brand.system.json
   reaui system set ./demo --system ./brand.system.json
+  reaui init ./dashboard --components
+  reaui components init ./demo
 `;
 async function main(argv) {
 	if (argv[0] === "mcp") return await runMcp(argv.slice(1));
@@ -50694,6 +51178,8 @@ async function main(argv) {
 			case "diff": return await runDiff(args);
 			case "preview": return await runPreview(args);
 			case "system": return await runSystem(args);
+			case "components": return await runComponents(args);
+			case "audit": return await runAudit(args);
 			default: throw new CliError("USAGE_COMMAND", `未知命令：${args.command}`, void 0, "运行 reaui help 查看可用命令。");
 		}
 	} catch (error) {

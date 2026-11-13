@@ -108,9 +108,11 @@ const draggingImages = (dataTransfer: DataTransfer | null) => !!dataTransfer && 
 const droppedImages = (dataTransfer: DataTransfer | null) => [...(dataTransfer?.files ?? [])].filter(file => file.type.startsWith('image/') || IMAGE_FILE.test(file.name));
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog');
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
-export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, system = null, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
+export function Canvas({ page, sourcePage, selection, selectionMode = 'hierarchy', onSelection, tool, viewCommand, onZoom, onCreate, onToolChange, onCommit, onDiagnostics, assetUrls, system = null, onMeasure, onNotice, apiRef, editingId, draft, onEdit, onTextFinish, touched = [], agentRefs = [], onAgentRefs, onContextMenu, showRulers = false, showGuides = true, guides = [], onGuidesChange, onGuideContextMenu, onRevealGuides, onDropImages,
     onRulerContextMenu }: {
     page: InspectedPage;
+    /** Original source properties preserve component bindings during shape conversion. */
+    sourcePage?: InspectedPage;
     selection: SelectionState;
     selectionMode?: SelectionMode;
     onSelection: (selection: SelectionState) => void;
@@ -214,7 +216,7 @@ export function Canvas({ page, selection, selectionMode = 'hierarchy', onSelecti
         const b=box(id);if(!b)return;
         return inParent(b,parentId===undefined?page.nodes.get(id)?.parentId:parentId);
     }
-    function editVector(id:string){const node=page.nodes.get(id);if(!node||node.locked||!isVectorKind(node.kind))return;try{if(!(node.element.props as unknown as VectorProps).path&&!onCommit({label:'转换为可编辑路径',ops:[expandVector(node)]}))return;setVectorEditingId(id);onSelection({...selection,ids:[id]});}catch(error){onNotice(String(error));}}
+    function editVector(id:string){const node=page.nodes.get(id);if(!node||node.locked||!isVectorKind(node.kind))return;try{if(!(node.element.props as unknown as VectorProps).path&&!onCommit({label:'转换为可编辑路径',ops:[expandVector(sourcePage?.nodes.get(id)??node)]}))return;setVectorEditingId(id);onSelection({...selection,ids:[id]});}catch(error){onNotice(String(error));}}
     apiRef.current={box,localBox,rotation:rotationFor,pointInParent:(point,parentId)=>{const r=inParent({...point,width:0,height:0},parentId);return {x:r.x,y:r.y};},viewportCenter:()=>screenToWorld({x:size.width/2,y:size.height/2},camera),visibleWorld:()=>({width:size.width/camera.zoom,height:size.height/camera.zoom}),editVector,root:()=>shadow()??null};
     useEffect(()=>{setVectorEditingId(null);},[page.id,tool]);
     function vectorLocal(point:{x:number;y:number},id:string){const b=box(id)!,node=page.nodes.get(id)!,p=rotatePoint({x:point.x-b.x-b.width/2,y:point.y-b.y-b.height/2},-rotationFor(id));const [x,y,w,h]=((node.element.props as unknown as VectorProps).viewBox??'0 0 100 100').split(/[ ,]+/).map(Number);return{x:x+(p.x+b.width/2)/b.width*w,y:y+(p.y+b.height/2)/b.height*h};}

@@ -85,3 +85,10 @@ describe('SVG 导入为图层', () => {
       .toThrow('没有可导入的矢量图形');
   });
 });
+
+it('imports compound SVG holes as one editable vector with evenodd fill', () => {
+  const { fragment,ids,issues } = svgLayerFragment({ id:'hole-group',name:'镂空图标',source:'<svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M0 0 H24 V24 H0 Z M6 6 H18 V18 H6 Z" /></svg>',frame:{x:0,y:0,width:24,height:24} });
+  const page=parseLayers(fragment),props=page.nodes.get(ids[0])!.element.props as unknown as {path:{contours:unknown[]};className:string};
+  expect(ids).toHaveLength(1);expect(props.path.contours).toHaveLength(1);
+  expect(props.className).toContain('[fill-rule:evenodd]');expect(issues).toEqual([]);
+});

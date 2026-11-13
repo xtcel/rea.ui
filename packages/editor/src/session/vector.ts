@@ -1,5 +1,5 @@
-import { expandPath, shapePath } from '@rea/design';
-import type { IndexedNode, PathData, VectorProps } from '@rea/design';
+import { expandPath, pathContours, shapePath } from '@rea/design';
+import type { IndexedNode, PathContour, PathData, VectorProps } from '@rea/design';
 import { sourceElement } from '@rea/document';
 import type { SourceOperation } from '@rea/document';
 import type { Point } from './camera';
@@ -13,8 +13,16 @@ export function expandVector(node: IndexedNode): SourceOperation {
   const old = node.element.props as unknown as Record<string, unknown>;
   const path=vectorPath(node),width=Math.max(1,fixedValue(String(old.className??''),'width')??100),height=Math.max(1,fixedValue(String(old.className??''),'height')??100);
   if(node.kind==='Line')for(const a of path.anchors){a.x=a.x*width/100;a.y=a.y*height/100;}
-  const props = { designId: node.id, name: old.name, className: old.className, hidden: old.hidden, locked: old.locked, path, viewBox: old.viewBox ?? (node.kind==='Line'?`0 0 ${width} ${height}`:'0 0 100 100'), startArrow: old.startArrow, endArrow: old.endArrow };
+  const props = { designId: node.id, name: old.name, className: old.className, hidden: old.hidden, locked: old.locked, bindings: old.bindings, path, viewBox: old.viewBox ?? (node.kind==='Line'?`0 0 ${width} ${height}`:'0 0 100 100'), startArrow: old.startArrow, endArrow: old.endArrow };
   return { type: 'replace', pageId: node.pageId, id: node.id, fragment: sourceElement('Vector', props) };
+}
+/** Replace one contour while preserving all others and their anchor identities. */
+export function replacePathContour(path: PathData, index: number, contour: PathContour): PathData {
+  const contours = pathContours(path).map(c => ({ anchors: c.anchors, closed: c.closed }));
+  if (!contours[index]) throw new Error('路径轮廓不存在。');
+  contours[index] = { anchors: contour.anchors, closed: contour.closed };
+  const [first, ...rest] = structuredClone(contours);
+  return { ...first, ...(rest.length ? { contours: rest } : {}) };
 }
 export function shapeDrag(start: Point, end: Point, line: boolean, shift: boolean, alt: boolean) {
   let dx = end.x-start.x, dy=end.y-start.y;

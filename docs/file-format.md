@@ -207,6 +207,6 @@ export default <Components>
 
 插槽内容以真实源子树保存：`<SlotContent designId="owned-body" slotId="body-main">...</SlotContent>`；嵌套插槽用 `target="nested-instance"` 指定源实例路径。结构修改只允许在实例自有插槽内进行。展开身份为实例 id、嵌套实例 id 与源节点 id 的组合。派生身份不会写回文件。
 
-结构化路径示例：`path={{closed:false,anchors:[{id:'a-one',x:0,y:0,out:[30,0]},{id:'a-two',x:100,y:60,in:[-30,0],mode:'smooth'}]}}`。控制柄是相对锚点的位移，模式为 corner/smooth/mirror。原始 SVG d 保持兼容；含圆弧或多个轮廓的 d 可继续渲染，但本次不能转换为锚点路径。
+结构化路径示例：`path={{closed:false,anchors:[{id:'a-one',x:0,y:0,out:[30,0]},{id:'a-two',x:100,y:60,in:[-30,0],mode:'smooth'}]}}`。控制柄是相对锚点的位移，模式为 corner/smooth/mirror。原始 SVG d 保持兼容；圆弧按默认 0.01 SVG 用户单位误差界细分为三次贝塞尔。结构化 path 的首轮廓仍使用 anchors/closed，后续轮廓放在可选 contours 数组（每项含 anchors/closed）。锚点 id 全路径唯一，每轮廓至少 2 个、全路径至多 20000 个锚点。不改变轮廓方向，孔洞填充规则用 className 的 [fill-rule:evenodd] 或默认 nonzero；导入、锚点编辑和 SVG 导出保持同一个复合 Vector。contours 需要包含该能力的新编辑器，旧版本只支持 d 或单轮廓 path。
 
 跨文档库导入会将定义和依赖快照写入目录，`library` 记录库 id、组件 id、固定版本和内容 hash；库发布记录保存在本机 IndexedDB meta。源节点身份跨版本稳定，二进制资源路径按发布版本隔离。手动升级候选校验成功后一次提交，删除仍被引用的属性、覆盖目标或插槽会阻止升级。`.reaui` 携带定义与资源，可离线打开；本机库发布历史不随单个文档导出。

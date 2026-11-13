@@ -149,3 +149,10 @@ node server/reaui-mcp/bin/reaui-mcp.mjs --http --port 8787 --token "$TOKEN"
 | `reaui_write_page` 返回 `isError` | 页面源码不合法；读 `validation.issues[0]` 修复后重写该页 |
 | 调用超时 | 首次调用会启动 CLI 子进程；稍后重试；仍失败则改用 CLI |
 | 输出不是纯 JSON | 从第一个 `{` 开始解析，或直接改走 CLI `--json` |
+
+## 可编辑性工具
+
+- `reaui_init` 可传 `components:true`，初始化合法 v3 目录（有系统时保留 v4）。
+- `reaui_init_components({path})` 给已有目录添加组件能力，已有目录不覆盖。
+- `reaui_create_design` 的 components 字符串写入组件定义，版本由 CLI 自动管理。
+- `reaui_audit({path,strict?})` 返回节点级启发式建议，与格式校验分开。生成时仍必须按业务布局分组、默认评估重复结构复用、每个图标独立，不为图层软预算跨对象合并。

@@ -160,3 +160,11 @@ reaui system remove ./design
 ```
 
 系统包保存为项目内的 `design/system.json`，不依赖全局系统库，也不会隐式发布。v4 可同时携带组件目录。设置/移除先验证全部页面与组件引用，冲突时保持原文件；修改 `.reaui` 前先 unpack。项目系统会话 `agent/system-sessions.json` 随打包保存。
+
+## Editability workflow (repository build)
+
+Use `reaui init ./design --components` for a reusable component catalog (v3), or `reaui components init ./design` to add it later. Existing v4 systems are preserved; existing catalogs are never overwritten. Define static Components/Component/Slot in `components/main.components.tsx`, and use Instance/SlotContent on pages.
+
+Run `reaui audit ./design --json` and `reaui audit ./design.reaui --json` before delivery. It reports heuristic node-level suggestions for flat hierarchy, generic names, repeated composites, distant merged contours and unconvertible paths. Warnings exit 0; `--strict` warnings exit 1; invalid documents exit 1. It never rewrites source or changes validate/pack behavior. Named layout groups, independent business elements and local icon viewBoxes take precedence over the soft 80-layer budget.
+
+These additions are in the repository and rebuilt plugin bundle; check `reaui help` for capabilities. They have not yet been published to npm. Compound `path.contours` requires an updated editor.

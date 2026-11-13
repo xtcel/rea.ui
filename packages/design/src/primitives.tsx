@@ -14,7 +14,9 @@ export type FrameProps = ContainerProps;
 export interface TextProps extends NodeProps { children?: string | readonly string[]; binding?: string }
 export interface ImageProps extends NodeProps { src: string }
 export interface Anchor { id: string; x: number; y: number; in?: [number, number]; out?: [number, number]; mode?: 'corner' | 'smooth' | 'mirror' }
-export interface PathData { anchors: Anchor[]; closed: boolean }
+export interface PathContour { anchors: Anchor[]; closed: boolean }
+/** The root is the first contour; contours contains only additional contours. */
+export interface PathData extends PathContour { contours?: PathContour[] }
 export interface VectorProps extends NodeProps { d?: string; path?: PathData; viewBox: string; startArrow?: boolean; endArrow?: boolean }
 export interface LineProps extends NodeProps { x1?: number; y1?: number; x2?: number; y2?: number; startArrow?: boolean; endArrow?: boolean }
 export interface PolygonProps extends NodeProps { count?: number }

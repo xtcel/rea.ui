@@ -1,0 +1,13 @@
+{
+  "format": "reaui",
+  "version": 3,
+  "id": "doc_c9a2578e-d356-4fee-9979-1f9d2a5c9839",
+  "name": "可编辑工作台示例",
+  "pages": [
+    {
+      "id": "main",
+      "file": "pages/main.page.tsx"
+    }
+  ],
+  "createdAt": "2026-11-13T04:01:31.844Z"
+}

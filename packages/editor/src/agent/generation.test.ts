@@ -5,7 +5,7 @@ import { createDefaultV2Document, decodeReaui, exportReaui } from '@rea/storage'
 import { validateTokens } from '@rea/design-system';
 import type { SystemIssue } from '@rea/design-system';
 import { builtInSystems, isSystems } from '../home/data';
-import { attachmentContext, designSources, generatedDocument, uiPrompt, workspacePrompt } from './generation';
+import { apiWorkspacePrompt, attachmentContext, designSources, generatedDocument, uiPrompt, workspacePrompt } from './generation';
 import { agentSystem, defaultTokens, parseGeneratedSystem, resolvedSystem, withTokens } from './designSystem';
 
 const page = `import { Page, Frame, Text } from '@rea/design';
@@ -86,4 +86,12 @@ describe('local agent generation contract', () => {
     expect(uiPrompt('界面需求', agentSystem(builtInSystems[0], true), null)).toContain('只能引用 var(--rea-ds-*)');
     expect(parseGeneratedSystem({ name: 'bad', tokens: { primary: 'red' } }).warnings.length).toBeGreaterThan(0);
   });
+});
+
+it('shares editable hierarchy and component reuse rules across generation modes', () => {
+  const files=generatedDocument({name:'测试',summary:'',pages:[{id:'main',source:page}]}).document.files;
+  for(const prompt of [uiPrompt('生成工作台',null,null),workspacePrompt('生成工作台',null,null,'','',files),apiWorkspacePrompt('生成工作台',null,null,'','',files)]) {
+    for(const rule of ['局部坐标','重复两次及以上','禁止按颜色跨图标合并路径','禁止跨记录','软预算','contours','fill-rule:evenodd']) expect(prompt).toContain(rule);
+    expect(prompt).not.toContain('控制在 80 个图层以内');
+  }
 });

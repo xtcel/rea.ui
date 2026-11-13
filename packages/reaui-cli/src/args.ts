@@ -26,7 +26,7 @@ export function parseArgs(argv: readonly string[]): Args {
     const trimmed = token.replace(/^--?/, '');
     const [rawName, inline] = trimmed.split('=', 2);
     const name = ALIASES[rawName] ?? rawName;
-    if (name === 'help' || name === 'version' || name === 'json' || name === 'force' || name === 'quiet' || name === 'strict') {
+    if (name === 'help' || name === 'version' || name === 'json' || name === 'force' || name === 'quiet' || name === 'strict' || name === 'components') {
       if (inline !== undefined) throw new CliError('USAGE_FLAG', `选项 --${name} 不接受值。`, undefined, '移除该选项后的值。');
       flags.add(name);
       continue;

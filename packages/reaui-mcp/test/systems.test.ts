@@ -40,3 +40,16 @@ it('initializes, sets and removes an unused system without publishing', async ()
   const read = await call('reaui_get_system', { path: 'empty' });
   expect(JSON.parse(read.content[0].text).system).toBeNull();
 }, 30_000);
+
+it('initializes catalogs and runs a separate editability audit through the real CLI', async () => {
+  const init=await call('reaui_init',{path:'editable',name:'可编辑工作台',components:true});
+  expect(init.isError,init.content[0].text).not.toBe(true);
+  expect(JSON.parse(await readFile(path.join(root,'editable/rea.json'),'utf8')).version).toBe(3);
+  const original=await readFile(path.join(root,'editable/components/main.components.tsx'),'utf8');
+  expect((await call('reaui_init_components',{path:'editable'})).isError).not.toBe(true);
+  expect(await readFile(path.join(root,'editable/components/main.components.tsx'),'utf8')).toBe(original);
+  const audit=await call('reaui_audit',{path:'editable'});
+  expect(JSON.parse(audit.content[0].text)).toMatchObject({ok:true,kind:'editability',heuristic:true});
+  expect((await call('reaui_audit',{path:'editable',strict:true})).isError).toBe(true);
+  expect((await call('reaui_audit',{path:'../outside'})).isError).toBe(true);
+},30_000);

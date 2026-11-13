@@ -1,19 +1,22 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { createManifest } from '@rea/document';
+import { COMPONENT_FILE, createManifest } from '@rea/document';
 import { parseSystem, serializeSystem, SYSTEM_FILE } from '@rea/design-system';
-import { readFile } from 'node:fs/promises';
 import { value, values } from '../args';
 import type { Args } from '../args';
 import { CliError } from '../errors';
+import { openSession } from '../document';
+import { EMPTY_COMPONENTS } from './components';
+
+const attr = (text: string) => text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/{/g, '&#123;').replace(/}/g, '&#125;');
 
 function pageSource(id: string, name: string, width: number, height: number): string {
   return `import { Page, Frame, Text } from '@rea/design';
 
 export default (
-  <Page id="${id}" designId="page-root" name="${name}">
+  <Page id="${id}" designId="page-root" name="${attr(name)}">
     <Frame designId="${id}-frame" name="画板" className="absolute left-0 top-0 w-[${width}px] h-[${height}px] bg-white">
-      <Text designId="page-title" name="标题" className="absolute left-[64px] top-[64px] w-[600px] h-[40px] text-[28px] text-[#30343b]">${name}</Text>
+      <Text designId="page-title" name="标题" className="absolute left-[64px] top-[64px] w-[600px] h-[40px] text-[28px] text-[#30343b]">${attr(name)}</Text>
     </Frame>
   </Page>
 );
@@ -48,17 +51,29 @@ export async function runInit(args: Args): Promise<number> {
   const manifest = createManifest(`doc_${crypto.randomUUID()}`, name.trim(), pages);
   const systemPath = value(args, 'system');
   const system = systemPath ? parseSystem(await readFile(path.resolve(systemPath), 'utf8')) : null;
-  if (system) manifest.version = 4;
-  await mkdir(target, { recursive: true });
-  await mkdir(path.join(target, 'pages'), { recursive: true });
-  await writeFile(path.join(target, 'rea.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  if (system) {
-    await mkdir(path.join(target, 'design'), { recursive: true });
-    await writeFile(path.join(target, SYSTEM_FILE), serializeSystem(system), 'utf8');
-  }
+  manifest.version = system ? 4 : args.flags.has('components') ? 3 : 2;
+  const files: Record<string, string> = { 'rea.json': JSON.stringify(manifest, null, 2) + '\n' };
+  if (system) files[SYSTEM_FILE] = serializeSystem(system);
+  if (args.flags.has('components')) files[COMPONENT_FILE] = EMPTY_COMPONENTS;
   for (const [index, id] of pageIds.entries()) {
     const pageName = (names[index] ?? (index === 0 ? name.trim() : `页面 ${index + 1}`)).trim() || `页面 ${index + 1}`;
-    await writeFile(path.join(target, `pages/${id}.page.tsx`), pageSource(id, pageName, width, height), 'utf8');
+    files[`pages/${id}.page.tsx`] = pageSource(id, pageName, width, height);
+  }
+  openSession(files);
+  const written: string[] = [];
+  try {
+    for (const [file, source] of Object.entries(files).sort(([a], [b]) => Number(a === 'rea.json') - Number(b === 'rea.json'))) {
+      const absolute = path.join(target, file);
+      await mkdir(path.dirname(absolute), { recursive: true });
+      const handle = await open(absolute, 'wx');
+      // Record ownership before writing so a partial write is also rolled back.
+      written.push(absolute);
+      try { await handle.writeFile(source, 'utf8'); }
+      finally { await handle.close(); }
+    }
+  } catch (error) {
+    await Promise.all(written.map(file => rm(file, { force: true })));
+    throw error;
   }
   console.log(`已创建文档：${path.relative(process.cwd(), target) || '.'}`);
   console.log(`  rea.json`);

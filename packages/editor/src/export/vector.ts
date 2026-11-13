@@ -38,6 +38,7 @@ export interface ExportNode {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  fillRule?: 'nonzero' | 'evenodd';
   text?: { lines: { text: string; x: number; y: number }[] };
   image?: string;
   path?: { d: string; viewBox: number[] };
@@ -108,7 +109,7 @@ export function serializeSvg(root: ExportNode, options: SvgDocumentOptions): str
       const sx = node.width / (vw || 1), sy = node.height / (vh || 1);
       const fill = parseCssColor(node.fill);
       const strokeWidth = node.strokeWidth ?? 0;
-      return `<g${transformOf(node)}><path d="${escapeXml(node.path.d)}" transform="translate(${round(node.x)} ${round(node.y)}) scale(${round(sx)} ${round(sy)}) translate(${round(-vx)} ${round(-vy)})"${paint(fill, 'fill', 'fill-opacity')}${paint(parseCssColor(node.stroke), 'stroke', 'stroke-opacity')}${strokeWidth ? ` stroke-width="${round(strokeWidth)}" vector-effect="non-scaling-stroke"` : ''}/></g>`;
+      return `<g${transformOf(node)}><path d="${escapeXml(node.path.d)}" fill-rule="${node.fillRule === 'evenodd' ? 'evenodd' : 'nonzero'}" transform="translate(${round(node.x)} ${round(node.y)}) scale(${round(sx)} ${round(sy)}) translate(${round(-vx)} ${round(-vy)})"${paint(fill, 'fill', 'fill-opacity')}${paint(parseCssColor(node.stroke), 'stroke', 'stroke-opacity')}${strokeWidth ? ` stroke-width="${round(strokeWidth)}" vector-effect="non-scaling-stroke"` : ''}/></g>`;
     }
     if (node.kind === 'Rect' || node.kind === 'Ellipse') {
       const fill = parseCssColor(node.style.backgroundColor);
@@ -252,6 +253,7 @@ export async function collectExportTree(target: Element, options: CollectOptions
       const viewBox = (element.getAttribute('viewBox') ?? '0 0 100 100').split(/[\s,]+/).map(Number);
       if (path?.getAttribute('d')) node.path = { d: path.getAttribute('d')!, viewBox: viewBox.length === 4 ? viewBox : [0, 0, 100, 100] };
       node.fill = computed.fill;
+      node.fillRule = computed.fillRule === 'evenodd' ? 'evenodd' : 'nonzero';
       if (computed.stroke && computed.stroke !== 'none') {
         node.stroke = computed.stroke;
         node.strokeWidth = parseFloat(computed.strokeWidth) || 0;

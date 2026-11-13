@@ -1,4 +1,4 @@
-import { importSvg, offsetPath, pathBounds } from '@rea/design';
+import { expandPath, importSvg, offsetPath, pathBounds } from '@rea/design';
 import type { SvgIssue, SvgPaint, SvgShape, SvgStyle, SvgTextShape } from '@rea/design';
 import { sourceElement } from '@rea/document';
 import { patchClassNames } from '@rea/tailwind';
@@ -37,6 +37,7 @@ function styleTokens(style: SvgStyle, scale: number, strokeIsBorder: boolean): s
     }
   } else {
     tokens.push(paintToken('fill', style.fill));
+    tokens.push(`[fill-rule:${style.fillRule}]`);
     if (style.stroke && style.strokeWidth > 0) {
       tokens.push(paintToken('stroke', style.stroke), `[stroke-width:${round(style.strokeWidth * scale)}px]`);
     }
@@ -143,10 +144,13 @@ export function svgLayerFragment({ id, name, source, frame }: { id: string; name
       const bounds = pathBounds(shape.d);
       if (!bounds) return '';
       const tokens = styleTokens(shape.style, scale, false);
+      const d = offsetPath(shape.d, -bounds.x, -bounds.y);
+      let geometry: { path: ReturnType<typeof expandPath> } | { d: string };
+      try { geometry = { path: expandPath(d) }; } catch { geometry = { d }; }
       return sourceElement('Vector', {
         designId,
         name: `路径 ${index + 1}`,
-        d: offsetPath(shape.d, -bounds.x, -bounds.y),
+        ...geometry,
         viewBox: `0 0 ${round(bounds.width)} ${round(bounds.height)}`,
         className: [boxClasses((bounds.x - svg.viewBox.x) * scaleX, (bounds.y - svg.viewBox.y) * scaleY, bounds.width * scaleX, bounds.height * scaleY), ...tokens].filter(Boolean).join(' '),
       });

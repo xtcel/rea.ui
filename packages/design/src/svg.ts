@@ -1,3 +1,6 @@
+import { normalizePathData } from './svgPath';
+import type { Command } from './svgPath';
+export { normalizePathData, arcToCubics } from './svgPath';
 import { expandPath } from './vector';
 import type { PathData } from './primitives';
 
@@ -210,101 +213,6 @@ export function parseColor(value: string | undefined, currentColor = '#000000'):
     };
   }
   return undefined;
-}
-
-type Command = { cmd: 'M' | 'L' | 'C' | 'Z'; points: number[] };
-const TOKENS = /[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?/g;
-
-/** 圆弧转三次贝塞尔（每段不超过 90°），这样任何仿射变换都能安全烘焙。 */
-export function arcToCubics(x1: number, y1: number, rx: number, ry: number, rotation: number, largeArc: boolean, sweep: boolean, x2: number, y2: number): number[][] {
-  if (x1 === x2 && y1 === y2) return [];
-  rx = Math.abs(rx); ry = Math.abs(ry);
-  if (!rx || !ry) return [[x1, y1, x2, y2, x2, y2]];
-  const phi = rotation * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
-  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
-  const x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
-  const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
-  if (lambda > 1) { const scale = Math.sqrt(lambda); rx *= scale; ry *= scale; }
-  const numerator = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
-  const denominator = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
-  const coefficient = (largeArc === sweep ? -1 : 1) * Math.sqrt(Math.max(0, numerator / denominator || 0));
-  const cxp = coefficient * rx * y1p / ry, cyp = -coefficient * ry * x1p / rx;
-  const cx = cos * cxp - sin * cyp + (x1 + x2) / 2, cy = sin * cxp + cos * cyp + (y1 + y2) / 2;
-  const angle = (ux: number, uy: number, vx: number, vy: number) => {
-    const dot = ux * vx + uy * vy, length = Math.hypot(ux, uy) * Math.hypot(vx, vy);
-    const value = Math.acos(Math.max(-1, Math.min(1, dot / (length || 1))));
-    return ux * vy - uy * vx < 0 ? -value : value;
-  };
-  const ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry, vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry;
-  const start = angle(1, 0, ux, uy);
-  let delta = angle(ux, uy, vx, vy);
-  if (!sweep && delta > 0) delta -= Math.PI * 2;
-  else if (sweep && delta < 0) delta += Math.PI * 2;
-  const steps = Math.max(1, Math.ceil(Math.abs(delta) / (Math.PI / 2)));
-  const step = delta / steps, weight = 4 / 3 * Math.tan(step / 4);
-  const point = (theta: number): [number, number] => [cx + rx * Math.cos(theta) * cos - ry * Math.sin(theta) * sin, cy + rx * Math.cos(theta) * sin + ry * Math.sin(theta) * cos];
-  const derivative = (theta: number): [number, number] => [-rx * Math.sin(theta) * cos - ry * Math.cos(theta) * sin, -rx * Math.sin(theta) * sin + ry * Math.cos(theta) * cos];
-  const curves: number[][] = [];
-  for (let index = 0; index < steps; index++) {
-    const from = start + step * index, to = from + step;
-    const [px, py] = point(from), [qx, qy] = point(to);
-    const [d1x, d1y] = derivative(from), [d2x, d2y] = derivative(to);
-    curves.push([px + weight * d1x, py + weight * d1y, qx - weight * d2x, qy - weight * d2y, qx, qy]);
-  }
-  return curves;
-}
-
-/** 归一化为绝对坐标的 M/L/C/Z 序列：H/V 转 L，S/T 补齐控制点，Q 升三次，A 转贝塞尔。 */
-export function normalizePathData(d: string): Command[] {
-  const tokens = d.match(TOKENS) ?? [];
-  if (d.replace(TOKENS, '').replace(/[\s,]/g, '')) throw new Error('SVG 路径语法无效。');
-  const commands: Command[] = [];
-  let index = 0, letter = '', x = 0, y = 0, startX = 0, startY = 0;
-  let previous = '', cubicControl: [number, number] | undefined, quadraticControl: [number, number] | undefined;
-  const read = () => { const value = Number(tokens[index++]); if (!Number.isFinite(value)) throw new Error('SVG 路径坐标无效。'); return value; };
-  while (index < tokens.length) {
-    if (/^[a-zA-Z]$/.test(tokens[index])) letter = tokens[index++];
-    if (!letter) throw new Error('SVG 路径缺少命令。');
-    const upper = letter.toUpperCase(), relative = letter !== upper;
-    if (upper === 'Z') { commands.push({ cmd: 'Z', points: [] }); x = startX; y = startY; letter = ''; previous = 'Z'; continue; }
-    if (!'MLHVCSQTA'.includes(upper)) throw new Error('SVG 路径包含不支持的命令。');
-    if (upper === 'M') {
-      x = read() + (relative ? x : 0); y = read() + (relative ? y : 0);
-      commands.push({ cmd: 'M', points: [x, y] });
-      startX = x; startY = y; letter = relative ? 'l' : 'L';
-    } else if (upper === 'L') {
-      x = read() + (relative ? x : 0); y = read() + (relative ? y : 0);
-      commands.push({ cmd: 'L', points: [x, y] });
-    } else if (upper === 'H') { x = read() + (relative ? x : 0); commands.push({ cmd: 'L', points: [x, y] }); }
-    else if (upper === 'V') { y = read() + (relative ? y : 0); commands.push({ cmd: 'L', points: [x, y] }); }
-    else if (upper === 'C' || upper === 'S') {
-      let c1x: number, c1y: number;
-      if (upper === 'C') { c1x = read() + (relative ? x : 0); c1y = read() + (relative ? y : 0); }
-      else if (previous === 'C' || previous === 'S') { c1x = 2 * x - cubicControl![0]; c1y = 2 * y - cubicControl![1]; }
-      else { c1x = x; c1y = y; }
-      const c2x = read() + (relative ? x : 0), c2y = read() + (relative ? y : 0);
-      const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
-      commands.push({ cmd: 'C', points: [c1x, c1y, c2x, c2y, ex, ey] });
-      cubicControl = [c2x, c2y]; x = ex; y = ey;
-    } else if (upper === 'Q' || upper === 'T') {
-      let qx: number, qy: number;
-      if (upper === 'Q') { qx = read() + (relative ? x : 0); qy = read() + (relative ? y : 0); }
-      else if (previous === 'Q' || previous === 'T') { qx = 2 * x - quadraticControl![0]; qy = 2 * y - quadraticControl![1]; }
-      else { qx = x; qy = y; }
-      const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
-      const c1x = x + 2 / 3 * (qx - x), c1y = y + 2 / 3 * (qy - y), c2x = ex + 2 / 3 * (qx - ex), c2y = ey + 2 / 3 * (qy - ey);
-      commands.push({ cmd: 'C', points: [c1x, c1y, c2x, c2y, ex, ey] });
-      quadraticControl = [qx, qy]; cubicControl = [c2x, c2y]; x = ex; y = ey;
-    } else {
-      const rx = read(), ry = read(), rotation = read();
-      const largeArc = read() !== 0, sweep = read() !== 0;
-      const ex = read() + (relative ? x : 0), ey = read() + (relative ? y : 0);
-      for (const curve of arcToCubics(x, y, rx, ry, rotation, largeArc, sweep, ex, ey)) commands.push({ cmd: 'C', points: curve });
-      x = ex; y = ey; cubicControl = undefined;
-    }
-    previous = upper;
-  }
-  return commands;
 }
 
 const transformCommands = (commands: readonly Command[], matrix: Matrix): Command[] => commands.map(command => {
@@ -710,13 +618,10 @@ function pushPath(shapes: SvgShape[], commands: Command[], style: SvgStyle, repo
   if (!contours.length) return;
   const d = serializePath(commands);
   if (!d) return;
-  // 单轮廓交给结构化路径（可用钢笔逐点编辑）；多轮廓保留原始 d，靠 fill-rule 表达镂空。
+  // 所有轮廓保持在同一个 Vector 内，填充规则由整体样式保留。
   let path: PathData | undefined;
-  if (contours.length === 1) {
-    try { path = expandPath(serializePath(contours[0].commands)); } catch { path = undefined; }
-  } else if (style.fillRule === 'evenodd') {
-    report('多轮廓镂空（按独立路径导入）');
-  }
+  try { path = expandPath(d); }
+  catch { report('路径无法转换为锚点（保留 SVG 路径）'); }
   shapes.push({ kind: 'path', d, path, style });
 }
 

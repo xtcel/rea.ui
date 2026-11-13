@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
-import { pathData } from '@rea/design';
+import { pathContours, pathData } from '@rea/design';
 import type { Anchor, IndexedNode, PathData } from '@rea/design';
 import { fitPencil } from '@rea/geometry';
-import { splitPath, vectorPath } from '../session/vector';
+import { replacePathContour, splitPath, vectorPath } from '../session/vector';
 import type { Camera, Point } from '../session/camera';
 import { Button } from '../ui';
 
@@ -16,19 +16,27 @@ export function VectorTools({ tool:activeTool, node, camera, pan, world, local, 
 }) {
   const [continuing,setContinuing]=useState(false),tool=continuing?'pen':activeTool;
   const [draft,setDraft] = useState<PathData | null>(null),[selected,setSelected]=useState(0),[hover,setHover]=useState<Point|null>(null);
+  const [contourIndex, setContourIndex] = useState(0);
   const drawing=useRef<{parent:string;points:Point[];pointer?:number;anchor?:number}|null>(null);
   const drag=useRef<{index:number;part:'anchor'|'in'|'out';base:PathData;pointer:number}|null>(null);
-  const latest=useRef({draft,node,onCreate,onChange,onEnd});latest.current={draft,node,onCreate,onChange,onEnd};
-  const nodePath=node?vectorPath(node):null, path=draft??nodePath;
+  const fullPath=node?vectorPath(node):null;
+  const contours=fullPath?pathContours(fullPath):[];
+  const currentIndex=Math.min(contourIndex,Math.max(0,contours.length-1));
+  const contour=contours[currentIndex];
+  const nodePath=contour?{anchors:contour.anchors,closed:contour.closed}:null, path=draft??nodePath;
+  const completePath=(next:PathData)=>fullPath?replacePathContour(fullPath,currentIndex,next):next;
+  const change=(next:PathData)=>onChange(completePath(next));
+  const latest=useRef({draft,node,onCreate,onChange:change,onEnd});latest.current={draft,node,onCreate,onChange:change,onEnd};
   const active=tool==='pen'||tool==='pencil'||!!node;
-  useEffect(()=>{setDraft(null);setContinuing(false);drawing.current=null;drag.current=null;setSelected(0);},[node?.id,activeTool]);
-  useEffect(()=>{onPreview(node?draft:null);},[draft,node?.id,onPreview]);
+  useEffect(()=>{setDraft(null);setContinuing(false);drawing.current=null;drag.current=null;setSelected(0);setContourIndex(0);},[node?.id,activeTool]);
+  useEffect(()=>{onPreview(node&&draft?completePath(draft):null);},[draft,node?.id,currentIndex,onPreview]);
   function finish(closed=false) {
     const d=latest.current.draft;
     if(d&&d.anchors.length>1){if(latest.current.node)latest.current.onChange({...d,closed});else if(drawing.current)latest.current.onCreate({...d,closed},drawing.current.parent);}
     setDraft(null);drawing.current=null;setHover(null);
   }
-  function commit(next:PathData){setDraft(null);onChange(next);}
+  function commit(next:PathData){setDraft(null);change(next);}
+  function chooseContour(index:number){setDraft(null);setContinuing(false);drawing.current=null;drag.current=null;setSelected(0);setContourIndex(index);}
   useEffect(()=>{
     if(!active)return;
     function key(e:KeyboardEvent){
@@ -120,6 +128,7 @@ export function VectorTools({ tool:activeTool, node, camera, pan, world, local, 
   function mode(value:Anchor['mode']){if(!path||!node)return;const next=structuredClone(path),a=next.anchors[selected];if(!a)return;a.mode=value;if(value==='corner'){delete a.in;delete a.out;}else{if(!a.in||Math.hypot(...a.in)<.001)a.in=[-20,0];a.out=[-a.in[0],-a.in[1]];}commit(next);}
   return <div className="rea-vector-tools" tabIndex={-1} aria-label={tool==='pencil'?'铅笔绘制':tool==='pen'?'钢笔绘制':'路径编辑'} onPointerDown={down} onPointerMove={move} onPointerUp={e=>up(e)} onPointerCancel={e=>up(e,true)} onDoubleClick={e=>{e.stopPropagation();if(draft){finish();onEnd();}}}>
     <svg width="100%" height="100%" className="rea-vector-overlay" aria-hidden="true">
+      {contours.map((contour,index)=>index!==currentIndex&&<path key={index} d={pathData({closed:contour.closed,anchors:contour.anchors.map(screenAnchor)})} fill="none" stroke="var(--rea-accent)" strokeWidth={3} opacity={.5} pointerEvents="stroke" onPointerDown={e=>{e.preventDefault();e.stopPropagation();chooseContour(index);}}/>)}
       {shown&&<path d={pathData(shown)} fill="none" stroke="var(--rea-accent)" strokeWidth={1.5}/>}
       {draft&&tool==='pen'&&hover&&shown?.anchors.length&&<path d={`M ${shown.anchors.at(-1)!.x} ${shown.anchors.at(-1)!.y} L ${screen(hover).x} ${screen(hover).y}`} stroke="var(--rea-accent)" strokeWidth="1" strokeDasharray="3 3"/>}
       {tool!=='pencil'&&shown?.anchors.map((a,i)=><g key={a.id}>
@@ -128,6 +137,7 @@ export function VectorTools({ tool:activeTool, node, camera, pan, world, local, 
       </g>)}
     </svg>
     {node&&<div className="rea-vector-actions" onPointerDown={e=>e.stopPropagation()}>
+      {contours.length>1&&<select aria-label="选择路径轮廓" value={currentIndex} onChange={e=>chooseContour(Number(e.target.value))}>{contours.map((_,index)=><option key={index} value={index}>轮廓 {index+1}</option>)}</select>}
       {path&&!path.closed&&!continuing&&<Button onClick={()=>{setDraft(structuredClone(path));setContinuing(true);}}>继续绘制</Button>}
       <Button onClick={()=>mode('corner')}>尖角</Button><Button onClick={()=>mode('smooth')}>平滑</Button><Button onClick={()=>mode('mirror')}>对称</Button>
       <Button disabled={!path||(!path.closed&&selected===path.anchors.length-1)} onClick={()=>path&&commit(splitPath(path,selected))}>插入锚点</Button>

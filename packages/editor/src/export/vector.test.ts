@@ -79,3 +79,13 @@ describe('SVG 序列化', () => {
     expect(svg).toContain('clip-path="url(#clip-0)"');
   });
 });
+
+it('exports compound paths with their fill rule, preserving holes on reimport', async () => {
+  const { importSvg,expandPath,pathData }=await import('@rea/design');
+  const d=pathData(expandPath('M0 0 H24 V24 H0 Z M6 6 H18 V18 H6 Z'));
+  const svg=serializeSvg(node({kind:'Vector',width:24,height:24,fill:'#ff0000',fillRule:'evenodd',path:{d,viewBox:[0,0,24,24]}}),{width:24,height:24});
+  expect(svg).toContain('fill-rule="evenodd"');
+  const shape=importSvg(svg).shapes[0];
+  expect(shape.kind==='path'&&shape.style.fillRule).toBe('evenodd');
+  expect(shape.kind==='path'&&shape.path?.contours).toHaveLength(1);
+});

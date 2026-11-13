@@ -27,11 +27,11 @@ describe('路径归一化', () => {
   });
   it('圆弧转贝塞尔后仍落在同一圆弧上', () => {
     const curves = arcToCubics(0, 0, 10, 10, 0, false, true, 10, 10);
-    expect(curves).toHaveLength(1);
-    expect(curves[0].slice(4)).toEqual([10, 10]);
+    expect(curves.length).toBeGreaterThan(1);
+    expect(curves.at(-1)!.slice(4)).toEqual([10, 10]);
     // 整圆由两段半圆拼成时，中点应回到起点对侧。
     const half = arcToCubics(10, 0, 10, 10, 0, false, true, -10, 0);
-    expect(half).toHaveLength(2);
+    expect(half.length).toBeGreaterThan(2);
     expect(half.at(-1)![4]).toBeCloseTo(-10);
     expect(half.at(-1)![5]).toBeCloseTo(0);
     expect(serializePath(normalizePathData('M0 0 A10 10 0 0 1 20 0'))).not.toContain('A');
@@ -86,12 +86,12 @@ describe('SVG 导入', () => {
     expect(shape.kind === 'path' && shape.style.opacity).toBeCloseTo(0.5);
   });
 
-  it('单轮廓转结构化路径，多轮廓保留原始 d', () => {
+  it('单轮廓与多轮廓均可转换为结构化路径', () => {
     const single = importSvg(svg('<path d="M0 0 L10 0 L10 10 Z" fill="#000"/>'));
     expect(single.shapes[0].kind === 'path' && single.shapes[0].path).toBeTruthy();
     const multi = importSvg(svg('<path d="M0 0 L10 0 L10 10 Z M2 2 L4 2 L4 4 Z" fill="#000"/>'));
     const shape = multi.shapes[0];
-    expect(shape.kind === 'path' && shape.path).toBeUndefined();
+    expect(shape.kind === 'path' && shape.path?.contours).toHaveLength(1);
     expect(shape.kind === 'path' && shape.d.split('M')).toHaveLength(3);
   });
 

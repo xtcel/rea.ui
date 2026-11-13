@@ -9,7 +9,7 @@
 ```text
 rea.json                         清单（必填）
 pages/<pageId>.page.tsx          每页一个静态 TSX（必填，至少 1 页）
-components/main.components.tsx   可选；v3 组件目录（full profile）
+components/main.components.tsx   可选；v3/v4 组件目录
 design/system.json               可选；v4 固定设计系统快照
 assets/…                         可选资源（full profile 的 Image 引用）
 agent/sessions.json              可选元数据（AI 会话）
@@ -73,7 +73,7 @@ export default (
 
 ## 5. 原语
 
-core profile（默认按这个产出）：
+基础原语：
 
 | 原语 | 用途 | 关键约束 |
 |---|---|---|
@@ -89,9 +89,7 @@ core profile（默认按这个产出）：
 | `Star` | 星形 | `count`、`innerRatio` |
 
 禁用：`div`/`span`/`p`/`img`/`svg` 等 HTML 标签、项目组件、外部库。
-full profile 额外允许 `Image`（`src` 必须是 `assets/…`）、组件目录
-（`Components`/`Component`/`Instance`/`Slot`/`SlotContent`）。外部 Agent 默认按
-core profile 产出；要用图片/组件必须在交付说明里声明并确保校验通过。
+默认评估复用组件：组件目录使用 `Components`/`Component`/`Slot`，页面用 `Instance`/`SlotContent`。`Image` 的 `src` 必须是 `assets/…`。无需用户额外要求组件。
 
 ## 6. 属性与静态约束
 
@@ -119,8 +117,7 @@ core profile 产出；要用图片/组件必须在交付说明里声明并确保
 
 ## 8. 硬限制
 
-- 每页 ≤ 80 图层、每文档 ≤ 12 页：这是编辑器 AI 生成预算，不是校验器的拒绝条件
-  （校验器不会因为 13 页或 81 图层直接失败），但交付时不应超过。
+- 每文档 ≤ 12 页；80 图层是软预算，复杂还原优先保留语义层级和完整内容。
 - 不引用外部字体、图片、图标库；图标用 `Vector` 路径或几何原语绘制。
 - `Image` 只能引用 `assets/…` 安全相对路径（full profile）。
 - `.reaui` ZIP 容器限制：≤ 5000 条目、解压总量 ≤ 256 MiB、压缩比 ≤ 200、
@@ -158,3 +155,32 @@ core profile 产出；要用图片/组件必须在交付说明里声明并确保
 注意：`validate --json` 的静态文档错误返回 `errors[]`（`{code,path,message,hint}`），
 设计系统一致性才返回带 `severity` 的 `issues[]`；两者都可能是 `ok:false` 的原因。
 完整修法见 `error-fixes.md`；命令与退出码见 `cli.md`。
+
+## 可编辑性要求（格式校验之外）
+
+- 先画布局树：侧边栏 / 顶部栏 / 内容区 / 面板 / 记录行。每区用有业务名称的 Frame/Group，子层使用局部坐标，容器边界贴合内容。例如父 `absolute left-[240px] top-[80px] w-[960px] h-[720px]`，子 `absolute left-[24px] top-[24px]`。
+- 优先使用已有组件。同结构重复两次及以上时评估提取 Component/Instance；文字、数字用参数，状态用变体，图标差异可用实例参数，额外内容用插槽。一次性布局不强行组件化。不需要用户每次强调复用。
+- 一个业务图标对应独立容器、语义名称（如“搜索图标”）和局部 viewBox（如 `0 0 24 24`）。图标内多个轮廓可属于同一 Vector；禁止按颜色跨图标合并路径，禁止跨业务记录合并多行 Text。Rect/Frame/Line 能表达的内容优先用原语。
+- 优先结构化 `path`：`anchors/closed` 为首轮廓，`contours` 为后续轮廓数组，每项也有 `anchors/closed`，锚点 id 全路径唯一。新编辑器支持 A/a 转贝塞尔（转换误差界默认 0.01 SVG 用户单位）和多轮廓锚点编辑。孔洞保留整体 `[fill-rule:evenodd]`，或保留 nonzero 的轮廓方向，不拆成填实形状。
+- 80 图层仅为软预算。复杂还原优先保留语义层级、独立编辑与完整内容，不通过合并业务对象来压缩节点。使用已有字体，不下载字体。
+- `validate` 只证明格式/契约有效。交付前另运行 `reaui audit <dir> --json` 与最终 `.reaui` 审计；按 path/node/hint 修复，人工判断疑似重复和合并提示，披露保留的建议。不得将零格式错误称为视觉验收或可编辑性证明。
+- 新的复合 `path.contours` 需要包含本次改动的编辑器。旧编辑器兼容输出可保留独立 Vector 的原始 d，但必须说明无法在旧编辑器逐点编辑；不得承诺全面可编辑。
+
+### 组件工作流
+
+先使用 `reaui init <dir> --components`；已有文档用 `reaui components init <dir>`。CLI 自动创建合法空目录并按需升级 v3，已有 v4 保留，不手改清单。然后写 `components/main.components.tsx`：
+
+```tsx
+import { Components, Component, Frame, Text } from '@rea/design';
+export default <Components>
+  <Component id="record-row" designId="record-definition" name="实验记录行" parameters={{label:{type:'string',default:'实验名称'}}}>
+    <Frame designId="record-content" name="记录内容" className="relative w-[320px] h-[48px]">
+      <Text designId="record-label" name="实验名称" binding="label" className="absolute left-[16px] top-[12px] w-[280px] h-[24px] text-[14px]" />
+    </Frame>
+  </Component>
+</Components>;
+```
+
+页面 import `Instance`，写静态 `<Instance designId="record-one" name="实验一" component="record-row" values={{label:'稳定性实验'}} className="absolute left-[24px] top-[24px]" />`。每个实例独立 designId；不运行函数、不直接导入业务 React 组件、不伪造 library 来源。
+
+CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这些能力随本次仓库/插件构建提供，尚未发布 npm；旧版 npx 回退没有这些命令时使用更新的仓库/插件构建，不能手改 version 绕过。
