@@ -19909,7 +19909,7 @@ function registerTools(server, context) {
 	});
 }
 // src/version.ts
-var VERSION = "0.1.1";
+var VERSION = "0.2.0";
 var SERVER_NAME = "reaui";
 /** 客户端连接时收到的使用说明，决定 agent 第一轮怎么调用。 */
 var INSTRUCTIONS = `REA UI turns a request into an editable .reaui design document.

@@ -1,4 +1,4 @@
-# 本地 MCP 使用指南（插件内置 reaui-mcp 0.1.1）
+# 本地 MCP 使用指南（插件内置 reaui-mcp 0.2.0）
 
 插件内置 `@xtcel/reaui-mcp`（`server/reaui-mcp`），通过 stdio 暴露 8 个工具和
 1 个 `reaui://protocol` 资源。它是 CLI 的封装：校验结果与 CLI/编辑器一致。

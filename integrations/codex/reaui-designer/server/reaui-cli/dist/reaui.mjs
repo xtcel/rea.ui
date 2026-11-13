@@ -51122,7 +51122,7 @@ async function runAudit(args) {
 	}
 }
 // src/cli.ts
-var VERSION = "0.1.3";
+var VERSION = "0.2.0";
 var HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
 用法：reaui <command> [options]

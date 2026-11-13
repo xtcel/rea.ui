@@ -46,7 +46,7 @@ if (!cli) {
   console.error('[reaui-designer] 找不到内置 reaui CLI。');
   console.error('  期望路径：' + path.join(pluginRoot, 'server', 'reaui-cli', 'bin', 'reaui.mjs'));
   console.error('  修复：重新安装插件；或设置 REAUI_CLI 指向已安装的 @xtcel/reaui-cli；');
-  console.error('        也可以在允许联网的环境运行 npx -y @xtcel/reaui-cli@0.1.3 <command>。');
+  console.error('        也可以在允许联网的环境运行 npx -y @xtcel/reaui-cli@0.2.0 <command>。');
   process.exit(2);
 }
 

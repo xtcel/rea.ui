@@ -183,4 +183,4 @@ export default <Components>
 
 页面 import `Instance`，写静态 `<Instance designId="record-one" name="实验一" component="record-row" values={{label:'稳定性实验'}} className="absolute left-[24px] top-[24px]" />`。每个实例独立 designId；不运行函数、不直接导入业务 React 组件、不伪造 library 来源。
 
-CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这些能力随本次仓库/插件构建提供，尚未发布 npm；旧版 npx 回退没有这些命令时使用更新的仓库/插件构建，不能手改 version 绕过。
+CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这两项能力自 0.2.0 起随 npm 发布与插件内置运行时提供；0.1.x 没有这些命令，遇到时换用 0.2.0 及以上的运行时，不能手改 version 绕过。

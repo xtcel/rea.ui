@@ -1,4 +1,4 @@
-# reaui CLI 使用指南（插件内置 0.1.3）
+# reaui CLI 使用指南（插件内置 0.2.0）
 
 本插件内置一份**可离线运行**的 `@xtcel/reaui-cli`（`server/reaui-cli`），并为它提供了稳定入口：
 `skills/reaui-design/scripts/reaui.mjs`。所有写文件、校验、打包操作都必须走它，
@@ -11,15 +11,15 @@ SKILL_DIR="/绝对路径/reaui-designer/skills/reaui-design"
 reaui() { node "$SKILL_DIR/scripts/reaui.mjs" "$@"; }
 
 reaui --where     # 输出 pluginRoot / cli / cliVersion / mcpServer / mcpWorkspace
-reaui --version   # 0.1.3
+reaui --version   # 0.2.0
 node --version     # 需要 >= 22.18
 ```
 
 - `--where` 失败：说明插件安装不完整，先让用户重新安装插件。
 - 如需覆盖入口：设置环境变量 `REAUI_CLI=/path/to/reaui.mjs`。
 - 没有内置运行时的环境可回退：
-  `npx -y @xtcel/reaui-cli@0.1.3 <command>`（需要 Node 与网络）。
-- 内置 CLI 由 rea.ui `main` 源码构建（2026-11-10），包含 v2/v3/v4 清单与设计系统校验。本次构建另含 audit、components；npm 同版本尚未发布这些改动，能力以 help 为准。
+  `npx -y @xtcel/reaui-cli@0.2.0 <command>`（需要 Node 与网络）。
+- 内置 CLI 就是公开发布的 `@xtcel/reaui-cli@0.2.0`（2026-11-13 构建），包含 v2/v3/v4 清单与设计系统校验，以及 audit、components；npm 与插件内置产物一致。
 
 ## 2. 命令与选项
 
@@ -168,7 +168,7 @@ Error: listen EPERM: operation not permitted 0.0.0.0:24678
 |---|---|---|
 | `DOC_EXISTS` | 目标目录已有 `rea.json` | 换目录，或备份后删除旧文档，不要覆盖 |
 | `未知选项：--system` | 运行的不是本插件内置 CLI（旧版/旧构建） | 用 `reaui --where` 确认 `cliVersion`，必要时重装插件 |
-| `ENOENT` / 找不到 CLI | 插件安装不完整 | 重新安装插件；或 `npx -y @xtcel/reaui-cli@0.1.3` |
+| `ENOENT` / 找不到 CLI | 插件安装不完整 | 重新安装插件；或 `npx -y @xtcel/reaui-cli@0.2.0` |
 | `validate` 输出为空 | 命令被截断/用错 Node | 检查 `node --version >= 22.18`，检查退出码 |
 | 打包后编辑器打不开 | 多为 v4 文档 + 旧编辑器，或文件被手工改过 | 用 CLI 重新 `validate`；确认编辑器版本；不要手改清单 |
 | 预览 HTML 打开空白 | 预览未生成成功/路径错误 | 检查 `preview` 退出码与输出文件是否存在 |

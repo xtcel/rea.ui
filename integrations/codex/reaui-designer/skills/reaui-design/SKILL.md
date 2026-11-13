@@ -62,11 +62,11 @@ it; otherwise locate it once):
 SKILL_DIR="/absolute/path/to/reaui-designer/skills/reaui-design"
 reaui() { node "$SKILL_DIR/scripts/reaui.mjs" "$@"; }
 reaui --where       # prints pluginRoot, cli, cliVersion, mcpServer, mcpWorkspace
-reaui --version     # must print 0.1.3
+reaui --version     # must print 0.2.0 or newer
 node --version       # must be >= 22.18
 ```
 
-- If `--where` fails: retry with `npx -y @xtcel/reaui-cli@0.1.3 <command>`.
+- If `--where` fails: retry with `npx -y @xtcel/reaui-cli@0.2.0 <command>`.
   If the network is unavailable too, use the local MCP for drafting only and
   tell the user the final `.reaui` export needs the CLI.
 - If you cannot locate the skill directory, search for it rather than guessing:
@@ -277,7 +277,7 @@ visually accepted or behaves like a running app.
 
 | Symptom | Action |
 |---|---|
-| `CLI missing` / `ENOENT` | Re-run preflight; fallback `npx -y @xtcel/reaui-cli@0.1.3`; if still unavailable, explain and stop file operations |
+| `CLI missing` / `ENOENT` | Re-run preflight; fallback `npx -y @xtcel/reaui-cli@0.2.0`; if still unavailable, explain and stop file operations |
 | MCP tools unavailable | Continue with the CLI; mention the MCP server did not connect |
 | `MANIFEST_INVALID` on a user file | Do not patch JSON; `unpack`/`init` a fresh document and report the original as damaged |
 | `rea.json 清单格式不合法` when opening in REA UI | Likely a v4 document in a pre-v4 editor build (REA UI 0.1.0). Explain and offer the v2 version |
@@ -312,6 +312,6 @@ export default <Components>
 
 页面 import `Instance`，写静态 `<Instance designId="record-one" name="实验一" component="record-row" values={{label:'稳定性实验'}} className="absolute left-[24px] top-[24px]" />`。每个实例独立 designId；不运行函数、不直接导入业务 React 组件、不伪造 library 来源。
 
-CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这些能力随本次仓库/插件构建提供，尚未发布 npm；旧版 npx 回退没有这些命令时使用更新的仓库/插件构建，不能手改 version 绕过。
+CLI 预检除版本外必须检查 `reaui help` 含 `audit` 和 `components`。这两项能力自 0.2.0 起随 npm 发布与插件内置运行时提供；0.1.x 没有这些命令，遇到时换用 0.2.0 及以上的运行时，不能手改 version 绕过。
 
 工作台模板由 `templates/dashboard.page.tsx` 和 `templates/dashboard.components.tsx` 配套组成。先 init --components，再把后者写入 components/main.components.tsx；其它模板为布局骨架，生成时按业务重复情况评估抽取。
