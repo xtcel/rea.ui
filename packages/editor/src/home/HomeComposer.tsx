@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUp, Check, ChevronDown, ChevronRight, CornerDownRight, Folder, History, Link, LoaderCircle, Palette, Paperclip, Plus, Search, Sparkles, Square, SquareTerminal, Upload, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, ChevronRight, Folder, History, Link, LoaderCircle, Palette, Paperclip, Plus, Search, Sparkles, Square, SquareTerminal, Upload, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import { Dialog } from '../ui';
 import { agentRequest } from '../agent/client';
@@ -11,8 +11,6 @@ import type { AgentRef } from '../agent/sessions';
 import { isApiTargetReady } from '../settings/providers';
 import { buildSystemMenuModel } from './systemMenu';
 import type { SystemMenuModel } from './systemMenu';
-
-const refContainers = new Set(['Frame', 'Group', 'Instance', 'Slot', 'SlotContent']);
 
 interface ComposerProps {
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -25,7 +23,7 @@ interface ComposerProps {
   config: AgentConfig; onAgentSettings: () => void; project: ProjectContext | null; onProject: () => void;
   attachments: File[]; onAttach: () => void; onRemoveAttachment: (index: number) => void;
   references: DocumentSummary[]; onReferences: () => void; onRemoveReference: (id: string) => void;
-  elements?: readonly AgentRef[]; onRemoveElement?: (ref: AgentRef) => void; onToggleElement?: (ref: AgentRef) => void;
+  elements?: readonly AgentRef[]; onRemoveElement?: (ref: AgentRef) => void;
 }
 
 const unavailableActions = [
@@ -121,7 +119,7 @@ function SystemPickerMenu({ anchor, menu, onSelectSystem, onManageSystem, onBrow
 }
 
 export function HomeComposer(props: ComposerProps) {
-  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, selectedSystemHash, onSystem, lockedSystem, onManageSystem, onBrowseSystems, onClearSystem, tokenReferenceCount, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement, onToggleElement } = props;
+  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, selectedSystemHash, onSystem, lockedSystem, onManageSystem, onBrowseSystems, onClearSystem, tokenReferenceCount, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [connection, setConnection] = useState<'checking' | 'connected' | 'signed-out' | 'unavailable'>('checking');
@@ -174,7 +172,7 @@ export function HomeComposer(props: ComposerProps) {
   return <>
     <form className="home-composer" onSubmit={event => { event.preventDefault(); onSend(); }}>
       <div className="home-composer-surface">
-        {(elements.length > 0 || attachments.length > 0 || references.length > 0) && <div className="home-composer-chips" aria-label="设计参考">{elements.map(element => <span key={`${element.pageId}:${element.designId}`} className="is-element"><Sparkles size={13} /><span title={`引用元素：${element.name} · ${element.subtree ? '含子级' : '仅自身'}`}>{element.name}</span>{refContainers.has(element.kind) && <button type="button" className={`chip-scope ${element.subtree ? 'is-on' : ''}`} disabled={running || preparing} title={element.subtree ? '包含子级，点击改为仅自身' : '仅自身，点击包含子级'} aria-label={`${element.name} ${element.subtree ? '包含子级' : '仅自身'}`} onClick={() => onToggleElement?.(element)}><CornerDownRight size={11} /></button>}<button type="button" disabled={running || preparing} aria-label={`移除引用 ${element.name}`} onClick={() => onRemoveElement?.(element)}><X size={12} /></button></span>)}{attachments.map((file, index) => <span key={`${file.name}-${index}`}><Paperclip size={13} /><span title={file.name}>{file.name}</span><button type="button" disabled={running || preparing} aria-label={`移除附件 ${file.name}`} onClick={() => onRemoveAttachment(index)}><X size={12} /></button></span>)}{references.map(doc => <span key={doc.id}><Folder size={13} /><span title={`引用项目：${doc.name}`}>{doc.name}</span><button type="button" disabled={running || preparing} aria-label={`移除引用 ${doc.name}`} onClick={() => onRemoveReference(doc.id)}><X size={12} /></button></span>)}</div>}
+        {(elements.length > 0 || attachments.length > 0 || references.length > 0) && <div className="home-composer-chips" aria-label="设计参考">{elements.map(element => <span key={`${element.pageId}:${element.designId}`} className="is-element"><Sparkles size={13} /><span title={`引用元素：${element.name}`}>{element.name}</span><button type="button" disabled={running || preparing} aria-label={`移除引用 ${element.name}`} onClick={() => onRemoveElement?.(element)}><X size={12} /></button></span>)}{attachments.map((file, index) => <span key={`${file.name}-${index}`}><Paperclip size={13} /><span title={file.name}>{file.name}</span><button type="button" disabled={running || preparing} aria-label={`移除附件 ${file.name}`} onClick={() => onRemoveAttachment(index)}><X size={12} /></button></span>)}{references.map(doc => <span key={doc.id}><Folder size={13} /><span title={`引用项目：${doc.name}`}>{doc.name}</span><button type="button" disabled={running || preparing} aria-label={`移除引用 ${doc.name}`} onClick={() => onRemoveReference(doc.id)}><X size={12} /></button></span>)}</div>}
         <textarea ref={inputRef} aria-label="描述你的设计想法" disabled={running || preparing} placeholder="描述你的想法，让我们一起把它变成设计…" value={prompt} maxLength={12000} rows={3} onChange={event => onPrompt(event.currentTarget.value)} onKeyDown={event => {
           if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.shiftKey || event.altKey) return;
           if (sendKey === 'command' ? event.metaKey || event.ctrlKey : !event.metaKey && !event.ctrlKey) { event.preventDefault(); onSend(); }

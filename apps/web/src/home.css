@@ -249,8 +249,6 @@
 .home-composer-chips > span.is-element { background:var(--rea-selected); color:var(--rea-accent); }
 .home-composer-chips button { padding:2px; display:flex; border-radius:4px; }
 .home-composer-chips button:hover:not(:disabled) { background:var(--rea-hover-soft); }
-.home-composer-chips .chip-scope { display:flex; width:16px; height:16px; align-items:center; justify-content:center; padding:0; color:var(--rea-muted); }
-.home-composer-chips .chip-scope.is-on { background:var(--rea-accent); color:var(--rea-on-accent); }
 .home-conversation { max-height:380px; overflow:auto; margin-bottom:22px; padding:0 4px; }
 .home-conversation-turn + .home-conversation-turn { margin-top:25px; }
 .home-user-message { background:var(--rea-chrome); padding:14px 16px; border-radius:8px; margin-left:40px; overflow-wrap:anywhere; }

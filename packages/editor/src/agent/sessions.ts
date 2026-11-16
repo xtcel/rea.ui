@@ -1,10 +1,8 @@
 import { AGENT_SESSIONS_FILE } from '@rea/document';
 
-/** A canvas element the user attached to a turn as its edit scope. */
+/** A canvas element the user attached to a turn as its edit scope; the whole subtree is included. */
 export interface AgentRef {
   pageId: string; designId: string; kind: string; name: string;
-  /** true when the user explicitly asked to include the whole subtree. */
-  subtree: boolean;
 }
 export type AgentTurnState = 'running' | 'completed' | 'failed' | 'cancelled';
 /** Which design system version produced this turn. Drafts carry revision: null. */
@@ -45,7 +43,7 @@ function normalizeRef(value: unknown): AgentRef | null {
   if (!value || typeof value !== 'object') return null;
   const ref = value as Partial<AgentRef>;
   if (typeof ref.pageId !== 'string' || typeof ref.designId !== 'string' || typeof ref.kind !== 'string') return null;
-  return { pageId: ref.pageId, designId: ref.designId, kind: ref.kind, name: typeof ref.name === 'string' && ref.name ? ref.name : ref.designId, subtree: ref.subtree === true };
+  return { pageId: ref.pageId, designId: ref.designId, kind: ref.kind, name: typeof ref.name === 'string' && ref.name ? ref.name : ref.designId };
 }
 export function normalizeRefs(value: unknown): AgentRef[] {
   return Array.isArray(value) ? value.map(normalizeRef).filter((ref): ref is AgentRef => !!ref) : [];

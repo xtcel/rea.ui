@@ -754,3 +754,47 @@ OpenSpec：`openspec/changes/make-design-systems-project-owned/`，按四阶段�
 - 没有重跑一次超过 10 分钟的真实 Codex 生成来复现原提示：复现成本就是等满 10 分钟。已删除的分支只做静态复核，并以「仓库内不再存在 `Duration::from_secs(600)` 的总时长判定」确认。
 - 未做 CDP 界面复核：前端 `useAgentTask()` 本就只在 800ms 轮询状态、没有计时器，界面行为不变。
 - Gemini 的 `generateContent` 仍是一次性请求（未改流式），其 660 秒仍作用于读取整段响应；OpenAI 兼容与 Anthropic 已无总时长上限。
+
+# 引用一律包含子级：always-include-referenced-subtree（2026-11-16）
+
+实施日期：2026-11-16。对应 OpenSpec `always-include-referenced-subtree`。起因是用户反馈：引用画布元素时默认只带当前节点、不含子级，而且要回胶囊上找个角标才能切，完全无法理解这套设计。
+
+## 改动
+
+- `AgentRef` 去掉 `subtree` 字段；`normalizeRef()` 只读 `pageId / designId / kind / name`，旧会话里的多余字段被忽略。
+- `AgentCanvasContext` 删除 `toggleSubtree()`，`EditorApp` 删除 `toggleAgentRefSubtree()`；`toggleSelectionRefs()` 产出的引用不再带标记。
+- `classifyChanges()` 改为「节点本身或后代命中引用」即算范围内；`changesToRefs()` 去掉 `subtree: false`。
+- `elementContext()` 描述行去掉「仅自身 / 含子级」后缀；两处提示词的引用规则简化为「只修改上面列出的节点及其子级」。
+- `HomeComposer` 删除胶囊上的作用域按钮、`refContainers` 与 `onToggleElement`；`apps/web/src/home.css` 删除 `.chip-scope`。
+- 历史轮次的引用只显示名称，`DesignAgentPanel` 不再追加「（含子级）」。
+
+## 自动检查
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `npx vitest run packages/editor/src/agent` | 4 个文件通过：35 项通过 / 2 项跳过 |
+| `pnpm test`（含 `build:wasm`） | 74 个文件：70 通过 / 2 跳过；600 项：594 通过 / 2 跳过；2 个文件失败与本次无关，见下 |
+| `pnpm build` | WASM、TypeScript、Vite 生产构建通过（`index.js` 约 1.40MB，gzip 412kB） |
+| `openspec validate always-include-referenced-subtree --strict` | 通过 |
+| `git diff --check` | 通过 |
+
+两个失败文件都不在本次改动范围内：
+
+- `packages/editor/src/home/systemMenu.test.ts`：工作区里未提交的新测试，断言设计系统颜色为 `#356AF0`，实际返回 `#356af0`（大小写差异），属该功能的在途问题。
+- `packages/reaui-mcp/test/systems.test.ts`：并行跑全量时三项各 30 秒超时；单独 `npx vitest run` 该文件 3 项全部通过（13.5s / 11.8s / 11.3s），是负载下的超时而非回归。
+
+## 真机复核（CDP + headless Chrome）
+
+`#demo` 打开内置示例，在画布上点选一个 `Frame`（侧边导航），点击选区右上角的 AI 角标：
+
+- 输入框上方出现引用胶囊「侧边导航」，胶囊内只有一个按钮 `移除引用 侧边导航`，没有 `.chip-scope`。
+- 胶囊悬停提示为「引用元素：侧边导航」，不含「仅自身 / 含子级」措辞。
+- 点击移除后胶囊消失，引用被清空。
+
+截图：`/tmp/rea-refs-chip.png`（临时文件，未入库）。
+
+## 未覆盖
+
+- 未实际发起一次生成来核对提示词与「本轮修改 / 范围外改动」的分列：引用语义整体放宽，判定逻辑由 `context.test.ts` 覆盖；真实生成还要消耗一次模型额度。
+- 旧 `.reaui` 文件里历史轮次的 `subtree` 字段只在 `normalizeRefs()` 层面验证被忽略，没有拿真实旧文档做往返导入。

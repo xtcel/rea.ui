@@ -154,9 +154,6 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     });
   }
   function removeAgentRef(pageId: string, designId: string) { setAgentRefs(items => items.filter(ref => ref.pageId !== pageId || ref.designId !== designId)); }
-  function toggleAgentRefSubtree(pageId: string, designId: string) {
-    setAgentRefs(items => items.map(ref => ref.pageId === pageId && ref.designId === designId ? { ...ref, subtree: !ref.subtree } : ref));
-  }
   /** One click on the selection: attach every selected root, or detach when all are already attached. */
   function toggleSelectionRefs(ids: readonly string[]) {
     const roots = selectionRoots(page, [...ids]).filter(id => page.nodes.has(id));
@@ -165,7 +162,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     if (linked) { setAgentRefs(items => items.filter(ref => !roots.some(id => ref.pageId === page.id && ref.designId === id))); return; }
     addAgentRefs(roots.map(id => {
       const node = page.nodes.get(id)!;
-      return { pageId: page.id, designId: id, kind: node.kind, name: node.name, subtree: false };
+      return { pageId: page.id, designId: id, kind: node.kind, name: node.name };
     }));
     if (agent) setLeftTab('agent');
     if (agent && window.innerWidth < 900) setPanel('layers');
@@ -195,7 +192,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   }, []);
   const agentContext: AgentCanvasContext = {
     page, selectedIds, refs: agentRefs,
-    addRefs: addAgentRefs, removeRef: removeAgentRef, toggleSubtree: toggleAgentRefSubtree, clearRefs: () => setAgentRefs([]),
+    addRefs: addAgentRefs, removeRef: removeAgentRef, clearRefs: () => setAgentRefs([]),
     focus: focusAgentNode, markTouched: markAgentTouched,
     openSystemDialog: () => setShowSystem(true),
   };

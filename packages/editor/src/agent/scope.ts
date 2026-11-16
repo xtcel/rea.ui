@@ -57,12 +57,13 @@ export function classifyChanges(changes: readonly ScopeChange[], refs: readonly 
   if (!refs.length) return { inside: [...changes], outside: [] };
   const inside: ScopeChange[] = [], outside: ScopeChange[] = [];
   for (const change of changes) {
-    const hit = refs.some(ref => ref.pageId === change.pageId && (change.designId === ref.designId || (ref.subtree && change.ancestors.includes(ref.designId))));
+    // 引用的是整棵子树：节点本身与它的后代都在本轮范围里。
+    const hit = refs.some(ref => ref.pageId === change.pageId && (change.designId === ref.designId || change.ancestors.includes(ref.designId)));
     (hit ? inside : outside).push(change);
   }
   return { inside, outside };
 }
 
 export function changesToRefs(changes: readonly ScopeChange[]): AgentRef[] {
-  return changes.map(change => ({ pageId: change.pageId, designId: change.designId, kind: change.kind, name: change.name, subtree: false }));
+  return changes.map(change => ({ pageId: change.pageId, designId: change.designId, kind: change.kind, name: change.name }));
 }

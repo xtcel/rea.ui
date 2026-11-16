@@ -33,7 +33,7 @@ function describe(parsed: ParsedPage, ref: AgentRef, index: number): string | nu
   const children = node.children.map(id => parsed.page.nodes.get(id)).filter((child): child is NonNullable<typeof child> => !!child);
   const childList = children.slice(0, 12).map(child => `${child.name}(${child.kind}#${child.id})`).join('、');
   return [
-    `[${index}] ${node.name} · ${node.kind} · designId=${node.id} · ${ref.subtree ? '含子级' : '仅自身'}`,
+    `[${index}] ${node.name} · ${node.kind} · designId=${node.id}`,
     `  页面：${parsed.page.name}（${parsed.path}）`,
     `  父级路径：${parentPath(parsed, node.id)}`,
     `  子级 ${node.children.length}：${childList || '无'}${node.children.length > 12 ? ' …' : ''}`,

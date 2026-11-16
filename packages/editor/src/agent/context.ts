@@ -8,8 +8,6 @@ export interface AgentCanvasContext {
   refs: readonly AgentRef[];
   addRefs(refs: readonly AgentRef[]): void;
   removeRef(pageId: string, designId: string): void;
-  /** Flip between "this node only" and "this node and its children". */
-  toggleSubtree(pageId: string, designId: string): void;
   clearRefs(): void;
   focus(designId: string): void;
   /** Briefly outline nodes the Agent just changed. */
