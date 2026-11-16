@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUp, Check, ChevronDown, ChevronRight, CornerDownRight, Folder, Link, LoaderCircle, Palette, Paperclip, Plus, Search, Sparkles, Square, SquareTerminal, Upload, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, ChevronRight, CornerDownRight, Folder, History, Link, LoaderCircle, Palette, Paperclip, Plus, Search, Sparkles, Square, SquareTerminal, Upload, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import { Dialog } from '../ui';
 import { agentRequest } from '../agent/client';
@@ -9,6 +9,8 @@ import type { AgentConfig, AgentInfo, ProjectContext } from '../agent/client';
 import type { DesignSystem } from './data';
 import type { AgentRef } from '../agent/sessions';
 import { isApiTargetReady } from '../settings/providers';
+import { buildSystemMenuModel } from './systemMenu';
+import type { SystemMenuModel } from './systemMenu';
 
 const refContainers = new Set(['Frame', 'Group', 'Instance', 'Slot', 'SlotContent']);
 
@@ -16,8 +18,10 @@ interface ComposerProps {
   inputRef: RefObject<HTMLTextAreaElement | null>;
   prompt: string; onPrompt: (value: string) => void; onSend: () => void; onStop: () => void;
   sendKey: 'enter' | 'command'; running: boolean; preparing: boolean; busy: boolean;
-  systems: DesignSystem[]; selectedSystem: string; onSystem: (id: string) => void; lockedSystem?: string;
-  onManageSystem?: () => void;
+  systems: DesignSystem[]; selectedSystem: string; selectedSystemHash?: string;
+  onSystem: (id: string) => void; lockedSystem?: string;
+  onManageSystem?: () => void; onBrowseSystems?: () => void; onClearSystem?: () => void;
+  tokenReferenceCount?: number;
   config: AgentConfig; onAgentSettings: () => void; project: ProjectContext | null; onProject: () => void;
   attachments: File[]; onAttach: () => void; onRemoveAttachment: (index: number) => void;
   references: DocumentSummary[]; onReferences: () => void; onRemoveReference: (id: string) => void;
@@ -31,8 +35,9 @@ const unavailableActions = [
   { label: 'MCP', Icon: Link, submenu: true },
 ];
 
-function AddContextMenu({ anchor, onClose, onAttach, onReferences, onProject }: {
-  anchor: HTMLButtonElement; onClose: (restoreFocus?: boolean) => void; onAttach: () => void; onReferences: () => void; onProject: () => void;
+function ComposerMenuPopup({ anchor, label, className = '', resizeKey, onClose, children }: {
+  anchor: HTMLButtonElement; label: string; className?: string; resizeKey?: string | number;
+  onClose: (restoreFocus?: boolean) => void; children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0, ready: false });
@@ -51,12 +56,11 @@ function AddContextMenu({ anchor, onClose, onAttach, onReferences, onProject }: 
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, resizeKey]);
   useEffect(() => {
     if (position.ready) ref.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
   }, [position.ready]);
-  const actions = [{ label: '附加文件', Icon: Paperclip, action: onAttach }, { label: '引用其他项目', Icon: Folder, action: onReferences }, { label: '关联本地代码', Icon: Folder, action: onProject }];
-  return createPortal(<div ref={ref} role="menu" aria-label="添加设计上下文" className="composer-context-menu" style={{ left: position.left, top: position.top, visibility: position.ready ? 'visible' : 'hidden' }} onKeyDown={event => {
+  return createPortal(<div ref={ref} role="menu" aria-label={label} className={`composer-context-menu ${className}`.trim()} style={{ left: position.left, top: position.top, visibility: position.ready ? 'visible' : 'hidden' }} onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(true); }
     if (event.key === 'Tab') onClose(true);
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -64,19 +68,70 @@ function AddContextMenu({ anchor, onClose, onAttach, onReferences, onProject }: 
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')], index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
     }
-  }}>
+  }}>{children}</div>, document.body);
+}
+
+function AddContextMenu({ anchor, onClose, onAttach, onReferences, onProject }: {
+  anchor: HTMLButtonElement; onClose: (restoreFocus?: boolean) => void; onAttach: () => void; onReferences: () => void; onProject: () => void;
+}) {
+  const actions = [{ label: '附加文件', Icon: Paperclip, action: onAttach }, { label: '引用其他项目', Icon: Folder, action: onReferences }, { label: '关联本地代码', Icon: Folder, action: onProject }];
+  return <ComposerMenuPopup anchor={anchor} label="添加设计上下文" onClose={onClose}>
     {actions.map(({ label, Icon, action }) => <button key={label} type="button" role="menuitem" onClick={() => { onClose(); action(); }}><Icon size={18} /><span>{label}</span></button>)}
     {unavailableActions.map(({ label, Icon, submenu }) => <button key={label} type="button" role="menuitem" disabled title="暂未接入"><Icon size={18} /><span>{label}</span><small>暂未接入</small>{submenu && <ChevronRight size={15} />}</button>)}
-  </div>, document.body);
+  </ComposerMenuPopup>;
+}
+
+function SystemPickerMenu({ anchor, menu, onSelectSystem, onManageSystem, onBrowseSystems, onClearSystem, onClose }: {
+  anchor: HTMLButtonElement; menu: SystemMenuModel; onSelectSystem: (id: string) => void;
+  onManageSystem: () => void; onBrowseSystems?: () => void; onClearSystem?: () => void;
+  onClose: (restoreFocus?: boolean) => void;
+}) {
+  const resizeKey = `${menu.choices.length}:${menu.editAction ? 1 : 0}:${menu.clearAction ? 1 : 0}`;
+  const choices = <div className="composer-system-list">
+    {menu.choices.length ? menu.choices.map(choice => (
+      <button key={choice.id} type="button" role={menu.editAction ? 'menuitemradio' : 'menuitem'} aria-checked={menu.editAction ? choice.active : undefined} className={choice.active ? 'is-active' : undefined} disabled={choice.disabled} title={choice.hint} onClick={() => { onClose(); if (!choice.active) onSelectSystem(choice.id); }}>
+        <span className="composer-system-swatch" style={{ background: choice.color || 'var(--rea-accent)' }} aria-hidden="true" />
+        <span>{choice.name}</span>
+        <small>{choice.badge}</small>
+        {choice.active && <Check size={14} aria-hidden="true" />}
+      </button>
+    )) : <p className="composer-menu-empty">暂无可用设计系统</p>}
+  </div>;
+  return <ComposerMenuPopup anchor={anchor} label="设计系统" className="composer-system-menu" resizeKey={resizeKey} onClose={onClose}>
+    {menu.editAction && <>
+      <button type="button" role="menuitem" onClick={() => { onClose(); onManageSystem(); }}><Sparkles size={16} /><span>{menu.editAction.label}</span></button>
+      <div role="separator" className="composer-menu-separator" />
+    </>}
+    <div className="composer-menu-label">{menu.listLabel}</div>
+    {choices}
+    {menu.browseAction && onBrowseSystems && <button type="button" role="menuitem" onClick={() => { onClose(); onBrowseSystems(); }}><History size={16} /><span>{menu.browseAction.label}</span></button>}
+    {menu.createAction && <>
+      <div role="separator" className="composer-menu-separator" />
+      <button type="button" role="menuitem" onClick={() => { onClose(); onManageSystem(); }}><Sparkles size={16} /><span>{menu.createAction.label}</span></button>
+    </>}
+    {menu.clearAction && onClearSystem && <>
+      <div role="separator" className="composer-menu-separator" />
+      <button type="button" role="menuitem" className="is-danger" disabled={menu.clearAction.disabled} title={menu.clearAction.hint ? `画布中${menu.clearAction.hint}，请先改回字面量再取消固定` : undefined} onClick={() => { onClose(); onClearSystem(); }}>
+        <X size={16} />
+        <span>{menu.clearAction.label}</span>
+        {menu.clearAction.hint && <small>{menu.clearAction.hint}</small>}
+      </button>
+    </>}
+  </ComposerMenuPopup>;
 }
 
 export function HomeComposer(props: ComposerProps) {
-  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, onSystem, lockedSystem, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement, onToggleElement } = props;
+  const { inputRef, prompt, onPrompt, onSend, onStop, sendKey, running, preparing, busy, systems, selectedSystem, selectedSystemHash, onSystem, lockedSystem, onManageSystem, onBrowseSystems, onClearSystem, tokenReferenceCount, config, onAgentSettings, project, onProject, attachments, onAttach, onRemoveAttachment, references, onReferences, onRemoveReference, elements = [], onRemoveElement, onToggleElement } = props;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [connection, setConnection] = useState<'checking' | 'connected' | 'signed-out' | 'unavailable'>('checking');
   const [connectionError, setConnectionError] = useState('');
   const addButton = useRef<HTMLButtonElement>(null);
+  const systemButton = useRef<HTMLButtonElement>(null);
   const systemId = useId();
+  useEffect(() => {
+    if (running || preparing) { setMenuOpen(false); setSystemMenuOpen(false); }
+  }, [running, preparing]);
   useEffect(() => {
     let active = true;
     setConnection('checking'); setConnectionError('');
@@ -104,6 +159,18 @@ export function HomeComposer(props: ComposerProps) {
   const agentName = config.provider?.name ?? config.name ?? 'Codex CLI';
   const agentModel = config.model || (config.provider ? '未设置模型' : 'Codex 默认模型');
   const closeMenu = useCallback((restoreFocus = false) => { setMenuOpen(false); if (restoreFocus) addButton.current?.focus({ preventScroll: true }); }, []);
+  const closeSystemMenu = useCallback((restoreFocus = false) => { setSystemMenuOpen(false); if (restoreFocus) systemButton.current?.focus({ preventScroll: true }); }, []);
+  const systemMenuModel = useMemo(() => (
+    onManageSystem ? buildSystemMenuModel({
+      systems,
+      pinned: !!lockedSystem,
+      selectedSystem,
+      selectedSystemHash,
+      canBrowse: !!onBrowseSystems,
+      canClear: !!onClearSystem,
+      tokenReferenceCount,
+    }) : null
+  ), [onManageSystem, systems, lockedSystem, selectedSystem, selectedSystemHash, onBrowseSystems, onClearSystem, tokenReferenceCount]);
   return <>
     <form className="home-composer" onSubmit={event => { event.preventDefault(); onSend(); }}>
       <div className="home-composer-surface">
@@ -114,8 +181,8 @@ export function HomeComposer(props: ComposerProps) {
         }} />
         <div className="home-composer-toolbar">
           <div className="home-composer-context">
-            <button ref={addButton} type="button" className="composer-add-button" aria-label="添加设计上下文" title="添加设计上下文" aria-haspopup="menu" aria-expanded={menuOpen} disabled={running || preparing} onClick={() => setMenuOpen(value => !value)} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setMenuOpen(true); } }}><Plus size={21} /></button>
-            {props.onManageSystem ? <button type="button" className="composer-system-picker" aria-label="编辑项目设计系统" disabled={running || preparing} onClick={props.onManageSystem}><Palette size={19} /><span>{lockedSystem || '未设置设计系统'}</span><ChevronDown size={14} /></button> : lockedSystem ? <label className="composer-system-picker" title="本文档已固定设计系统"><Palette size={19} /><select aria-label="本文档的设计系统" value={lockedSystem} disabled><option>{lockedSystem}</option></select></label> : <label className="composer-system-picker" htmlFor={systemId} title="选择设计系统"><Palette size={19} /><select id={systemId} aria-label="选择设计系统" value={selectedSystem} disabled={running || preparing} onChange={event => onSystem(event.currentTarget.value)}>{!selectedSystem && <option value="">未设置设计系统</option>}{systems.map(system => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>}
+            <button ref={addButton} type="button" className="composer-add-button" aria-label="添加设计上下文" title="添加设计上下文" aria-haspopup="menu" aria-expanded={menuOpen} disabled={running || preparing} onClick={() => { setSystemMenuOpen(false); setMenuOpen(value => !value); }} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setSystemMenuOpen(false); setMenuOpen(true); } }}><Plus size={21} /></button>
+            {onManageSystem ? <button ref={systemButton} type="button" className="composer-system-picker" aria-label={lockedSystem ? `设计系统：${lockedSystem}` : '未设置设计系统，点击选择或创建'} title={lockedSystem ? `当前设计系统：${lockedSystem}` : '选择或创建设计系统'} aria-haspopup="menu" aria-expanded={systemMenuOpen} disabled={running || preparing} onClick={() => { setMenuOpen(false); setSystemMenuOpen(value => !value); }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setMenuOpen(false); setSystemMenuOpen(true); } }}><Palette size={19} className="composer-system-icon" /><span>{lockedSystem || '未设置设计系统'}</span><ChevronDown size={14} className="composer-system-chevron" /></button> : lockedSystem ? <label className="composer-system-picker" title="本文档已固定设计系统"><Palette size={19} /><select aria-label="本文档的设计系统" value={lockedSystem} disabled><option>{lockedSystem}</option></select></label> : <label className="composer-system-picker" htmlFor={systemId} title="选择设计系统"><Palette size={19} /><select id={systemId} aria-label="选择设计系统" value={selectedSystem} disabled={running || preparing} onChange={event => onSystem(event.currentTarget.value)}>{!selectedSystem && <option value="">未设置设计系统</option>}{systems.map(system => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>}
           </div>
           <div className="home-composer-send">
             <button type="button" className="composer-agent-button" aria-label={`${agentName}：${connectionLabel}，打开设置`} title={`${agentName} · ${connectionLabel}\n模型：${agentModel}${connectionError ? `\n${connectionError}` : ''}`} onClick={onAgentSettings}><span className={`composer-agent-status is-${connection}`} aria-hidden="true" /><span className="composer-agent-icon" aria-hidden="true"><SquareTerminal size={20} /></span></button>
@@ -127,6 +194,7 @@ export function HomeComposer(props: ComposerProps) {
     </form>
     <p className="home-composer-note"><span>{sendKey === 'enter' ? 'Enter 生成，Shift + Enter 换行' : '⌘ / Ctrl + Enter 生成'}</span><span>{agentName} · 可编辑设计</span></p>
     {menuOpen && addButton.current && <AddContextMenu anchor={addButton.current} onClose={closeMenu} onAttach={onAttach} onReferences={onReferences} onProject={onProject} />}
+    {systemMenuOpen && systemButton.current && onManageSystem && systemMenuModel && <SystemPickerMenu anchor={systemButton.current} menu={systemMenuModel} onSelectSystem={onSystem} onManageSystem={onManageSystem} onBrowseSystems={onBrowseSystems} onClearSystem={onClearSystem} onClose={closeSystemMenu} />}
   </>;
 }
 

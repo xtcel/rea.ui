@@ -22,6 +22,8 @@ struct Job {
     child: Option<Child>,
     state: String,
     events: Vec<String>,
+    /// 已接受的进度条数。用来判断「这段时间真的没有新进度」，而不是靠事件长度。
+    pushed: u64,
     result: Option<Value>,
     error: Option<String>,
     /// Last failure the child reported on stdout; the exit status alone rarely says why.
@@ -260,6 +262,7 @@ fn push_event(job: &Arc<Mutex<Job>>, message: String) {
     let mut job = job.lock().unwrap();
     if job.events.last() != Some(&message) {
         job.events.push(message.chars().take(500).collect());
+        job.pushed += 1;
     }
     if job.events.len() > 20 {
         job.events.remove(0);
@@ -708,6 +711,8 @@ impl AgentService {
             let has_workspace = workspace.is_some();
             std::thread::spawn(move || {
                 let started = Instant::now();
+                let mut tick = Duration::from_secs(60);
+                let mut seen = 0u64;
                 loop {
                     let mut exited = false;
                     let mut status = None;
@@ -724,13 +729,32 @@ impl AgentService {
                                 }
                             }
                         }
-                        if started.elapsed() > Duration::from_secs(600) && job.state == "running" {
-                            job.state = "failed".into();
-                            job.error =
-                                Some("生成超过 10 分钟，已停止。可以缩小需求后重试。".into());
-                            if let Some(child) = job.child.as_mut() {
-                                let _ = child.kill();
+                        // 不设总时长上限：大需求本来就慢。任务可随时通过 cancel 停止，
+                        // 这里只在连续一分钟没有任何新进度时，用一条心跳表明进程还在跑。
+                        if job.pushed != seen {
+                            seen = job.pushed;
+                            tick = started.elapsed() + Duration::from_secs(60);
+                        }
+                        if tick <= started.elapsed() && job.state == "running" {
+                            let message = format!(
+                                "仍在生成 · 已用时 {} 分钟",
+                                started.elapsed().as_secs() / 60
+                            );
+                            let replaced = match job.events.last_mut() {
+                                Some(last) if last.starts_with("仍在生成") => {
+                                    last.clone_from(&message);
+                                    true
+                                }
+                                _ => false,
+                            };
+                            if !replaced {
+                                job.events.push(message);
+                                if job.events.len() > 20 {
+                                    job.events.remove(0);
+                                }
                             }
+                            // 以上一次实际时间为基准，避免机器休眠后连续补发多次心跳。
+                            tick = started.elapsed() + Duration::from_secs(60);
                         }
                         match job.child.as_mut().unwrap().try_wait() {
                             Ok(Some(value)) => {

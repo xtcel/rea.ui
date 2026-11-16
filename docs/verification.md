@@ -727,3 +727,30 @@ OpenSpec：`openspec/changes/make-design-systems-project-owned/`，按四阶段�
 - 未做 CDP 界面复核：本次只改校验规则、导入兜底与文案，设计系统页的警告渲染与闸门逻辑未动。
 - 生成 schema 仍不限制数组长度（严格结构化输出不支持 `maxItems`）；超长刻度会在设计系统页换行展示，未加折叠交互。
 - 重复刻度仍然阻断发布；若要容忍重复，需要同时处理变量名冲突检查。
+
+# 去掉生成任务的总时长上限：remove-agent-generation-deadline（2026-11-16）
+
+实施日期：2026-11-16。对应 OpenSpec `remove-agent-generation-deadline`。起因是用户反馈大任务被「生成超过 10 分钟，已停止。可以缩小需求后重试。」打断。
+
+## 改动
+
+- `crates/local-agent/src/lib.rs`：删除 watcher 里 `started.elapsed() > 600s` 的失败判定与 `child.kill()`；改为「连续一分钟没有新进度」时把最后一条进度更新为「仍在生成 · 已用时 N 分钟」。是否算新进度用新增的 `Job::pushed` 计数判断（事件窗口固定 20 条，长度不再增长，不能用 `events.len()`），有真实进度时心跳不会出现。
+- `crates/local-agent/src/provider.rs`：删除 `Call::wait()` 的 600 秒总时长上限；流式读取报错改为返回「连接中断（原因）」，不再静默 break 后落到「没有返回内容，请检查模型名称与额度」。
+- 保留的能力：用户 `cancel` 仍立即标记 `cancelled` 并终止子进程；客户端每次读取的 660 秒空闲超时保留，它约束「连接是否还活着」而非任务总时长。
+
+## 自动检查
+
+| 检查 | 结果 |
+|---|---|
+| `cargo test --workspace --offline` | 通过：geometry 7、local-agent 14、desktop 5 |
+| `rustfmt --check`（新增代码） | 通过：新增的行没有任何格式差异 |
+| `openspec validate remove-agent-generation-deadline --strict` | 通过 |
+| `git diff --check` | 通过 |
+
+两个文件在改动前就不符合 rustfmt：`git show HEAD:` 的副本跑 `rustfmt --check`，`lib.rs` 306 行、`provider.rs` 262 行差异，与本次改动无关。第一次直接跑 `cargo fmt` 把整份文件重排成 200 多行噪声 diff，已还原并只保留行为改动（33 增 / 11 删）；`src-tauri/src/lib.rs` 也有同类历史漂移。整体重排属于独立任务，没有混进这次修复。
+
+## 未覆盖
+
+- 没有重跑一次超过 10 分钟的真实 Codex 生成来复现原提示：复现成本就是等满 10 分钟。已删除的分支只做静态复核，并以「仓库内不再存在 `Duration::from_secs(600)` 的总时长判定」确认。
+- 未做 CDP 界面复核：前端 `useAgentTask()` 本就只在 800ms 轮询状态、没有计时器，界面行为不变。
+- Gemini 的 `generateContent` 仍是一次性请求（未改流式），其 660 秒仍作用于读取整段响应；OpenAI 兼容与 Anthropic 已无总时长上限。

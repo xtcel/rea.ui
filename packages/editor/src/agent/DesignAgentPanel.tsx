@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, LoaderCircle, MessageSquare, Plus, RotateCcw, SquareTerminal, Trash2 } from 'lucide-react';
-import { exportReaui } from '@rea/storage';
+import { tokenUsage } from '@rea/design-system';
+import { exportReaui, unpinTransaction } from '@rea/storage';
 import type { DocumentSummary } from '@rea/storage';
 import type { DocumentModel } from '../session/useDocument';
 import { HomeComposer, ReferenceProjectsDialog } from '../home/HomeComposer';
@@ -280,6 +281,11 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
     }
   }
 
+  const pinnedSystem = model.current?.system ?? null;
+  const tokenReferenceCount = useMemo(
+    () => (pinnedSystem && model.current ? tokenUsage(model.current.files).count : 0),
+    [pinnedSystem, model.current],
+  );
   const sessionsHint = store && store.sessions.length > 1 ? ` · ${store.sessions.length} 个会话` : '';
   return <section className="rea-agent-panel" aria-label="AI 设计会话">
     <header className="rea-agent-heading"><SquareTerminal size={16} /><strong>设计 Agent</strong>
@@ -302,7 +308,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
       </article>)}
     </div>
     <div className="rea-agent-composer">{notice && <p role="alert" className="rea-agent-error">{notice}</p>}
-      <HomeComposer onManageSystem={props.onEditSystem} inputRef={input} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => void stop()} sendKey={sendKey} running={task.running || preparing} preparing={!loaded} busy={!loaded} systems={systems} selectedSystem={model.current?.system?.id ?? ''} onSystem={onSystem} lockedSystem={model.current?.system ? `${model.current.system.name} · v${model.current.system.revision}` : undefined} config={config} onAgentSettings={() => void openSettings()} project={project} onProject={() => setDialog('project')} attachments={attachments} onAttach={() => fileInput.current?.click()} onRemoveAttachment={index => setAttachments(items => items.filter((_, i) => index !== i))} references={references} onReferences={() => { void model.storage.listDocuments().then(setDocuments).then(() => setDialog('references')).catch(error => setNotice(String(error))); }} onRemoveReference={id => setReferences(items => items.filter(ref => ref.id !== id))} elements={canvas.refs} onRemoveElement={ref => canvas.removeRef(ref.pageId, ref.designId)} onToggleElement={ref => canvas.toggleSubtree(ref.pageId, ref.designId)} />
+      <HomeComposer onManageSystem={props.onEditSystem} onBrowseSystems={canvas.openSystemDialog} onClearSystem={pinnedSystem ? () => { model.transact(unpinTransaction()); } : undefined} tokenReferenceCount={tokenReferenceCount} inputRef={input} prompt={prompt} onPrompt={setPrompt} onSend={() => void send()} onStop={() => void stop()} sendKey={sendKey} running={task.running || preparing} preparing={!loaded} busy={!loaded} systems={systems} selectedSystem={pinnedSystem?.id ?? ''} selectedSystemHash={pinnedSystem?.hash} onSystem={onSystem} lockedSystem={pinnedSystem ? `${pinnedSystem.name} · v${pinnedSystem.revision}` : undefined} config={config} onAgentSettings={() => void openSettings()} project={project} onProject={() => setDialog('project')} attachments={attachments} onAttach={() => fileInput.current?.click()} onRemoveAttachment={index => setAttachments(items => items.filter((_, i) => index !== i))} references={references} onReferences={() => { void model.storage.listDocuments().then(setDocuments).then(() => setDialog('references')).catch(error => setNotice(String(error))); }} onRemoveReference={id => setReferences(items => items.filter(ref => ref.id !== id))} elements={canvas.refs} onRemoveElement={ref => canvas.removeRef(ref.pageId, ref.designId)} onToggleElement={ref => canvas.toggleSubtree(ref.pageId, ref.designId)} />
     </div>
     <input ref={fileInput} type="file" hidden multiple accept=".reaui,.md,.txt,.css,.json,.tsx,.jsx,.ts,.js" aria-label="选择设计参考文件" onChange={event => { const files = Array.from(event.currentTarget.files ?? []); if (attachments.length + references.length + files.length > 6) setNotice('参考文件和引用项目合计最多 6 项。'); else setAttachments(items => [...items, ...files]); event.currentTarget.value = ''; }} />
     {sessionMenu && sessionButton.current && store && <SessionMenu anchor={sessionButton.current} store={store} onSelect={switchSession} onDelete={next => { setSessionMenu(false); setDeleting(next); }} onNew={newSession} onClose={() => setSessionMenu(false)} />}

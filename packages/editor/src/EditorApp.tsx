@@ -197,6 +197,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     page, selectedIds, refs: agentRefs,
     addRefs: addAgentRefs, removeRef: removeAgentRef, toggleSubtree: toggleAgentRefSubtree, clearRefs: () => setAgentRefs([]),
     focus: focusAgentNode, markTouched: markAgentTouched,
+    openSystemDialog: () => setShowSystem(true),
   };
   function properties(id: string, props?: Record<string, unknown>, styles?: StylePatch) { model.execute({ type: 'set', pageId: page.id, id, props, styles }); }
   function commit(transaction: Transaction, ids?: string[]) { const ok=model.transact(transaction);if(ok&&ids)setSelection({...selection,ids});return ok; }

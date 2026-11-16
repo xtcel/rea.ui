@@ -275,12 +275,14 @@
 .rea-agent-composer .home-composer textarea { font-size:12px; min-height:84px; padding:12px; caret-color:var(--rea-accent); }
 .rea-agent-composer .home-composer-toolbar { gap:4px; padding:0 8px 8px; }
 .rea-agent-composer .home-composer-context { min-width:0; gap:4px; }
-.rea-agent-composer .composer-system-picker { min-width:0; gap:4px; }
+.rea-agent-composer .composer-system-picker { min-width:0; max-width:100%; gap:4px; padding:0 8px; border-radius:4px; font-size:11px; font-weight:500; }
+.rea-agent-composer .composer-system-picker > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rea-agent-composer .composer-system-picker[aria-expanded=true] { color:var(--composer-text-strong); background:var(--composer-control-hover); }
 .rea-agent-composer .composer-system-picker select { width:100%; max-width:110px; font-size:11px; }
-.rea-agent-composer .composer-system-picker > svg { display:none; }
+.rea-agent-composer .composer-system-picker > .composer-system-icon { display:none; }
+.rea-agent-composer .composer-system-picker > .composer-system-chevron { width:12px; height:12px; flex-shrink:0; color:var(--rea-muted); }
 .rea-agent-composer .home-composer-send { gap:4px; }
 .rea-agent-composer .composer-add-button { width:32px; height:32px; }
-.rea-agent-composer .composer-system-picker { padding:0 8px; border-radius:4px; }
 .rea-agent-composer .composer-agent-button { min-width:44px; gap:5px; padding:0 6px; border-radius:4px; }
 .rea-agent-composer .composer-agent-icon { color:var(--rea-accent); background:var(--rea-selected); }
 .rea-agent-composer .home-composer-footer { padding:8px 0 0; }

@@ -14,4 +14,6 @@ export interface AgentCanvasContext {
   focus(designId: string): void;
   /** Briefly outline nodes the Agent just changed. */
   markTouched(ids: readonly string[]): void;
+  /** Open the document-level design system picker and version diff dialog. */
+  openSystemDialog?(): void;
 }

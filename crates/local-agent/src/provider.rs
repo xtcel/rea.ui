@@ -174,15 +174,21 @@ impl Call<'_> {
         let reader = BufReader::new(response);
         let mut text = String::new();
         let mut announced = 0usize;
-        let started = Instant::now();
+        // 不设总时长上限：长回复往往对应更大的需求。只有连接确实静默（客户端
+        // 每次读取的超时）才结束，并把中断原因说清楚。
         for line in reader.lines() {
             if self.stopped() {
                 return Err(CANCELLED.into());
             }
-            if started.elapsed() > Duration::from_secs(600) {
-                return Err("模型响应超过 10 分钟，已停止。".into());
-            }
-            let Ok(line) = line else { break };
+            let line = match line {
+                Ok(line) => line,
+                Err(error) => {
+                    return Err(format!(
+                        "{}：连接中断（{error}），本次生成已停止。",
+                        self.target.name
+                    ))
+                }
+            };
             let Some(data) = line.strip_prefix("data:") else { continue };
             let data = data.trim();
             if data.is_empty() || data == "[DONE]" {
