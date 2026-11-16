@@ -695,3 +695,35 @@ OpenSpec：`openspec/changes/make-design-systems-project-owned/`，按四阶段�
 - `node scripts/verify-project-design-systems.mjs`：隔离 Chrome 临时用户目录、1440×900 与 390×844，46 个检查通过。实际点击库创建/项目创建、项目编辑、撤销重做、另存到库、AI 系统编辑（仅模型边界模拟）、实际 `.reaui` 下载、刷新和会话恢复。确认导出包含精确快照与会话，未影响另一项目及来源库。截图 `/tmp/rea-project-system-{desktop,mobile,ai}.png` 已目视检查；发现并修复了窄屏保存按钮被隐藏的问题。
 - 同步仓库内 Codex 集成的 CLI/MCP 预构建包，通过真实 stdio MCP 客户端验证 10 个工具及 CLI 初始化/读取系统；未修改已安装的外部插件或发布 npm 包。
 - 机械设计检测未发现新增样式令牌问题；保留既有 system.css 字号/圆角建议。已有单元测试用任意用户字体 Inter，不属于编辑器字体，已做仅该测试文件的窄范围豁免；未刷新 DESIGN.md sidecar。
+
+# 间距刻度只守可用性校验：relax-space-scale-validation（2026-11-16）
+
+同一条 `tokens.space.scale` 校验连着挡了两次生成结果：先是「间距刻度需要 1–16 项」把 18 档的 Tailwind 级阶梯判成非法；放宽项数后，AquaRDM 的真实刻度 `0 / 2 / 3 / … / 30` 又被「间距刻度必须是正整数」拦住，发布与「用于 UI 生成」再次禁用。
+
+排查确认刻度只服务一个下游：派生 `--rea-ds-space-<value>`。`systemVariables()` 按数值建名，`conformance()` 用 `includes()` 查表，设计系统页把刻度渲染成自动换行的 `<code>`。项数与顺序都不影响任何结果，只有「变不成合法变量」才该拦。
+
+**行为**
+
+- `space.scale` 只要求至少 1 项、每项为有限非负整数：允许 `0`（`--rea-ds-space-0:0px`），不限制项数。
+- 删除升序要求：乱序刻度原样保留，不排序；小数（变量名里不能有点）与负数仍报「间距刻度必须是 0 或正整数。」。
+- 重复值保留报错，文案改为「间距刻度不能重复。」，不再落到「space.8 与 space.8 派生出同名变量」这种冲突提示。
+- `importDesignMarkdown()` 缺少 `spacing.unit` 时取最小非零刻度作基数，避免 `0` 被当成 `unit`。
+- 生成路径不变：模型返回多少档、什么顺序就写多少档，不截断、不排序、不去重。
+- 同步修正 `define-design-system-abi` 契约里的「1–16 项」表述，并新增 `openspec/changes/relax-space-scale-validation/`。
+
+**命令结果**
+
+- `pnpm typecheck` 通过。
+- `pnpm exec vitest run packages/design-system/test`：34 项通过。新增 3 项：含 0 的 19 档与乱序刻度通过并派生 `--rea-ds-space-0`；空 / 负数 / 小数 / 重复仍精确报错；DESIGN.md 缺 `unit` 时基数为最小非零刻度。
+- 用 AquaRDM 的真实令牌（31 个颜色、10 个排版角色、`0 / 2 / 3 / … / 30` 共 19 档刻度、4 档圆角）构造系统，`validateSystem()` 返回空数组，无任何待修项。
+- 全量 `pnpm exec vitest run`：71 文件通过、2 文件跳过，594 项通过、2 项跳过（真实模型冒烟按配置跳过）。
+- CLI 真机：用含 `0` 的 19 档合法包执行 `reaui init … --system`，文档创建成功（改动前会报 `DS_TOKEN_INVALID`）；把 `scale` 换成 `[-4,8]` 后同一命令报「间距刻度必须是 0 或正整数。」
+- 插件内置 CLI（`integrations/codex/reaui-designer/server/reaui-cli`）复跑含 `0` 的包，结果与新构建一致；同步后的 `reaui.mjs` 与 `packages/reaui-cli/dist/reaui.mjs` 逐行 diff 无差异。
+- `openspec validate relax-space-scale-validation --strict`、`git diff --check` 通过。
+
+**未覆盖**
+
+- 没有重跑真实模型生成来复现原始提示（模型每次返回的档位不稳定），改用同一份令牌与等价包文件走单测与 CLI 的真实校验路径。
+- 未做 CDP 界面复核：本次只改校验规则、导入兜底与文案，设计系统页的警告渲染与闸门逻辑未动。
+- 生成 schema 仍不限制数组长度（严格结构化输出不支持 `maxItems`）；超长刻度会在设计系统页换行展示，未加折叠交互。
+- 重复刻度仍然阻断发布；若要容忍重复，需要同时处理变量名冲突检查。

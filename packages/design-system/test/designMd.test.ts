@@ -49,6 +49,27 @@ describe('DESIGN.md bridge', () => {
     expect(imported.warnings.some(warning => warning.includes('colors 缺少 primary'))).toBe(true);
   });
 
+  it('uses the smallest non-zero step as the base when spacing.unit is missing', () => {
+    const source = [
+      '---',
+      'name: "零刻度系统"',
+      'colors:',
+      '  primary: "#4FBAF7"',
+      'spacing:',
+      '  "0": 0px',
+      '  "4": 4px',
+      '  "8": 8px',
+      'typography:',
+      '  family: Inter',
+      '---',
+      '',
+      '# 零刻度系统',
+    ].join('\n');
+    const imported = importDesignMarkdown(source, { id: 'zero-scale' });
+    expect(imported.pkg.tokens.space.unit).toBe(4);
+    expect(imported.pkg.tokens.space.scale).toEqual([0, 4, 8]);
+  });
+
   it('rejects a file without frontmatter', () => {
     expect(() => importDesignMarkdown('# 没有 frontmatter', { id: 'x' })).toThrowError(/frontmatter/);
   });

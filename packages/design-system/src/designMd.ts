@@ -376,7 +376,8 @@ export function importDesignMarkdown(source: string, options: { id: string; name
     warnings.push('spacing 使用了命名刻度，已按数值顺序转换为数字刻度。');
   }
   const space = {
-    unit: px(spacingIn.unit) ?? scale[0] ?? DEFAULT_TOKENS.space.unit,
+    // A scale may start at 0, which can never be the base unit.
+    unit: px(spacingIn.unit) ?? scale.find(step => step > 0) ?? DEFAULT_TOKENS.space.unit,
     scale: scale.length ? scale : [...DEFAULT_TOKENS.space.scale],
   };
   const shadow = data.shadow && typeof data.shadow === 'object'

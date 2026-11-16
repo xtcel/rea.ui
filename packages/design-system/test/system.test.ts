@@ -68,6 +68,34 @@ describe('package', () => {
     expect(validateSystem(badShadow).some(issue => issue.path === 'tokens.shadow.card')).toBe(true);
   });
 
+  it('accepts zero-based, long and unordered spacing scales', () => {
+    const value = system();
+    const tokens = structuredClone(DEFAULT_TOKENS);
+    tokens.space.scale = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 20, 22, 30];
+    expect(validateSystem({ ...value, tokens, hash: '' }, false)).toEqual([]);
+    expect(systemVariables(tokens).map(variable => variable.name)).toContain('--rea-ds-space-0');
+    const unordered = structuredClone(DEFAULT_TOKENS);
+    unordered.space.scale = [24, 8, 16];
+    expect(validateSystem({ ...value, tokens: unordered, hash: '' }, false)).toEqual([]);
+  });
+
+  it('still rejects empty, negative, fractional and repeated spacing steps', () => {
+    const value = system();
+    const empty = structuredClone(DEFAULT_TOKENS);
+    empty.space.scale = [];
+    expect(validateSystem({ ...value, tokens: empty, hash: '' }, false).some(issue => issue.path === 'tokens.space.scale')).toBe(true);
+    const negative = structuredClone(DEFAULT_TOKENS);
+    negative.space.scale = [-4, 8];
+    expect(validateSystem({ ...value, tokens: negative, hash: '' }, false).some(issue => issue.path === 'tokens.space.scale.0')).toBe(true);
+    const fractional = structuredClone(DEFAULT_TOKENS);
+    fractional.space.scale = [4, 8.5];
+    expect(validateSystem({ ...value, tokens: fractional, hash: '' }, false).some(issue => issue.path === 'tokens.space.scale.1')).toBe(true);
+    const repeated = structuredClone(DEFAULT_TOKENS);
+    repeated.space.scale = [4, 8, 8];
+    const issues = validateSystem({ ...value, tokens: repeated, hash: '' }, false);
+    expect(issues.some(issue => issue.path === 'tokens.space.scale.2' && issue.message.includes('重复'))).toBe(true);
+  });
+
   it('rejects two tokens that derive the same variable name', () => {
     const value = system();
     const conflicting = {

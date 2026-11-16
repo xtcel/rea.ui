@@ -26,7 +26,7 @@
 
 ### Requirement: 令牌模型 v1
 
-`tokens` SHALL 包含 `color`、`typography`、`space`、`radius`，并 MAY 包含 `shadow`。`color` MUST 至少声明 `primary`、`background`、`surface`、`text`、`muted`、`border`，MAY 声明 `primaryHover`、`onPrimary`、`selected`、`hover`、`success`、`warning`、`danger`；MAY 追加其它品牌色，键 MUST 为小写字母开头的 camelCase 或连字符标识。所有颜色 MUST 为六位十六进制。`typography` MUST 包含 `family`（CSS 字体栈，长度 ≤ 240）与 `body`、`heading`、`caption` 三组 `{ size, lineHeight, weight }`，`size` MUST 在 8–96 之间，`lineHeight` MUST 为 1–3 的倍数或 8–96 的 px 值，`weight` MUST 为 100–900 的整百数。`space` MUST 包含 `unit` 与升序、去重、1–16 项的 `scale`（正整数 px）。`radius` MUST 包含 `sm`、`md`、`lg`（有限非负数）。`shadow` 值 MUST 为长度 ≤ 200 的字符串且 MUST NOT 含 `;`、`url(`、`var(` 或 `@`。
+`tokens` SHALL 包含 `color`、`typography`、`space`、`radius`，并 MAY 包含 `shadow`。`color` MUST 至少声明 `primary`、`background`、`surface`、`text`、`muted`、`border`，MAY 声明 `primaryHover`、`onPrimary`、`selected`、`hover`、`success`、`warning`、`danger`；MAY 追加其它品牌色，键 MUST 为小写字母开头的 camelCase 或连字符标识。所有颜色 MUST 为六位十六进制。`typography` MUST 包含 `family`（CSS 字体栈，长度 ≤ 240）与 `body`、`heading`、`caption` 三组 `{ size, lineHeight, weight }`，`size` MUST 在 8–96 之间，`lineHeight` MUST 为 1–3 的倍数或 8–96 的 px 值，`weight` MUST 为 100–900 的整百数。`space` MUST 包含 `unit` 与至少 1 项的 `scale`（0 或正整数 px，不限制项数与顺序）。`radius` MUST 包含 `sm`、`md`、`lg`（有限非负数）。`shadow` 值 MUST 为长度 ≤ 200 的字符串且 MUST NOT 含 `;`、`url(`、`var(` 或 `@`。
 
 系统 MUST 为每个令牌派生唯一 CSS 变量名 `--rea-ds-<group>-<kebab-path>`，例如 `--rea-ds-color-primary`、`--rea-ds-color-primary-hover`、`--rea-ds-space-24`、`--rea-ds-radius-md`、`--rea-ds-typography-body-size`、`--rea-ds-shadow-card`；两个令牌派生出同名变量时 MUST 拒绝整个包。
 

@@ -14133,26 +14133,26 @@ function spaceIssues(space, issues) {
 		path: "tokens.space.unit",
 		message: "间距基数必须是 1–64 的整数。"
 	});
-	if (!Array.isArray(space.scale) || !space.scale.length || space.scale.length > 16) {
+	if (!Array.isArray(space.scale) || !space.scale.length) {
 		issues.push({
 			code: "DS_TOKEN_INVALID",
 			path: "tokens.space.scale",
-			message: "间距刻度需要 1–16 项。"
+			message: "间距刻度至少需要 1 项。"
 		});
 		return;
 	}
-	let previous = 0;
-	for (const [index, value] of space.scale.entries()) if (!finite(value) || !Number.isInteger(value) || value < 1) issues.push({
+	const seen = /* @__PURE__ */ new Set();
+	for (const [index, value] of space.scale.entries()) if (!finite(value) || !Number.isInteger(value) || value < 0) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.space.scale.${index}`,
-		message: "间距刻度必须是正整数。"
+		message: "间距刻度必须是 0 或正整数。"
 	});
-	else if (value <= previous) issues.push({
+	else if (seen.has(value)) issues.push({
 		code: "DS_TOKEN_INVALID",
 		path: `tokens.space.scale.${index}`,
-		message: "间距刻度必须升序且不重复。"
+		message: "间距刻度不能重复。"
 	});
-	else previous = value;
+	else seen.add(value);
 }
 function radiusIssues(radius, issues, v2) {
 	if (!record$2(radius)) {
