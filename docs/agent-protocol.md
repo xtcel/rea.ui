@@ -86,7 +86,7 @@ core/full profile 仅描述语言能力，不再决定复用策略。默认评�
 
 ```bash
 # 外部 Agent：用已发布的 CLI，免安装
-REAUI="npx -y @xtcel/reaui-cli@0.2.0"
+REAUI="npx -y @xtcel/reaui-cli@0.3.0"
 
 # 仓库内开发：改用本地入口
 # REAUI="node packages/reaui-cli/bin/reaui.mjs"

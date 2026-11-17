@@ -911,3 +911,40 @@ reaui_read { path: "examples/editable-workbench.reaui", depth: 2 }
 - **WorkBuddy 宿主内实跑未做**：`mcp.json` 的格式与已安装的 cloudbase 插件一致（根目录 `mcp.json`，宿主用 `resolveAgentPluginPath(e, './mcp.json')` + `parseAgentPluginMcp` 读取，`${PLUGIN_ROOT}` 会展开），stdio 直连已实测 13 个工具。宿主启动 MCP 时 `cwd` 缺省即为插件根目录（`cwd: typeof e.cwd === 'string' ? expand(e.cwd) : pluginRoot`），所以显式写成 `cwd: ${PLUGIN_ROOT}`：**MCP 的工作区是插件目录，不是用户项目**，读用户已有 `.reaui` 仍要走 CLI。插件是否在下次会话自动重载、工具能否出现在对话里，需要在宿主里确认。
 - 预览 HTML 的反向解析未做，也不打算做（见 proposal 的范围说明）。
 - 编辑器保存时生成 `preview.html` 未实现：实测进程内一次完整生成约 96ms（读 12 页 62.7ms + 增量 Tailwind 4.2ms + 渲染 22.1ms + 写 223KB 10.5ms），独立 CLI 调用 0.8s；`preview.html` 会让 `.reaui` 从 33.8KB 涨到 57.3KB（+70%）。
+
+# 发布包：CLI 0.3.0 / MCP 0.3.0 / Codex 0.4.0 / WorkBuddy 1.2.0（2026-11-17）
+
+## 版本推进
+
+| 包 | 旧 | 新 | 理由 |
+|---|---|---|---|
+| `@xtcel/reaui-cli` | 0.2.0 | 0.3.0 | 新增 `read` |
+| `@xtcel/reaui-mcp` | 0.2.0 | 0.3.0 | 新增 `reaui_read`，工具 12 → 13 |
+| Codex 插件 | 0.3.0 | 0.4.0 | 内置运行时升级、改稿流程改走 `read` |
+| WorkBuddy 专家包 | 1.1.0 | 1.2.0 | 首次内置 MCP（`mcp.json` + `server/reaui-mcp`） |
+
+npm 上的 `0.2.0` 不含 `read`，插件内置产物却已包含——不升号会出现「同一版本号对应两份不同产物」，npx 兜底会拿到旧包，所以必须一起升。
+
+## 产物
+
+`dist/` 被仓库 `.gitignore` 忽略，不进版本库：
+
+```
+dist/codex/reaui-designer-0.4.0.zip        723 KB   40 项
+dist/workbuddy/reaui-designer-1.2.0.zip    1003.6 KB  15 项
+```
+
+## 校验
+
+- 解包后 `plugin.json` 分别为 `0.4.0` / `.codebuddy-plugin/plugin.json` `1.2.0`；两个包内 CLI / MCP 产物均报告 `0.3.0`。
+- `read` / `reaui_read` 字符串在包内产物中存在；专家包 `SKILL.md` 含「读取现有文档」一节。
+- 专家包 `mcp.json` 的 `cwd` 为 `${PLUGIN_ROOT}`，与宿主缺省行为一致。
+- `npm pack --dry-run`：CLI 6 文件 510.1 kB；MCP 5 文件 180.2 kB；版本号 0.3.0。
+- 无 `.DS_Store`、`node_modules`、`.tgz` 残留混入。
+- `package_expert.py` 自带校验通过（15 文件）。
+- `pnpm typecheck` 通过。
+
+## 未执行
+
+- `npm publish`（需要本人 2FA/OTP）：`cd packages/reaui-cli && npm publish --access public`、`cd packages/reaui-mcp && npm publish --access public`。发布前 `npx -y @xtcel/reaui-cli@0.3.0` 会 404，插件的 npx 兜底此时不可用，但内置产物不受影响。
+- WorkBuddy 里重新加载插件／重新注册专家后，MCP 工具是否出现在对话中，需要在宿主内确认（静态产物已就绪）。

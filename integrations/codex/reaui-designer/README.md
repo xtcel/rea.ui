@@ -3,8 +3,8 @@
 Generate, validate, and revise **editable REA UI design documents** (`.reaui`)
 from UI requests — and keep them openable in the REA UI editor.
 
-The plugin bundles a prebuilt `@xtcel/reaui-cli` 0.2.0 and `@xtcel/reaui-mcp`
-0.2.0 — the same builds published to npm on 2026-11-13 — so it works offline
+The plugin bundles a prebuilt `@xtcel/reaui-cli` 0.3.0 and `@xtcel/reaui-mcp`
+0.3.0 — the same builds published to npm — so it works offline
 after install. Node.js **22.18+** is required.
 
 A `.reaui` file is a ZIP containing a `rea.json` manifest plus one static TSX
@@ -53,7 +53,7 @@ SKILL_DIR="/path/to/reaui-designer/skills/reaui-design"
 reaui() { node "$SKILL_DIR/scripts/reaui.mjs" "$@"; }
 
 reaui --where        # pluginRoot / cli / cliVersion / mcpServer / mcpWorkspace
-reaui --version      # 0.2.0
+reaui --version      # 0.3.0
 
 mkdir -p ./designs
 reaui init ./designs/landing --name "官网首页" \
@@ -75,7 +75,7 @@ reaui validate ./designs/landing-v2.reaui --json
 ```
 
 If the bundled runtime is unavailable, use
-`npx -y @xtcel/reaui-cli@0.2.0 <command>`. Exit codes: `0` success, `1`
+`npx -y @xtcel/reaui-cli@0.3.0 <command>`. Exit codes: `0` success, `1`
 validation/document/I/O failure, `2` command-line usage error. In sandboxed hosts the CLI may print a
 harmless `WebSocket server error: listen EPERM … 24678` (Vite) on stderr —
 judge success by exit code and `--json`.
@@ -138,7 +138,7 @@ See `skills/reaui-design/references/mcp.md`.
 
 ## Workflow summary
 
-1. Preflight: resolve the bundled CLI, check `--version` (0.2.0) and Node ≥ 22.18.
+1. Preflight: resolve the bundled CLI, check `--version` (0.3.0) and Node ≥ 22.18.
 2. Read the protocol (`reaui://protocol` via MCP, or `references/protocol.md`).
 3. Plan pages and artboard size.
 4. `reaui init` (never hand-write `rea.json`).
@@ -163,6 +163,20 @@ including delivery expectations and failure handling.
 - If you change `server/reaui-cli` or `server/reaui-mcp`, rebuild the bundles
   from the `rea.ui` repository and copy `dist/` into the plugin. The bundles
   must include design-system validation (v4) or v4 support silently disappears.
+
+## What changed in 0.4.0
+
+- New CLI command `reaui read <dir|file.reaui>`: prints pages, artboards and a
+  flat layer list (`id` / `kind` / `name` / `parent` / world `box` / `text` /
+  `className`). `--page` narrows to one page, `--depth` trims nesting.
+- `box` is a world coordinate only when the whole ancestor chain is `absolute`
+  and statically resolvable; flow-layout nodes are marked `flow: true` and carry
+  no box instead of a guessed one.
+- MCP adds `reaui_read` (13 tools total). Revising an existing document now
+  starts from `reaui read`, not from reading `preview.html` back — the preview
+  has compiled CSS, SVG-flattened vectors and expanded instances.
+- Bundled runtimes bumped to `@xtcel/reaui-cli@0.3.0` / `@xtcel/reaui-mcp@0.3.0`;
+  `plugin.json` is 0.4.0.
 
 ## What changed in 0.3.0
 

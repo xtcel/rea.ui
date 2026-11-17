@@ -12,7 +12,7 @@ import { runComponents } from './commands/components';
 import { runAudit } from './commands/audit';
 import { runRead } from './commands/read';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 
 const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 

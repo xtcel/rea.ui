@@ -111,12 +111,12 @@ npx @xtcel/reaui-cli preview ./demo --out preview.html
 | 场景 | 接入方式 |
 |---|---|
 | Codex CLI / Claude Code / 其他 agent | 直接调用 `reaui` 命令，按 [设计协议](docs/agent-protocol.md) 产出 TSX |
-| WorkBuddy | 安装专家包「ReaUI 设计专家」：内置 `@xtcel/reaui-cli` 0.2.0，按自身位置解析 CLI，离线可用，不需要本仓库 |
+| WorkBuddy | 安装专家包「ReaUI 设计专家」：内置 `@xtcel/reaui-cli` 0.3.0 与 `@xtcel/reaui-mcp` 0.3.0，按自身位置解析 CLI，离线可用，不需要本仓库 |
 | MCP 客户端（Claude Code、Cursor、Codex CLI、Cline） | `npx @xtcel/reaui-mcp`：十二个工具 + 设计协议资源，支持 stdio 与 Streamable HTTP 两种传输。各客户端配置见 [接入示例](docs/agents/README.md) · [MCP server](packages/reaui-mcp/README.md) |
 
 `preview.html` 是自包含离线预览，可直接在 WorkBuddy 结果区打开；`demo.reaui` 双击用 ReaUI 打开继续编辑。命令说明、错误码与交付要求见 [Agent 设计协议](docs/agent-protocol.md)。
 
-WorkBuddy 专家包「ReaUI 设计专家」不在此仓库维护，它作为独立专家包安装到 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/reaui-designer`，内置 `@xtcel/reaui-cli` 0.2.0（`server/reaui-cli`），技能按自身位置解析 CLI，不再依赖 `REAUI_ROOT`。升级 CLI 时替换该目录下的 `server/reaui-cli`，再运行专家校验与注册脚本。
+WorkBuddy 专家包「ReaUI 设计专家」不在此仓库维护，它作为独立专家包安装到 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/reaui-designer`，内置 `@xtcel/reaui-cli` 0.3.0（`server/reaui-cli`）与 `@xtcel/reaui-mcp` 0.3.0（`server/reaui-mcp`，在根 `mcp.json` 声明），技能按自身位置解析 CLI，不再依赖 `REAUI_ROOT`。升级运行时替换这两个目录，再运行专家校验与注册脚本。
 
 ## 编辑操作
 
