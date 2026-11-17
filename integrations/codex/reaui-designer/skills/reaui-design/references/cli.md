@@ -26,6 +26,7 @@ node --version     # 需要 >= 22.18
 | 命令 | 作用 | 关键选项 |
 |---|---|---|
 | `init <dir>` | 创建最小合法文档（`rea.json` + 页面） | `--name`、`--page <id>`（可重复）、`--page-name <名>`（可重复）、`--width`、`--height` |
+| `read <dir\|file.reaui>` | 读取结构大纲：页面、画板、图层、世界坐标、文案（不改源） | `--json`、`--page <id>`、`--depth <n>` |
 | `components init <dir>` | 添加空组件目录，v2 升 v3，保留 v4，已有目录不覆盖 | — |
 | `audit <dir\|file.reaui>` | 启发式可编辑性建议（不改源） | `--json`、`--strict` |
 | `validate <dir\|file.reaui>` | 校验目录或 `.reaui` | `--json`、`--strict`、`--system <system.json>` |
@@ -51,6 +52,54 @@ reaui init ./designs/landing --name "官网首页" \
 - 默认生成 **version 2**；`--components` 创建 v3 空组件目录，`--system <JSON>` 创建 v4（可同时携带组件）；多页时重复 `--page`/`--page-name`，名称按顺序对应。
 - 画板宽 `320–4096`，高 `240–4096`。
 - 目标目录已含 `rea.json` 时报 `DOC_EXISTS`，换目录或先备份删除，不要覆盖用户文件。
+
+### read
+
+```bash
+reaui read ./designs/landing --json
+reaui read ./designs/landing --page main --json
+reaui read ./designs/landing --page main --depth 2 --json
+reaui read ./designs/landing.reaui --json     # .reaui 直接读，不落盘
+```
+
+改已有稿之前用它，不要靠猜：
+
+```json
+{
+  "ok": true,
+  "document": { "id": "doc_…", "name": "官网首页", "version": 4 },
+  "pages": [
+    {
+      "id": "main",
+      "name": "首页",
+      "file": "pages/main.page.tsx",
+      "boards": [{ "designId": "desktop-artboard", "name": "桌面画板", "width": 1440, "height": 900 }],
+      "nodes": [
+        {
+          "id": "board-title",
+          "kind": "Text",
+          "name": "主标题",
+          "parent": "desktop-artboard",
+          "box": { "x": 64, "y": 56, "w": 600, "h": 44 },
+          "text": "工作台",
+          "className": "absolute left-[64px] top-[56px] w-[600px] h-[44px] text-[30px]"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+- `nodes` 是扁平数组 + `parent` 指针，顺序即文档顺序。`box` 是**世界坐标**（沿祖先链
+  累加 `left`/`top`），只在整条链都是 `absolute` 且可静态求值时给出。
+- 流式布局（flex 容器内的子节点等）标 `flow: true` 且**没有** `box`——这是刻意的，
+  静态阶段算不出这类节点的最终位置。
+- `text` 只出现在 `Text`；`component`/`values` 只出现在 `Instance`。
+- `--depth <n>`：`Page` 根为 0，`--depth 2` 保留画板与一级子节点，用于先看骨架再下钻。
+- 整体 79 节点的页面 JSON 约 35KB；12 页文档不要一次全读，按 `--page` 分开读。
+- `preview.html` **不是**读取通道：样式已编译、`Vector` 已转 SVG、`Instance` 已展开，
+  且没有反向导入。要视觉结果请人眼看预览，要改稿读 TSX / 用 `read`。
 
 ### validate
 

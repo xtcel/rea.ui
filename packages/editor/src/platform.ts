@@ -4,11 +4,12 @@ import { IMAGE_ACCEPT, IMAGE_MIME, imageExtension } from './session/images';
 
 export const isDesktop = isTauri;
 
-interface OpenedFile { name: string; bytes: number[] | null; error: string | null }
+interface OpenedFile { name: string; path?: string | null; bytes: number[] | null; error: string | null }
 export interface PickedImages { files: File[]; errors: string[] }
+export type SavedDocument = { status: 'saved'; path: string } | { status: 'downloaded' } | { status: 'cancelled' };
 
 /** Subscribe before draining so startup and subsequent Finder requests use one queue. */
-export async function listenForOpenedFiles(onFile: (file: File) => Promise<void>, onError: (message: string) => void, signal?: AbortSignal): Promise<() => void> {
+export async function listenForOpenedFiles(onFile: (file: File, path: string | null) => Promise<void>, onError: (message: string) => void, signal?: AbortSignal): Promise<() => void> {
   if (!isDesktop()) return () => {};
   const { listen } = await import('@tauri-apps/api/event');
   let active = true, running = false, requested = false;
@@ -23,7 +24,7 @@ export async function listenForOpenedFiles(onFile: (file: File) => Promise<void>
         for (const file of files) {
           try {
             if (file.error || !file.bytes) throw new Error(file.error ?? '没有读取到文件内容。');
-            await onFile(new File([new Uint8Array(file.bytes)], file.name, { type: 'application/vnd.reaui+zip' }));
+            await onFile(new File([new Uint8Array(file.bytes)], file.name, { type: 'application/vnd.reaui+zip' }), file.path ?? null);
           } catch (error) { onError(`无法打开「${file.name}」：${error instanceof Error ? error.message : String(error)}`); }
         }
       }
@@ -68,6 +69,12 @@ function chooseInBrowser(): Promise<File[]> {
   });
 }
 
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+  anchor.href = url; anchor.download = name; anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** The save dialog grants filesystem access to its selected path only. */
 export async function saveFile(blob: Blob, filename: string): Promise<void> {
   const name = filename.replace(/[\\/:*?"<>|]/g, '_');
@@ -80,9 +87,22 @@ export async function saveFile(blob: Blob, filename: string): Promise<void> {
     if (path) await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
     return;
   }
-  const url = URL.createObjectURL(blob), anchor = document.createElement('a');
-  anchor.href = url; anchor.download = name; anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  download(blob, name);
+}
+
+/**
+ * Save a `.reaui`: the desktop app overwrites the file the document was opened from, asks for a
+ * path on first save, or — for 另存为 — always asks. The browser has no path, so it downloads.
+ */
+export async function saveDocument(blob: Blob, filename: string, options: { id: string; path?: string | null; choosePath?: boolean }): Promise<SavedDocument> {
+  const name = filename.replace(/[\\/:*?"<>|]/g, '_');
+  if (isDesktop()) {
+    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    const path = await invoke<string | null>('save_document', { id: options.id, name, bytes, path: options.path ?? null, choosePath: options.choosePath ?? false });
+    return path ? { status: 'saved', path } : { status: 'cancelled' };
+  }
+  download(blob, name);
+  return { status: 'downloaded' };
 }
 
 /**

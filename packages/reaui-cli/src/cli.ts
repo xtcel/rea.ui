@@ -10,6 +10,7 @@ import { runValidate } from './commands/validate';
 import { runSystem } from './commands/system';
 import { runComponents } from './commands/components';
 import { runAudit } from './commands/audit';
+import { runRead } from './commands/read';
 
 export const VERSION = '0.2.0';
 
@@ -19,6 +20,7 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
 命令：
   init       创建最小合法文档（rea.json + 页面）
+  read       读取文档结构大纲（页面、图层、绝对坐标、文字）
   validate   校验文档目录或 .reaui
   audit      可编辑性审计（启发式建议；--strict 警告视为失败）
   pack       打包为 .reaui
@@ -38,6 +40,9 @@ const HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
 示例：
   reaui init ./demo --name 我的应用 --page main --page-name 首页
+  reaui read ./demo --json
+  reaui read ./demo --page main
+  reaui read ./demo --page main --depth 2
   reaui validate ./demo --json
   reaui pack ./demo --out demo.reaui
   reaui unpack demo.reaui --out ./restored
@@ -58,6 +63,7 @@ export async function main(argv: string[]): Promise<number> {
   try {
     switch (args.command) {
       case 'init': return await runInit(args);
+      case 'read': return await runRead(args);
       case 'validate': return await runValidate(args);
       case 'pack': return await runPack(args);
       case 'unpack': return await runUnpack(args);

@@ -798,3 +798,116 @@ OpenSpec：`openspec/changes/make-design-systems-project-owned/`，按四阶段�
 
 - 未实际发起一次生成来核对提示词与「本轮修改 / 范围外改动」的分列：引用语义整体放宽，判定逻辑由 `context.test.ts` 覆盖；真实生成还要消耗一次模型额度。
 - 旧 `.reaui` 文件里历史轮次的 `subtree` 字段只在 `normalizeRefs()` 层面验证被忽略，没有拿真实旧文档做往返导入。
+
+# ⌘S 写回打开的 .reaui：save-reaui-in-place（2026-11-17）
+
+实施日期：2026-11-17。对应 OpenSpec `save-reaui-in-place`。起因是用户反馈：在 Finder 打开 `.reaui` 修改设计稿后按 `⌘S`，磁盘上的文件没有更新。
+
+## 根因
+
+editor 只有 IndexedDB 自动保存与主菜单「导出为 .reaui」两条持久化路径，`EditorApp` 的 keydown 里没有任何 `s` 分支，所以 `⌘S` 既不写文件也不拦默认行为。更关键的是原生 `take_pending_open_files` 返回的 `OpenedFile` 只有 `name / bytes / error`，**路径在进入网页层前就被丢弃**，补一个快捷键也无处可写。
+
+## 改动
+
+- `src-tauri/src/lib.rs`：`OpenedFile.path`（`canonicalize` 后的绝对路径）；新增 `DocumentPathStore`（`bound` + `opened`，持久化到应用数据目录 `document-paths.json`）；新增 `save_document(id, name, bytes, path, choose_path)`，只用「系统打开事件给出的路径」或「原生保存对话框刚选中的路径」，写入走 `.{name}.{pid}.tmp` → `sync_all()` → `rename()`。
+- `packages/editor/src/platform.ts`：`listenForOpenedFiles` 把路径传给回调；新增 `saveDocument()`（桌面版调 `save_document`，浏览器版下载并返回 `downloaded`）。
+- `packages/editor/src/session/useDocument.ts`：启动时读回 `meta.document-files`；`importFile(file, path)` 绑定来源；新增 `save()` / `saveAs()`，成功后更新绑定并用 2.4 秒自动消失的提示回执；删除文档时清绑定。
+- `packages/editor/src/EditorApp.tsx`：`⌘/Ctrl+S` 保存、`⇧⌘S` 另存为，判定放在 `blocked()`（输入框 / 菜单 / 弹窗）之前，因此焦点在属性字段或改名框时也能保存，只有内联编辑文字由 `TextEditor` 自己 `stopPropagation`；主菜单改为「保存」+「另存为 .reaui…」；快捷键一览补一行。保存成功用 2.4 秒自动消失的提示告诉用户写到了哪个文件，顶栏保存状态仍只反映 IndexedDB。
+- `packages/editor/src/home/HomeApp.tsx`：Finder 打开回调把路径交给 `importFile`。
+
+## 自动检查
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `cargo test -p rea-ui-desktop` | 10 项通过（新增授权范围、原子替换无残留、目标不可写、补扩展名） |
+| `npx vitest run packages/editor/src/platform.test.ts` | 14 项通过（新增写回/取消/另存为/写入失败/浏览器下载/路径转发） |
+| `npx vitest run packages/editor/src/session packages/storage packages/editor/src/platform.test.ts` | 27 个文件、178 项通过 |
+| `pnpm test`（含 `build:wasm`） | 76 个文件：72 通过 / 2 跳过 / 2 失败；613 项测试中失败项全部来自下面两个文件，与本次无关 |
+| `pnpm build` | WASM、TypeScript、Vite 生产构建通过（`index.js` 1.40MB，gzip 412kB） |
+| `openspec validate save-reaui-in-place --strict` | 通过 |
+| `git diff --check` | 通过 |
+| `cargo fmt --all -- --check` | 本文件已按 rustfmt 排；仓库本身不干净（`crates/local-agent` 10 处、`src-tauri` 既有图片测试 2 处），非本次引入 |
+
+失败项与本次改动无关，且都能单独复现为通过或既有的断言错误：
+
+- `packages/editor/src/home/systemMenu.test.ts`：断言设计系统颜色 `#356AF0`，实际 `#356af0`（`home/data.ts` 里是小写），在本次改动前就失败，`docs/verification.md` 上一节已记录。
+- `packages/reaui-mcp/test/systems.test.ts`：并行跑全量时 2 项 30 秒超时；单跑 3 项全部通过（15.8s / 13.2s / 13.5s），是负载下的超时。
+
+## 真机复核（CDP + headless Chrome）
+
+`scripts/verify-save-shortcut.mjs`（`REA_URL=http://127.0.0.1:5273/`，`#demo` 打开内置示例）：
+
+```
+PASS ⌘S saves a .reaui: ["ReaUI_App.reaui"]
+PASS saved bytes are a ZIP document: 80,75
+PASS saved bytes carry the manifest and a page
+PASS saved bytes are not empty: 8183 bytes
+PASS the editor reports the save: 已下载「ReaUI_App.reaui」
+PASS ⇧⌘S also saves a file
+PASS ⌘S saves while a text field has focus
+```
+
+另用真实下载路径复查过一次：`Page.setDownloadBehavior` 下 `⌘S` 落盘 `ReaUI_App.reaui`（8184 字节），ZIP 内含 `pages/home.page.tsx`（121 层）、`pages/editor.page.tsx`（130 层）与 `rea.json`，确认保存的是当前打开的整份示例文档而不是空白默认文档。随后改用页面内观测 anchor 的方式，避免依赖 Chrome 对连续自动下载的策略。
+
+## 未覆盖
+
+- **桌面真机未执行**（任务 3.5）：`pnpm desktop:dev` 后从 Finder 打开 `.reaui`、改图层、`⌘S`、退出、重新双击确认改动保留，需要人工在图形界面完成。原生写回的授权、原子替换、扩展名补齐由 `cargo test -p rea-ui-desktop` 覆盖，`save_document` 的对话框分支无法在无头环境验证。
+- `⌘Q` 退出前的保存拦截、Windows / Linux 的文件关联与 `Ctrl+S` 未验证。
+- 同一路径重复打开仍会新建文档副本（`decodeReaui` 每次生成新 id），本次未做去重；文件里的 `rea.json.id` 会随「打开 → ⌘S」变化。
+
+# 文档大纲读取：add-document-outline-read（2026-11-17）
+
+实施日期：2026-11-17。对应 OpenSpec `add-document-outline-read`。目标是把「读现有设计稿」从「逐行读 TSX 靠脑补坐标」变成一条明确入口，并给 WorkBuddy 专家包补上内置 MCP。
+
+## 改动
+
+- CLI 新增 `reaui read <dir|file.reaui>`：输出页面、画板与扁平节点列表（`id` / `kind` / `name` / `parent` / `box` / `text` / `component` + `values` / `className`），支持 `--json` / `--page` / `--depth`。
+- `box` 是世界坐标：沿祖先链累加 `left`/`top`，整条链都是 `absolute` 且可静态求值时才给；流式布局标 `flow: true` 且不给坐标。
+- MCP 新增 `reaui_read`，与 CLI 同一实现，工具总数 12 → 13。
+- WorkBuddy 专家包新增根 `mcp.json` 与 `server/reaui-mcp`，`plugin.json` 1.1.0 → 1.2.0；Codex 与 WorkBuddy 两侧的 `bin`/`dist` 已同步。
+
+## 自动检查
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `npx vitest run packages/reaui-cli/test/read.test.ts` | 5 项通过（坐标累加、flex 不伪造坐标、`--depth` 裁剪、`--page` 与缺失页、`.reaui` 与目录一致） |
+| `npx vitest run packages/reaui-mcp/test/read.test.ts` | 1 项通过（端到端读取） |
+| `npx vitest run packages/reaui-mcp/test/systems.test.ts` | 3 项通过（52s，串行） |
+| `npx vitest run`（全量） | 76 个文件：72 通过 / 2 跳过 / 2 失败；失败项与本次无关，见下 |
+| `pnpm build:cli` / `pnpm build:mcp` | 通过 |
+| `openspec validate add-document-outline-read --strict` | 通过 |
+| `git diff --check` | 通过 |
+
+全量失败项说明（与本次改动无关）：
+
+- `packages/editor/src/home/systemMenu.test.ts`：断言 `#356AF0`，实际 `#356af0`，上一节已记录，改动前即失败。
+- `packages/reaui-mcp/test/systems.test.ts`：全量并行时 3 项超时；单跑 52s 全过。每个 MCP 测试都要 spawn 一次 CLI，76 个 worker 并发时被拖慢。本次把新增的 MCP 测试压到「预置文档 + 单次调用」以降负载，未改动既有测试。
+
+## 实测
+
+CLI（发布态 `dist`，`node -e "import('./packages/reaui-cli/dist/reaui.mjs')…"`）：
+
+```
+read   examples/editable-workbench.reaui --json     0.35–0.65s
+preview designs/plviews/PLViews-Desktop             0.70–0.92s（12 页 / 192KB TSX）
+```
+
+同样的 `read` 走仓库内 `bin/reaui.mjs`（Vite 加载源码）要 7–9s，仅开发态如此；插件包内只有 `dist`，不受影响。
+
+`read` 输出规模：`PLViews-Desktop` 的 `dashboard` 页 79 个节点，`--json`（2 空格缩进）35,121 字节；`--depth 2` 在嵌套文档上从 31 个节点收到 5 个。
+
+MCP（`server/reaui-mcp` stdio 实测）：
+
+```
+tools/list → 13 个工具（新增 reaui_read）
+reaui_read { path: "examples/editable-workbench.reaui", depth: 2 }
+→ 画板 desktop-artboard 1440×1024；sidebar @0,0 240×1024；topbar @240,0 1200×80；main-content @280,112 1120×864
+```
+
+## 未覆盖
+
+- **WorkBuddy 宿主内实跑未做**：`mcp.json` 的格式与已安装的 cloudbase 插件一致（根目录 `mcp.json`，宿主用 `resolveAgentPluginPath(e, './mcp.json')` + `parseAgentPluginMcp` 读取，`${PLUGIN_ROOT}` 会展开），stdio 直连已实测 13 个工具。宿主启动 MCP 时 `cwd` 缺省即为插件根目录（`cwd: typeof e.cwd === 'string' ? expand(e.cwd) : pluginRoot`），所以显式写成 `cwd: ${PLUGIN_ROOT}`：**MCP 的工作区是插件目录，不是用户项目**，读用户已有 `.reaui` 仍要走 CLI。插件是否在下次会话自动重载、工具能否出现在对话里，需要在宿主里确认。
+- 预览 HTML 的反向解析未做，也不打算做（见 proposal 的范围说明）。
+- 编辑器保存时生成 `preview.html` 未实现：实测进程内一次完整生成约 96ms（读 12 页 62.7ms + 增量 Tailwind 4.2ms + 渲染 22.1ms + 写 223KB 10.5ms），独立 CLI 调用 0.8s；`preview.html` 会让 `.reaui` 从 33.8KB 涨到 57.3KB（+70%）。

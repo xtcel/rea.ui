@@ -475,7 +475,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     reorder(ids: string[]) { model.execute({ type: 'reorderPages', ids }, '页面排序'); },
   };
   function run(action: () => Promise<unknown>) { void action().catch(error => model.setNotice(String(error))); }
-  async function exportDocument() { const file = await model.exportFile(); await saveFile(file.blob, file.name); }
+  async function exportDocument(): Promise<void> { await model.saveAs(); }
   /** 导出图片：只导当前选中的图层（多选各自一份）；多个文件打包成 ZIP，只弹一次保存框。 */
   async function exportImages(format: ExportFormat, scale: number, suffix = '') {
     try {
@@ -497,6 +497,8 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   useEffect(() => {
     const blocked=(target:EventTarget|null)=>showDocuments||shortcuts||editingId||document.querySelector('[role="menu"],dialog[open]')||(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
     function keydown(event:KeyboardEvent) {
+      // 保存要在任何焦点下都能用（输入框、图层改名、属性字段），只有正在编辑文字时由 TextEditor 自己吞掉。
+      if(!event.defaultPrevented&&(event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();run(() => event.shiftKey ? model.saveAs() : model.save());return;}
       if(event.defaultPrevented||blocked(event.target))return;
       const command=event.metaKey||event.ctrlKey,key=event.key.toLowerCase();
       if(command){
@@ -555,8 +557,10 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       { label: '新建文档', action: () => run(() => model.create()) }, { label: '打开文档…', action: () => setShowDocuments(true) },
       { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => input.current?.click() },
       { label: '插入图片或 SVG…', action: chooseImages },
+      { label: '保存', shortcut: '⌘/Ctrl+S', action: () => run(() => model.save()) },
+      { label: '另存为 .reaui…', shortcut: '⌘/Ctrl+Shift+S', action: () => run(exportDocument) },
       { label: '导出图片…', disabled: !exportCount, action: () => setExportOpen(true) },
-      { label: '导出为 .reaui', action: () => run(exportDocument) }, { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
+      { label: '导出当前页面代码 (.tsx)', action: () => run(() => saveFile(new Blob([exportPageCode(parsed.code)], { type: 'text/plain;charset=utf-8' }), `${page.name}.tsx`)) },
       { label: '撤销', shortcut: '⌘/Ctrl+Z', disabled: !current.past.length, action: model.undo },
       { label: '重做', shortcut: '⌘/Ctrl+Shift+Z', disabled: !current.future.length, action: model.redo },
       { label: '创建组件', action: createComponent, disabled: !selectedIds.length },
@@ -605,5 +609,5 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
   {exportOpen && <ExportDialog count={exportCount} onClose={() => setExportOpen(false)} onExport={exportImages} />}
   {showSystem && <DesignSystemDialog model={model} onClose={() => setShowSystem(false)} onEdit={onEditSystem} choices={systemChoices} />}
   {contextMenu && <ContextMenu label={contextMenu.rulerZone ? '标尺操作' : contextMenu.guideId ? '参考线操作' : menuActions ? '图层操作' : '画布操作'} x={contextMenu.x} y={contextMenu.y} entries={menuEntries} onClose={() => setContextMenu(null)} />}
-  {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['显示 / 隐藏 · 锁定 / 解锁', '⇧⌘H / ⇧⌘L'], ['水平 / 垂直翻转', 'Shift+H / Shift+V'], ['自动布局 / 粘贴并替换', 'Shift+A / ⇧⌘R'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['直角 / 圆角切换', '双击圆角'], ['显示 / 隐藏标尺', '⌃R'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
+  {shortcuts && <Dialog title="快捷键一览" onClose={() => setShortcuts(false)}><dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-3 text-xs">{[['移动 / 画框 / 文字 / 抓手', 'V / F / T / H'], ['矩形 / 椭圆', 'R / O'], ['撤销 / 重做', '⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z'], ['保存 / 另存为', '⌘/Ctrl+S / ⇧⌘S'], ['适应全部 / 适应选中 / 100%', 'Shift+1 / Shift+2 / Shift+0'], ['放大 / 缩小', '+ / −'], ['平移画布', '空格+拖动 / 中键拖动'], ['移动图层 / 大步移动', '方向键 / Shift+方向键'], ['加选 / 穿透选择', 'Shift+单击 / ⌘/Ctrl+单击'], ['进入 / 父级 / 同级', 'Enter / Shift+Enter / Tab'], ['全选 / 编组 / 取消编组', '⌘/Ctrl+A / G / Shift+G'], ['用画框包裹 / 重复', '⌘/Ctrl+Alt+G / ⌘/Ctrl+D'], ['前移 / 后移 / 置顶或置底', '⌘/Ctrl+] / [ / 加 Alt'], ['复制 / 剪切 / 粘贴', '⌘/Ctrl+C / X / V'], ['显示 / 隐藏 · 锁定 / 解锁', '⇧⌘H / ⇧⌘L'], ['水平 / 垂直翻转', 'Shift+H / Shift+V'], ['自动布局 / 粘贴并替换', 'Shift+A / ⇧⌘R'], ['等比 / 中心缩放 / 旋转步长', 'Shift / Alt / Shift 15°'], ['编辑文字 / 提交 / 取消', '双击或 Enter / ⌘/Ctrl+Enter / Esc'], ['直角 / 圆角切换', '双击圆角'], ['显示 / 隐藏标尺', '⌃R'], ['删除图层 / 取消手势', 'Delete / Esc']].map(([label, key]) => <div key={label} className="contents"><dt>{label}</dt><dd className="text-right text-[var(--rea-muted)]">{key}</dd></div>)}</dl></Dialog>}</>;
 }

@@ -116,7 +116,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
 	"height",
 	"id",
 	"format",
-	"system"
+	"system",
+	"depth"
 ]);
 var ALIASES = {
 	o: "out",
@@ -51121,6 +51122,151 @@ async function runAudit(args) {
 		return 1;
 	}
 }
+// src/commands/read.ts
+function classNameOf(node) {
+	return node.element.props.className ?? "";
+}
+/**
+* 世界坐标只在整条祖先链都是 absolute 且 left/top 可静态求值时成立。
+* 任何一环进入流式布局就返回 undefined —— 与其给一个错的坐标，不如不给。
+*/
+function boxOf(nodes, node) {
+	let x = 0;
+	let y = 0;
+	let current = node;
+	while (current && current.kind !== "Page") {
+		if (current.position !== "absolute") return void 0;
+		const className = classNameOf(current);
+		const left = fixedValue(className, "left");
+		const top = fixedValue(className, "top");
+		if (left === void 0 || top === void 0) return void 0;
+		x += left;
+		y += top;
+		current = current.parentId ? nodes.get(current.parentId) : void 0;
+	}
+	const width = fixedValue(classNameOf(node), "width");
+	const height = fixedValue(classNameOf(node), "height");
+	return {
+		x,
+		y,
+		...width === void 0 ? {} : { w: width },
+		...height === void 0 ? {} : { h: height }
+	};
+}
+/** 节点在页面内的层级：Page 根为 0。 */
+function depthOf(nodes, node) {
+	let depth = 0;
+	let current = node;
+	while (current?.parentId) {
+		depth++;
+		current = nodes.get(current.parentId);
+	}
+	return depth;
+}
+function outlineOf(page, file, maxDepth) {
+	const nodes = [];
+	for (const node of page.nodes.values()) {
+		if (maxDepth !== void 0 && depthOf(page.nodes, node) > maxDepth) continue;
+		const props = node.element.props;
+		const box = boxOf(page.nodes, node);
+		const text = node.kind === "Text" ? textContent(node.element.props.children) : void 0;
+		const component = typeof props.component === "string" ? props.component : void 0;
+		const rawValues = props.values;
+		const values = rawValues && typeof rawValues === "object" && !Array.isArray(rawValues) ? Object.fromEntries(Object.entries(rawValues).map(([key, item]) => [key, String(item)])) : void 0;
+		nodes.push({
+			id: node.id,
+			kind: node.kind,
+			name: node.name,
+			parent: node.parentId,
+			...box ? { box } : { flow: true },
+			...text ? { text } : {},
+			...component ? { component } : {},
+			...values ? { values } : {},
+			...node.hidden ? { hidden: true } : {},
+			...node.locked ? { locked: true } : {},
+			className: classNameOf(node)
+		});
+	}
+	return {
+		id: page.id,
+		name: page.name,
+		file,
+		boards: artboardsOf(page.source).map((board) => ({
+			designId: board.designId,
+			name: board.name,
+			width: board.width,
+			height: board.height
+		})),
+		nodes
+	};
+}
+function describeBox(box) {
+	if (!box) return "flow";
+	const size = box.w === void 0 || box.h === void 0 ? "" : ` ${box.w}×${box.h}`;
+	return `@${box.x},${box.y}${size}`;
+}
+function printOutline(pages) {
+	for (const page of pages) {
+		const board = page.boards.map((item) => `${item.name} ${item.width}×${item.height}`).join("、");
+		console.log(`\n${page.id} · ${page.name}  ·  ${board || "无画板"}  ·  ${page.nodes.length} 个节点`);
+		const depth = /* @__PURE__ */ new Map();
+		for (const node of page.nodes) {
+			const level = node.parent ? (depth.get(node.parent) ?? 0) + 1 : 0;
+			depth.set(node.id, level);
+			const details = [
+				`${"  ".repeat(level)}[${node.kind}] ${node.id}`,
+				node.name && node.name !== node.id ? node.name : "",
+				describeBox(node.box),
+				node.text ? JSON.stringify(node.text) : "",
+				node.component ? `→ ${node.component}` : "",
+				node.hidden ? "(隐藏)" : ""
+			].filter(Boolean);
+			console.log(`  ${details.join("  ")}`);
+		}
+	}
+}
+async function runRead(args) {
+	const target = args.positionals[0] ?? ".";
+	const json = args.flags.has("json");
+	const wanted = value(args, "page");
+	const depthFlag = value(args, "depth");
+	const maxDepth = depthFlag === void 0 ? void 0 : Number(depthFlag);
+	try {
+		if (maxDepth !== void 0 && (!Number.isInteger(maxDepth) || maxDepth < 0)) throw new CliError("USAGE_DEPTH", `--depth 需要非负整数，收到：${depthFlag}`, target, "例如 --depth 2 只保留画板与一级子节点。");
+		const loaded = await loadDocument(target);
+		const session = openSession(loaded.files);
+		const available = session.manifest.pages;
+		const selected = wanted ? available.filter((page) => page.id === wanted) : available;
+		if (wanted && !selected.length) throw new CliError("USAGE_PAGE", `没有页面 ${wanted}；可用页面：${available.map((page) => page.id).join("、")}`, target, "省略 --page 读取全部页面。");
+		const pages = [];
+		for (const entry of selected) {
+			const parsed = session.pages.get(entry.id);
+			if (!parsed) continue;
+			pages.push(outlineOf(parsed.page, entry.file, maxDepth));
+		}
+		if (json) {
+			const payload = {
+				ok: true,
+				document: {
+					id: session.manifest.id,
+					name: session.manifest.name,
+					version: session.manifest.version
+				},
+				pages,
+				warnings: loaded.warnings
+			};
+			console.log(JSON.stringify(payload, null, 2));
+			return 0;
+		}
+		console.log(`文档：${session.manifest.name}（id ${session.manifest.id}，格式 v${session.manifest.version}，${pages.length} 页）`);
+		printOutline(pages);
+		for (const warning of loaded.warnings) console.log(`  警告：${warning}`);
+		return 0;
+	} catch (error) {
+		printErrors([describe(error, target)], json);
+		return 1;
+	}
+}
 // src/cli.ts
 var VERSION = "0.2.0";
 var HELP = `reaui ${VERSION} - REA UI 设计源命令行
@@ -51129,6 +51275,7 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
 命令：
   init       创建最小合法文档（rea.json + 页面）
+  read       读取文档结构大纲（页面、图层、绝对坐标、文字）
   validate   校验文档目录或 .reaui
   audit      可编辑性审计（启发式建议；--strict 警告视为失败）
   pack       打包为 .reaui
@@ -51148,6 +51295,9 @@ var HELP = `reaui ${VERSION} - REA UI 设计源命令行
 
 示例：
   reaui init ./demo --name 我的应用 --page main --page-name 首页
+  reaui read ./demo --json
+  reaui read ./demo --page main
+  reaui read ./demo --page main --depth 2
   reaui validate ./demo --json
   reaui pack ./demo --out demo.reaui
   reaui unpack demo.reaui --out ./restored
@@ -51172,6 +51322,7 @@ async function main(argv) {
 	try {
 		switch (args.command) {
 			case "init": return await runInit(args);
+			case "read": return await runRead(args);
 			case "validate": return await runValidate(args);
 			case "pack": return await runPack(args);
 			case "unpack": return await runUnpack(args);

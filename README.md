@@ -152,7 +152,7 @@ The WorkBuddy expert is not maintained in this repository. 「ReaUI 设计专家
 | Align / distribute | The panel offers six alignments plus horizontal and vertical spacing. Alt+A / D / W / S / H / V align, ignored while a field has focus. A multi-selection change is one undo step |
 | Delete / undo / redo | Delete; ⌘/Ctrl+Z; ⌘/Ctrl+Shift+Z. Page operations undo as a whole |
 | Pan / zoom canvas | H, space or middle-drag; wheel pans; ⌘/Ctrl+wheel zooms; + and − zoom; Shift+1 fits all, Shift+2 fits selection, Shift+0 returns to 100% |
-| Save and backup | Debounced autosave to IndexedDB. "Export as .reaui" from the main menu writes the whole document and its assets; a failed save offers the export path |
+| Save and backup | Debounced autosave to IndexedDB. On desktop ⌘S atomically overwrites the .reaui the document was opened from (a save dialog appears when there is no source file), ⇧⌘S saves as a new file, and the browser build downloads the .reaui; a failed save offers the export path |
 | Page code / shortcuts | Export the current page's `.tsx` from the main menu, or open the shortcut list |
 | Workspace layout | Drag the edges of either rail to resize (200–400px, persisted). The page strip collapses and resizes. Below 900px the rails become mutually exclusive drawers opened from the top bar and closed by tapping the scrim |
 | AI sessions | Switch, create and delete sessions from the "AI" header in the left rail. Sessions are saved in `.reaui` and cannot be switched mid-generation |

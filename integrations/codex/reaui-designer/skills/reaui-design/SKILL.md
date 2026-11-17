@@ -14,7 +14,7 @@ Two runtimes ship with this plugin:
 
 | Runtime | Use it for | Location |
 |---|---|---|
-| **CLI (primary)** | Everything that writes the user's project files: `init`, `validate`, `pack`, `unpack`, `preview`, `diff` | `scripts/reaui.mjs` next to this file (wraps `server/reaui-cli`) |
+| **CLI (primary)** | Everything that touches the user's project files: `init`, `read`, `validate`, `pack`, `unpack`, `preview`, `diff` | `scripts/reaui.mjs` next to this file (wraps `server/reaui-cli`) |
 | **Local MCP (secondary)** | Drafting/validating inside the plugin workspace, plus the `reaui://protocol` resource | `server/reaui-mcp`, tools described in `references/mcp.md` |
 
 Detailed references: `references/cli.md` (commands, flags, exit codes),
@@ -199,8 +199,9 @@ Pipeline:
    version as well (re-run `init` + pages without pinning) or ask them to
    update; do not silently deliver a file that will not open.
 
-MCP note: MCP tools expose no design-system operation, so this step must use
-the CLI scripts.
+MCP note: `reaui_get_system` / `reaui_set_system` can read and adopt a package,
+but pinning (writing `design/system.json`, raising `rea.json` to v4, recomputing
+the hash) stays in the CLI scripts below.
 
 ## 8. Preview, pack, verify
 
@@ -223,6 +224,7 @@ design system snapshot.
 
 ```bash
 reaui unpack "$PROJECT/designs/old.reaui" --out "$PROJECT/designs/old-edit"
+reaui read "$PROJECT/designs/old-edit" --json   # what is actually there, before editing
 # edit only the requested pages; keep designId/name/order of untouched nodes
 reaui validate "$PROJECT/designs/old-edit" --json
 reaui preview "$PROJECT/designs/old-edit" --out "$PROJECT/designs/new-preview.html"
@@ -233,6 +235,9 @@ reaui validate "$PROJECT/designs/new.reaui" --json
 - Unpack to a **new** directory; never edit the original `.reaui` in place.
 - Preserve `designId`, page ids, page order, and untouched copy.
 - `reaui diff <before> <after>` reports scope; run it when a before-copy exists.
+- Read structure with `reaui read <doc> --json [--page <id>] [--depth <n>]` —
+  never by reading `preview.html` back: styles are compiled, `Vector` paths are
+  SVG, instances are expanded, and there is no HTML importer.
 - Keep an existing v4 document at version 4 and leave `design/system.json`
   untouched unless the request changes the system. To change it, use
   `pin-system.mjs --force` and re-validate.

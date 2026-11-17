@@ -1,6 +1,6 @@
 import { CliError } from './errors';
 
-const VALUE_FLAGS = new Set(['name', 'page', 'page-name', 'out', 'width', 'height', 'id', 'format', 'system']);
+const VALUE_FLAGS = new Set(['name', 'page', 'page-name', 'out', 'width', 'height', 'id', 'format', 'system', 'depth']);
 const ALIASES: Record<string, string> = { o: 'out', n: 'name', h: 'help', v: 'version' };
 
 export interface Args {

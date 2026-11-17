@@ -4,7 +4,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri, invoke: mocks.i
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mocks.save }));
 vi.mock('@tauri-apps/plugin-fs', () => ({ writeFile: mocks.writeFile }));
-import { listenForOpenedFiles, saveFile } from './platform';
+import { listenForOpenedFiles, saveDocument, saveFile } from './platform';
 
 describe('desktop file export', () => {
   beforeEach(() => { vi.clearAllMocks(); mocks.isTauri.mockReturnValue(true); });
@@ -27,20 +27,72 @@ describe('desktop file export', () => {
   });
 });
 
+describe('desktop document saving', () => {
+  beforeEach(() => { vi.resetAllMocks(); mocks.isTauri.mockReturnValue(true); });
+  it('overwrites the file the document was opened from without asking again', async () => {
+    mocks.invoke.mockResolvedValue('/tmp/设计.reaui');
+    const bytes = new Uint8Array([80, 75, 3, 4]);
+    const result = await saveDocument(new Blob([bytes]), '设计:稿.reaui', { id: 'doc_1', path: '/tmp/设计.reaui' });
+    expect(mocks.invoke).toHaveBeenCalledWith('save_document', { id: 'doc_1', name: '设计_稿.reaui', bytes: [80, 75, 3, 4], path: '/tmp/设计.reaui', choosePath: false });
+    expect(result).toEqual({ status: 'saved', path: '/tmp/设计.reaui' });
+  });
+  it('lets the app ask for a path when the document has no file yet', async () => {
+    mocks.invoke.mockResolvedValue(null);
+    const result = await saveDocument(new Blob(['zip']), 'a.reaui', { id: 'doc_1' });
+    expect(mocks.invoke).toHaveBeenCalledWith('save_document', expect.objectContaining({ path: null, choosePath: false }));
+    expect(result).toEqual({ status: 'cancelled' });
+  });
+  it('always asks for a path when saving as a new file', async () => {
+    mocks.invoke.mockResolvedValue('/tmp/副本.reaui');
+    await saveDocument(new Blob(['zip']), 'a.reaui', { id: 'doc_1', path: '/tmp/a.reaui', choosePath: true });
+    expect(mocks.invoke).toHaveBeenCalledWith('save_document', expect.objectContaining({ path: '/tmp/a.reaui', choosePath: true }));
+  });
+  it('surfaces a failed write instead of reporting success', async () => {
+    mocks.invoke.mockRejectedValue(new Error('写入文件失败：permission denied'));
+    await expect(saveDocument(new Blob(['zip']), 'a.reaui', { id: 'doc_1', path: '/tmp/a.reaui' })).rejects.toThrow('写入文件失败');
+  });
+  it('downloads instead of writing a path in the browser', async () => {
+    mocks.isTauri.mockReturnValue(false);
+    const anchor = { href: '', download: '', click: vi.fn() };
+    vi.stubGlobal('document', { createElement: () => anchor });
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:design', revokeObjectURL: vi.fn() });
+    try {
+      const result = await saveDocument(new Blob(['zip']), '设计:稿.reaui', { id: 'doc_1', path: '/tmp/a.reaui' });
+      expect(result).toEqual({ status: 'downloaded' });
+      expect(anchor.download).toBe('设计_稿.reaui');
+      expect(anchor.href).toBe('blob:design');
+      expect(anchor.click).toHaveBeenCalledOnce();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
 describe('desktop file opening', () => {
   beforeEach(() => { vi.resetAllMocks(); mocks.isTauri.mockReturnValue(true); });
   it('subscribes before consuming a cold-launch file and preserves its bytes and Unicode name', async () => {
-    const unlisten=vi.fn(), onFile=vi.fn(async (file:File) => {
+    const unlisten=vi.fn(), onFile=vi.fn(async (file:File, _path:string|null) => {
       expect(file.name).toBe('中文 设计.REAUI');
       expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([80,75,0,255]));
     });
     mocks.listen.mockResolvedValue(unlisten);
     mocks.invoke.mockImplementation(async () => {
       expect(mocks.listen).toHaveBeenCalledWith('reaui-open-files',expect.any(Function));
-      return [{name:'中文 设计.REAUI',bytes:[80,75,0,255],error:null}];
+      return [{name:'中文 设计.REAUI',path:'/Users/me/中文 设计.REAUI',bytes:[80,75,0,255],error:null}];
     });
     const stop=await listenForOpenedFiles(onFile,vi.fn());
-    await vi.waitFor(()=>expect(onFile).toHaveBeenCalledOnce());stop();expect(unlisten).toHaveBeenCalledOnce();
+    await vi.waitFor(()=>expect(onFile).toHaveBeenCalledOnce());
+    // ⌘S needs the path the OS handed over; dropping it was why the file never updated.
+    expect(onFile.mock.calls[0][1]).toBe('/Users/me/中文 设计.REAUI');
+    stop();expect(unlisten).toHaveBeenCalledOnce();
+  });
+  it('opens without a writable path when the OS reports none', async () => {
+    const unlisten=vi.fn(), onFile=vi.fn(async (_file:File, _path:string|null) => {});
+    mocks.listen.mockResolvedValue(unlisten);
+    mocks.invoke.mockResolvedValue([{name:'one.reaui',bytes:[1],error:null}]);
+    const stop=await listenForOpenedFiles(onFile,vi.fn());
+    await vi.waitFor(()=>expect(onFile).toHaveBeenCalledOnce());
+    expect(onFile.mock.calls[0][1]).toBeNull();
+    stop();
   });
   it('serializes new Finder requests arriving while another document is opening', async () => {
     let opened:(()=>void)|undefined, release:(()=>void)|undefined;

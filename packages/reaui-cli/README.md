@@ -64,6 +64,7 @@ assets/…                         optional assets
 | Command | Purpose |
 |---|---|
 | `init` | Create a minimal valid document (`rea.json` + page TSX) |
+| `read` | Read the outline: pages, artboards, layers, world boxes, text; `--page` / `--depth` to narrow |
 | `validate` | Validate a directory or `.reaui`; `--json` returns structured errors |
 | `pack` | Pack into a single `.reaui` file |
 | `unpack` | Unpack `.reaui` into a directory for page-by-page editing |

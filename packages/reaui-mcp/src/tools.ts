@@ -60,6 +60,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   const { root } = context;
 
   server.registerTool('reaui_get_system', {
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     title: 'Read the project design system', description: 'Read the complete embedded project system, or null when none is set. This project snapshot is authoritative for generation.',
     inputSchema: { path: z.string().describe('Project directory or .reaui file relative to the workspace root') },
   }, async input => {
@@ -70,6 +71,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     } catch (error) { return failure(error); }
   });
   server.registerTool('reaui_set_system', {
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     title: 'Set or remove the project design system', description: 'Adopt a complete reaui-design-system package in a project directory. Pass null to remove. Validates all page/component token references before writing; does not publish a library version.',
     inputSchema: { path: z.string().describe('Project directory relative to the workspace root'), system: z.string().nullable().describe('Full JSON package including schemaVersion, revision and hash; null removes the system') },
   }, async input => {
@@ -81,6 +83,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   });
 
   server.registerTool('reaui_audit', {
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     title: 'Audit design editability', description: 'Read-only heuristic suggestions for hierarchy, names, component reuse and editable SVG geometry. Separate from format validation.',
     inputSchema: { path: z.string(), strict: z.boolean().optional() },
   }, async input => {
@@ -92,6 +95,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   });
 
   server.registerTool('reaui_init_components', {
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     title: 'Initialize reusable components', description: 'Add a catalog to an existing document directory; upgrades v2 to v3, keeps v4, never overwrites existing definitions.',
     inputSchema: { path: z.string() },
   }, async input => {
@@ -105,6 +109,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_init',
     {
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       title: 'Create a design document',
       description:
         'Create a minimal valid .reaui document (rea.json + one page TSX) at the given path. Use this before writing page content. Returns the created path and exit code.',
@@ -140,6 +145,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_write_page',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       title: 'Write a page and validate it',
       description:
         'Write TSX source for one page, add it to the manifest if new, then validate immediately and return structured errors. This is the main tool for generating design content: the page must only use @rea/design primitives with static props and Tailwind className.',
@@ -185,8 +191,36 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   );
 
   server.registerTool(
+    'reaui_read',
+    {
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      title: 'Read a document outline',
+      description:
+        'Read what a document actually contains: every page with its artboards and a flat layer list carrying designId, kind, display name, parent, absolute box, text, instance values and className. Use this before editing an existing document instead of guessing from a preview HTML. Pass page to narrow to one page and depth to trim deep nesting.',
+      inputSchema: {
+        path: z.string().describe('Document directory or .reaui file, relative to the workspace root'),
+        page: z.string().optional().describe('Page id to read; omit to read every page'),
+        depth: z.number().int().nonnegative().optional().describe('Maximum node depth, Page root is 0; omit for the full tree'),
+      },
+    },
+    async input => {
+      try {
+        const target = resolveInRoot(root, input.path);
+        const args = ['read', relativeTo(root, target), '--json'];
+        if (input.page) args.push('--page', input.page);
+        if (input.depth !== undefined) args.push('--depth', String(input.depth));
+        const result = await runCli(args, root);
+        const parsed = parseJsonOutput(result.stdout);
+        if (!parsed) return reply({ ok: false, exitCode: result.code, error: result.stdout || result.stderr }, true);
+        return reply(parsed, result.code !== 0);
+      } catch (error) { return failure(error); }
+    },
+  );
+
+  server.registerTool(
     'reaui_validate',
     {
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       title: 'Validate a document',
       description:
         'Validate a document directory or a .reaui file. Returns structured errors with code, path, message and hint. Passing validation means the REA UI editor will open the file.',
@@ -210,6 +244,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_pack',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       title: 'Pack a document into .reaui',
       description:
         'Pack a validated document directory into a single .reaui file (ZIP). Only call after validation passes. Returns the output path and byte size.',
@@ -238,6 +273,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_unpack',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       title: 'Unpack a .reaui file',
       description: 'Unpack a .reaui file into a document directory so pages can be edited one by one.',
       inputSchema: {
@@ -264,6 +300,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_preview',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       title: 'Render a self-contained HTML preview',
       description:
         'Render a validated document into a single self-contained preview.html with inline CSS. Useful for showing the result to a human without opening the editor.',
@@ -289,6 +326,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_diff',
     {
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       title: 'Compare two design sources',
       description: 'Compare two document directories and report what changed, so an agent can confirm it only touched the intended scope.',
       inputSchema: {
@@ -312,6 +350,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
     'reaui_create_design',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       title: 'Create a complete design in one call',
       description:
         'End-to-end: create the document, write every page, add pages to the manifest, validate, then pack into a .reaui file. Returns validation errors without packing if any page is invalid. Use this for the common "generate a multi-page design" request; use reaui_write_page for iterative edits.',

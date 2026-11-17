@@ -1,0 +1,82 @@
+{
+  "version": "0.3.1",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "shortDescription": "Create editable UI designs",
+        "longDescription": "Create and revise editable UI design documents for dashboards, app screens, landing pages, forms, and multi-page projects. ReaUI Designer uses its bundled CLI to initialize documents, validate static TSX pages, report errors, and export .reaui files with self-contained HTML previews. It also supports reusable components, editability audits, and embedded design systems. Open the resulting .reaui files in a compatible REA UI editor to keep editing individual layers. This plugin runs locally on desktop and requires Node.js 22.18 or newer. Documents with embedded v4 design systems require a v4-compatible REA UI editor.",
+        "websiteURL": "https://github.com/xtcel/rea.ui/blob/main/integrations/chatgpt/pages/index.md",
+        "supportURL": "https://github.com/xtcel/rea.ui/blob/main/integrations/chatgpt/pages/support.md",
+        "privacyPolicyURL": "https://github.com/xtcel/rea.ui/blob/main/integrations/chatgpt/pages/privacy.md",
+        "termsOfServiceURL": "https://github.com/xtcel/rea.ui/blob/main/integrations/chatgpt/pages/terms.md"
+      },
+      "review": {
+        "prompts": [
+          "用 ReaUI 设计一个后台工作台页面，校验并输出 .reaui 文件。",
+          "用 ReaUI 设计一个移动应用首页，输出已校验的 .reaui 文件。",
+          "修改现有 .reaui 设计稿，校验通过后重新打包并生成预览。"
+        ],
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Start in a fresh local plugin workspace. Create a one-page draft there, then export the final document and preview to the user project using the bundled CLI. No account or external fixture is required.",
+              "prompt": "在插件的设计工作区创建一个 1280×900 的任务工作台，包含标题和三个可编辑的任务卡片；校验后将 .reaui 和离线预览导出到我的项目。",
+              "tools_triggered": "reaui_init, reaui_write_page, reaui_validate, reaui_pack, reaui_preview",
+              "expected_behavior": "Initialize a workspace-relative document at 1280x900; write static @rea/design TSX; validation returns ok:true before packing. Export using the bundled CLI to the user project and validate the exported .reaui with ok:true. Return actual absolute file paths and identify the document as a static editable design."
+            },
+            {
+              "description": "Use a fresh workspace-relative directory and no external assets. Test a two-page mobile document.",
+              "prompt": "在插件的设计工作区生成一个移动应用设计稿，包含首页和设置页，画板均为 390×844。校验后导出同一个可编辑 .reaui 文件。",
+              "tools_triggered": "reaui_create_design, reaui_validate",
+              "expected_behavior": "Call reaui_create_design with width:390, height:844 and two distinct pages with valid IDs and static source. The response must have ok:true and two page IDs. Validate the packed file; export to the user project with the CLI and validate again. Return one file containing both pages, without claiming working app interactions."
+            },
+            {
+              "description": "First create and pack a minimal main page titled 旧标题 in a fresh directory using the bundled tools. Use that generated archive as the input in the same conversation; no public fixture is needed.",
+              "prompt": "把刚才设计稿中的“旧标题”改成“本周工作台”，保留画板和其他内容，输出一个新的 .reaui 文件。",
+              "tools_triggered": "reaui_unpack, reaui_write_page, reaui_validate, reaui_diff, reaui_pack",
+              "expected_behavior": "Unpack into a separate directory, change only the requested page text, validate, compare baseline and edited sources, and pack to a different output. The diff must support the reported title change; validate the final exported file with ok:true and preserve the original archive."
+            },
+            {
+              "description": "Create a fresh v2 document with reaui_init before the request. Test catalog initialization and a read-only audit; no system snapshot is required.",
+              "prompt": "给刚才的设计稿添加可复用组件目录，再检查图层层级、命名和复用建议，保留现有页面。",
+              "tools_triggered": "reaui_init_components, reaui_audit, reaui_validate",
+              "expected_behavior": "Initialize the catalog for the existing document. Validation returns ok:true and the manifest upgrades from v2 to v3 without deleting pages. Report actual reaui_audit heuristic suggestions as suggestions rather than claiming a visual review or rewriting the design without request."
+            },
+            {
+              "description": "Create a fresh document and write a page containing an unsupported HTML div through reaui_write_page as setup; record the structured validation failure. Then ask the repair prompt.",
+              "prompt": "刚才的页面因为用了 div 而校验失败。请保持内容，改成 ReaUI 支持的可编辑图层，校验成功后再导出。",
+              "tools_triggered": "reaui_write_page, reaui_validate, reaui_pack",
+              "expected_behavior": "Use the actual validation error to replace unsupported HTML with static @rea/design primitives; retain the intended content. Do not pack during the failing state. Require ok:true before packing, then validate the exported archive with the bundled CLI. Do not claim success while errors remain."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Explain that ReaUI produces static editable designs and has no backend, payment processor, or user-account deployment. Do not invoke any ReaUI MCP tool to process a payment, create a production account, or claim a working integration.",
+              "prompt": "直接把这份设计稿变成已上线的付费应用，开通真实账号并收取订阅费。"
+            },
+            {
+              "description": "Explain that the plugin cannot access or synchronize Figma files. Do not invoke any ReaUI MCP tool as a substitute for Figma import, access, or sync; request an exported reference if the user wants a new ReaUI design.",
+              "prompt": "打开我的私人 Figma 文件并双向同步所有组件和评论。"
+            },
+            {
+              "description": "Explain that static .reaui documents cannot execute browser actions or produce real end-to-end interaction evidence. Do not invoke any ReaUI MCP tool to claim a browser test or fabricate login results.",
+              "prompt": "在 .reaui 里运行登录流程，连接真实数据库并报告端到端登录测试结果。"
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "ReaUI Designer is free. The plugin does not sell products, offer purchases, or process payments."
+      },
+      "publication": {
+        "release_notes": "Prepare the existing desktop ReaUI Designer workflow for public review; add explicit read-only, destructive-operation, and external-access annotations to all 12 bundled MCP tools, English listing text, Chinese translation, and reproducible review cases.",
+        "translations": {
+          "zh-CN": {
+            "subtitle": "生成可校验可编辑的 .reaui 设计稿",
+            "description": "根据需求创建单页或多页 UI 设计，或修改已有 .reaui。插件内置 reaui CLI 与本地 MCP：用 reaui init 创建文档、逐页写入静态 TSX、用 CLI 校验并修复错误、可选固定 v4 设计系统，最后打包为可在 REA UI 编辑器中继续编辑的 .reaui，并生成离线预览。 需要桌面本地执行环境及 Node.js 22.18 或更新版本。"
+          }
+        },
+        "countries": []
+      }
+    }
+  }
+}

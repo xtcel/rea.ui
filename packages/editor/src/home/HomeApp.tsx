@@ -49,8 +49,8 @@ export function HomeApp() {
     const controller = new AbortController();
     let disposed = false;
     let stop: (() => void) | undefined;
-    void listenForOpenedFiles(async file => {
-      await latestModel.current.importFile(file);
+    void listenForOpenedFiles(async (file, path) => {
+      await latestModel.current.importFile(file, path);
       setInEditor(true);
     }, message => { setError(message); latestModel.current.setNotice(message); }, controller.signal).then(unlisten => {
       if (disposed) unlisten(); else stop = unlisten;

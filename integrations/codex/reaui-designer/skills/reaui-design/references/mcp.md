@@ -1,6 +1,6 @@
 # 本地 MCP 使用指南（插件内置 reaui-mcp 0.2.0）
 
-插件内置 `@xtcel/reaui-mcp`（`server/reaui-mcp`），通过 stdio 暴露 8 个工具和
+插件内置 `@xtcel/reaui-mcp`（`server/reaui-mcp`），通过 stdio 暴露 13 个工具和
 1 个 `reaui://protocol` 资源。它是 CLI 的封装：校验结果与 CLI/编辑器一致。
 **CLI 是主路径；MCP 是辅助路径**，原因见下面的工作区限制。
 
@@ -48,8 +48,13 @@
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
+| `reaui_get_system` | `path` | 读文档内固定快照，未固定返回 `system: null` |
+| `reaui_set_system` | `path`, `system` | 写入完整系统包（null 表示移除）；先校验令牌引用，不发布版本 |
+| `reaui_audit` | `path`, `strict?` | 启发式可编辑性建议，与格式校验分开 |
+| `reaui_init_components` | `path` | 加组件目录，v2 升 v3，保留 v4 |
 | `reaui_init` | `path`, `name`, `pageId?`, `pageName?`, `width?`, `height?` | 创建最小合法文档（v2），返回创建路径 |
 | `reaui_write_page` | `path`, `pageId`, `source` | 写入整页 TSX、必要时加入清单，并立即校验；返回结构化错误 |
+| `reaui_read` | `path`, `page?`, `depth?` | 读结构大纲：画板 + 扁平节点列表（id/kind/name/parent/世界坐标/text/className） |
 | `reaui_validate` | `path` | 校验目录或 `.reaui`，返回 `{ ok, issues[], … }` |
 | `reaui_pack` | `path`, `out?`, `force?` | 校验通过后打包为 `.reaui` |
 | `reaui_unpack` | `file`, `out`, `force?` | 解包 `.reaui` 供逐页编辑 |

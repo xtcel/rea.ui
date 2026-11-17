@@ -6,7 +6,11 @@ import type { DesignSystemPackage } from '@rea/design-system';
 import { withDocumentMetadata } from './metadata';
 import { applyAgentSnapshot } from './agent';
 import type { AssetRecord, DocumentRecord, LocalSystemVersion, SaveStatus } from '@rea/storage';
-import { isDesktop } from '../platform';
+import { isDesktop, saveDocument } from '../platform';
+import type { SavedDocument } from '../platform';
+
+/** 每个文档对应的 .reaui 文件路径（仅桌面版；浏览器版没有路径）。 */
+const SOURCE_FILES_KEY = 'document-files';
 
 export function useDocument() {
   const [storage] = useState(() => new StorageService());
@@ -17,11 +21,19 @@ export function useDocument() {
   const initialization = useRef<Promise<DocumentRecord> | null>(null);
   const [notice, setNotice] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const sourcePaths = useRef<Record<string, string>>({});
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [assetUrls, setAssetUrls] = useState<Record<string, string>>({});
   const assetLoad = useRef<Promise<AssetRecord[]>>(Promise.resolve([]));
   const urls = useRef<Record<string, string>>({});
   const assetGeneration = useRef(0);
   function status(value: SaveStatus, message?: string) { setSaveStatus(value); if (message) setNotice(message); }
+  /** 保存成功的提示要自己消失：它是操作回执，不是需要手动关闭的错误。 */
+  function flash(message: string) {
+    setNotice(message);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setNotice(current => current === message ? '' : current), 2400);
+  }
   function activate(doc: DocumentRecord, persisted = true) {
     saver.current?.dispose();
     const session = new DocumentSession(doc.files);
@@ -37,15 +49,32 @@ export function useDocument() {
       urls.current = next; setAssetUrls(next);
     }).catch(error => { if (generation === assetGeneration.current) setNotice(`资源读取失败：${String(error)}`); });
   }
+  async function rememberSourcePath(id: string, path: string | null) {
+    const next = { ...sourcePaths.current };
+    if (path) next[id] = path; else delete next[id];
+    sourcePaths.current = next;
+    try {
+      await storage.updateMeta<Record<string, string>>(SOURCE_FILES_KEY, previous => {
+        const map = { ...(previous ?? {}) };
+        if (path) map[id] = path; else delete map[id];
+        return map;
+      });
+    } catch (error) { setNotice(`保存路径记录失败：${String(error)}`); }
+  }
   useEffect(() => {
     let active = true;
     let legacy: Storage | undefined;
     try { legacy = window.localStorage; } catch { /* IndexedDB can still be available. */ }
     initialization.current ??= bootstrapStorage(storage, legacy);
-    void initialization.current.then(doc => { if (active) activate(doc); }).catch(error => {
+    const paths = storage.getMeta<Record<string, string>>(SOURCE_FILES_KEY).catch(() => undefined);
+    void Promise.all([initialization.current, paths]).then(([doc, saved]) => {
+      // 路径要先读回来，activate 才能给当前文档带出 ⌘S 的写入目标。
+      sourcePaths.current = saved ?? {};
+      if (active) activate(doc);
+    }).catch(error => {
       if (active) { activate(createDefaultV2Document(), false); setNotice(`本地存储不可用：${String(error)}。可以继续编辑，请导出 .reaui 保存。`); }
     });
-    return () => { active = false; saver.current?.dispose(); assetGeneration.current++; Object.values(urls.current).forEach(URL.revokeObjectURL); };
+    return () => { active = false; saver.current?.dispose(); assetGeneration.current++; clearTimeout(flashTimer.current); Object.values(urls.current).forEach(URL.revokeObjectURL); };
   }, [storage]);
   useEffect(() => {
     function flush() { void saver.current?.flush().catch(() => {}); }
@@ -116,20 +145,50 @@ export function useDocument() {
     if (!record.current) return;
     const doc = await storage.openDocument(record.current.id); activate(doc);
   }
-  async function importFile(file: File) {
+  /** `path` is set only when the desktop app opened the file from the OS, so ⌘S can write it back. */
+  async function importFile(file: File, path: string | null = null) {
     await saver.current?.flush();
     if (/\.design\.tsx$/i.test(file.name)) {
       const doc = await storage.saveDocument(migrateV1ToV2(await file.text()));
       await storage.setMeta('lastOpenedId', doc.id); activate(doc);
     } else {
       const result = await importReaui(storage, new Uint8Array(await file.arrayBuffer()));
-      await storage.setMeta('lastOpenedId', result.document.id); activate(result.document); setNotice(result.warnings.join('\n'));
+      await storage.setMeta('lastOpenedId', result.document.id); activate(result.document);
+      if (path) await rememberSourcePath(result.document.id, path);
+      setNotice(result.warnings.join('\n'));
     }
   }
   async function exportFile() {
     if (!latest.current || !record.current) throw new Error('文档尚未加载。');
     const bytes = await exportReaui({ files: { ...latest.current.files } }, await assetLoad.current);
     return { name: `${latest.current.manifest.name}.reaui`, blob: new Blob([new Uint8Array(bytes)], { type: 'application/vnd.reaui+zip' }) };
+  }
+  function finishSave(id: string, name: string, result: SavedDocument): boolean {
+    if (result.status === 'cancelled') return false;
+    if (result.status === 'saved') {
+      void rememberSourcePath(id, result.path);
+      flash(`已保存到「${result.path.split(/[\\/]/).at(-1)}」`);
+    } else {
+      flash(`已下载「${name}」`);
+    }
+    return true;
+  }
+  /** ⌘S：有来源文件就直接覆盖它，没有来源（新建 / 手动导入 / 浏览器版）就选一个路径或下载。 */
+  async function save(): Promise<boolean> {
+    if (!latest.current || !record.current) throw new Error('文档尚未加载。');
+    const id = record.current.id;
+    // 自动保存失败（例如存储满）不该挡住用户把当前内容写进文件。
+    await saver.current?.flush().catch(() => {});
+    const file = await exportFile();
+    return finishSave(id, file.name, await saveDocument(file.blob, file.name, { id, path: sourcePaths.current[id] ?? null }));
+  }
+  /** ⇧⌘S / 菜单「另存为」：总是选路径，并把后续 ⌘S 指向新文件。 */
+  async function saveAs(): Promise<boolean> {
+    if (!latest.current || !record.current) throw new Error('文档尚未加载。');
+    const id = record.current.id;
+    await saver.current?.flush().catch(() => {});
+    const file = await exportFile();
+    return finishSave(id, file.name, await saveDocument(file.blob, file.name, { id, path: sourcePaths.current[id] ?? null, choosePath: true }));
   }
   async function addAssets(assets:readonly AssetRecord[]){
     const id=latest.current?.manifest.id;if(!id)throw new Error('文档尚未加载。');
@@ -152,12 +211,13 @@ export function useDocument() {
   async function duplicate(id: string) { await saver.current?.flush(); return storage.duplicateDocument(id); }
   async function remove(id: string) {
     await saver.current?.flush(); await storage.deleteDocument(id);
+    await rememberSourcePath(id, null);
     if (record.current?.id === id) {
       const docs = await storage.listDocuments();
       if (docs[0]) activate(await storage.openDocument(docs[0].id)); else await create();
     }
   }
-  return { current, latest: () => latest.current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, applyAgentFiles, writeMetadata, open, create, openGenerated, reload, importFile, exportFile, addAssets, rename, duplicate, remove,
+  return { current, latest: () => latest.current, storage, notice, setNotice, saveStatus, assetUrls, execute, transact, applyAgentFiles, writeMetadata, open, create, openGenerated, reload, importFile, save, saveAs, addAssets, rename, duplicate, remove,
     undo: () => { if (latest.current) publish(latest.current.undo()); }, redo: () => { if (latest.current) publish(latest.current.redo()); } };
 }
 export type DocumentModel = ReturnType<typeof useDocument>;
