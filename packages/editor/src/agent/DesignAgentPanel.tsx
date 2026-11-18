@@ -100,7 +100,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
 
   function flush() {
     if (!dirty.current) return;
-    const value = storeRef.current, current = latest.current.model.current;
+    const value = storeRef.current, current = latest.current.model.latest() ?? latest.current.model.current;
     if (!value || !current || current.manifest.id !== documentId) return;
     if (latest.current.model.writeMetadata(AGENT_SESSION_FILE, serializeStore(value))) dirty.current = false;
   }
@@ -140,7 +140,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
         setNotice('无法读取会话记录，仍可继续设计。');
       });
     }
-    return () => { active = false; alive.current = false; cancelled.current = true; flush(); };
+    return () => { active = false; alive.current = false; cancelled.current = true; flush(); void latest.current.model.flush?.().catch(() => {}); };
   }, [documentId, model.storage]);
 
   useEffect(() => { if (follow.current && log.current) log.current.scrollTop = log.current.scrollHeight; }, [turns]);
@@ -278,6 +278,7 @@ export function DesignAgentPanel(props: DesignAgentPanelProps) {
       sending.current = false;
       if (alive.current) setPreparing(false);
       flush();
+      void latest.current.model.flush?.().catch(() => {});
     }
   }
 

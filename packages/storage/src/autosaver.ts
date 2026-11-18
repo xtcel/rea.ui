@@ -7,7 +7,13 @@ export class AutoSaver {
   private pending?: Record<string, string>;
   private running?: Promise<void>;
   private disposed = false;
-  constructor(private record: DocumentRecord, private save: (doc: DocumentRecord) => Promise<DocumentRecord>, private status: (status: SaveStatus, message?: string) => void, private delay = 500) {}
+  constructor(
+    private record: DocumentRecord,
+    private save: (doc: DocumentRecord) => Promise<DocumentRecord>,
+    private status: (status: SaveStatus, message?: string) => void,
+    private delay = 500,
+    private afterSave?: (doc: DocumentRecord) => Promise<void>,
+  ) {}
   get isDirty() { return Boolean(this.pending || this.running); }
   schedule(files: Readonly<Record<string, string>>) {
     if (this.disposed) return;
@@ -18,12 +24,17 @@ export class AutoSaver {
   }
   async flush(): Promise<void> {
     clearTimeout(this.timer);
-    if (this.running) { await this.running; if (this.pending) return this.flush(); return; }
+    if (this.running) {
+      while (this.running) await this.running;
+      if (this.pending && !this.disposed) return this.flush();
+      return;
+    }
     if (!this.pending || this.disposed) return;
     const files = this.pending; this.pending = undefined;
     const run = async () => {
       try {
         this.record = await this.save(recordFromFiles(files, this.record.revision));
+        if (this.afterSave) await this.afterSave(this.record);
         if (!this.disposed) this.status(this.pending ? 'saving' : 'saved');
       } catch (error) {
         this.pending ??= files;
@@ -33,7 +44,7 @@ export class AutoSaver {
     };
     this.running = run();
     try { await this.running; } finally { this.running = undefined; }
-    if (this.pending) return this.flush();
+    if (this.pending && !this.disposed) return this.flush();
   }
   dispose() { this.disposed = true; clearTimeout(this.timer); }
 }

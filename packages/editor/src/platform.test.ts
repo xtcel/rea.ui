@@ -4,7 +4,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri, invoke: mocks.i
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mocks.save }));
 vi.mock('@tauri-apps/plugin-fs', () => ({ writeFile: mocks.writeFile }));
-import { listenForOpenedFiles, saveDocument, saveFile } from './platform';
+import { listenForExitRequests, listenForOpenedFiles, pickDocumentFile, saveBoundDocument, saveDocument, saveFile } from './platform';
 
 describe('desktop file export', () => {
   beforeEach(() => { vi.clearAllMocks(); mocks.isTauri.mockReturnValue(true); });
@@ -118,5 +118,54 @@ describe('desktop file opening', () => {
   });
   it('leaves browser-only sessions unchanged', async () => {
     mocks.isTauri.mockReturnValue(false);await listenForOpenedFiles(vi.fn(),vi.fn());expect(mocks.listen).not.toHaveBeenCalled();expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('in-place auto-save, desktop document picker and quit flush', () => {
+  beforeEach(() => { vi.resetAllMocks(); mocks.isTauri.mockReturnValue(true); });
+
+  it('writes back in place silently on desktop and reports unavailable when missing or in browser', async () => {
+    mocks.invoke.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const bytes = new Uint8Array([80, 75, 3, 4]);
+    await expect(saveBoundDocument(new Blob([bytes]), { id: 'doc_1', path: '/tmp/app.reaui' })).resolves.toBe('saved');
+    expect(mocks.invoke).toHaveBeenCalledWith('save_document_in_place', { id: 'doc_1', bytes: [80, 75, 3, 4], path: '/tmp/app.reaui' });
+    await expect(saveBoundDocument(new Blob([bytes]), { id: 'doc_1', path: '/tmp/gone.reaui' })).resolves.toBe('unavailable');
+    mocks.isTauri.mockReturnValue(false);
+    await expect(saveBoundDocument(new Blob([bytes]), { id: 'doc_1', path: '/tmp/app.reaui' })).resolves.toBe('unavailable');
+  });
+
+  it('picks a desktop document preserving its path and surfaces read errors', async () => {
+    mocks.invoke.mockResolvedValueOnce(null);
+    await expect(pickDocumentFile()).resolves.toBeNull();
+    mocks.invoke.mockResolvedValueOnce({ name: 'bad.reaui', path: null, bytes: null, error: '损坏文件' });
+    await expect(pickDocumentFile()).rejects.toThrow('损坏文件');
+    mocks.invoke.mockResolvedValueOnce({ name: 'design.reaui', path: '/tmp/design.reaui', bytes: [80, 75], error: null });
+    const picked = await pickDocumentFile();
+    expect(picked?.path).toBe('/tmp/design.reaui');
+    expect(picked?.file.name).toBe('design.reaui');
+    expect(new Uint8Array(await picked!.file.arrayBuffer())).toEqual(new Uint8Array([80, 75]));
+  });
+
+  it('flushes before finishing exit on ⌘Q and cancels exit if flushing fails', async () => {
+    let onExitRequested: (() => void) | undefined;
+    const unlisten = vi.fn();
+    mocks.listen.mockImplementation(async (event, cb) => {
+      if (event === 'reaui-exit-requested') onExitRequested = cb;
+      return unlisten;
+    });
+    mocks.invoke.mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const flush = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('disk full'));
+    const stop = await listenForExitRequests(flush, onError);
+
+    onExitRequested!();
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('finish_exit'));
+    expect(onError).not.toHaveBeenCalled();
+
+    onExitRequested!();
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('cancel_exit'));
+    expect(onError.mock.calls[0][0]).toContain('disk full');
+    stop();
+    expect(unlisten).toHaveBeenCalledOnce();
   });
 });

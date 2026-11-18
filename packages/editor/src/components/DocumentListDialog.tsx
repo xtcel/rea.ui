@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Copy, Download, FolderOpen, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { DocumentSummary } from '@rea/storage';
 import type { DocumentModel } from '../session/useDocument';
+import { pickDocumentFile } from '../platform';
 import { IconButton } from '../ui';
 
 export function DocumentListDialog({ model, onClose, onExport }: { model: DocumentModel; onClose: () => void; onExport: () => Promise<void> }) {
-  const dialog = useRef<HTMLDialogElement>(null), fileInput = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null), [deleting, setDeleting] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function DocumentListDialog({ model, onClose, onExport }: { model: Docume
   async function run(action: () => Promise<unknown>, close = false) {
     if (busy) return;
     setBusy(true); setError('');
-    try { await action(); if (close) onClose(); else await refresh(); }
+    try { const result = await action(); if (close || result === true) onClose(); else await refresh(); }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
@@ -40,12 +41,8 @@ export function DocumentListDialog({ model, onClose, onExport }: { model: Docume
       <button className="rea-export-button" type="submit" disabled={busy || !newName.trim()}><Plus size={14} />新建文档</button>
     </form>
     <div className="rea-document-file-actions">
-      <button type="button" className="rea-export-button" disabled={busy} onClick={() => fileInput.current?.click()}><Upload size={14} />导入文件</button>
+      <button type="button" className="rea-export-button" disabled={busy} onClick={() => void run(async () => { const picked = await pickDocumentFile(); if (!picked) return false; await model.importFile(picked.file, picked.path); return true; })}><Upload size={14} />导入文件</button>
       <button type="button" className="rea-export-button" disabled={busy} onClick={() => void run(onExport)}><Download size={14} />导出当前文档</button>
-      <input ref={fileInput} type="file" accept=".reaui,.tsx" aria-label="导入 .reaui 或旧 .design.tsx" hidden onChange={event => {
-        const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
-        if (file) void run(() => model.importFile(file), true);
-      }} />
     </div>
     {error && <p role="alert" className="rea-document-dialog-error">{error}</p>}
     <div className="rea-document-list" aria-label="已保存的文档" aria-busy={busy}>

@@ -1,6 +1,6 @@
 import { strToU8, zipSync, unzipSync } from 'fflate';
 import type { Zippable } from 'fflate';
-import { DocumentSession, AGENT_SESSIONS_FILE, SYSTEM_AGENT_SESSIONS_FILE, EDITOR_GUIDES_FILE, COMPONENT_FILE, SYSTEM_FILE } from '@rea/document';
+import { DocumentSession, parseManifest, AGENT_SESSIONS_FILE, SYSTEM_AGENT_SESSIONS_FILE, EDITOR_GUIDES_FILE, COMPONENT_FILE, SYSTEM_FILE } from '@rea/document';
 import { MAX_SYSTEM_BYTES, parseSystem } from '@rea/design-system';
 import { isAssetPath } from '@rea/design';
 import { recordFromFiles } from './idb';
@@ -181,8 +181,39 @@ export function decodeReaui(bytes: Uint8Array, existingNames: readonly string[] 
   }
   return { document, assets, warnings };
 }
-export async function importReaui(storage: StorageService, bytes: Uint8Array): Promise<ImportedDocument> {
-  const result = decodeReaui(bytes, (await storage.listDocuments()).map(doc => doc.name));
+export interface ImportReauiOptions {
+  /** Keep the original manifest name when opening a file already bound to a disk path. */
+  preserveName?: boolean;
+}
+export async function matchesReauiDocument(storage: StorageService, existing: Pick<DocumentRecord, 'id' | 'files'>, bytes: Uint8Array): Promise<boolean> {
+  const incoming = readReaui(bytes);
+  const existingKeys = Object.keys(existing.files).sort();
+  const incomingKeys = Object.keys(incoming.files).sort();
+  if (existingKeys.length !== incomingKeys.length || existingKeys.some((key, index) => key !== incomingKeys[index])) return false;
+  for (const key of existingKeys) {
+    if (key === 'rea.json') {
+      const left = JSON.stringify({ ...parseManifest(existing.files[key]), id: '' });
+      const right = JSON.stringify({ ...parseManifest(incoming.files[key]), id: '' });
+      if (left !== right) return false;
+    } else if (existing.files[key] !== incoming.files[key]) {
+      return false;
+    }
+  }
+  const existingAssets = await storage.getAssets(existing.id);
+  if (existingAssets.length !== incoming.assets.length) return false;
+  const byPath = new Map(existingAssets.map(asset => [asset.path, asset]));
+  for (const asset of incoming.assets) {
+    const match = byPath.get(asset.path);
+    if (!match) return false;
+    const current = new Uint8Array(await match.blob.arrayBuffer());
+    if (current.length !== asset.data.length) return false;
+    for (let i = 0; i < current.length; i++) if (current[i] !== asset.data[i]) return false;
+  }
+  return true;
+}
+export async function importReaui(storage: StorageService, bytes: Uint8Array, options: ImportReauiOptions = {}): Promise<ImportedDocument> {
+  const existingNames = options.preserveName ? [] : (await storage.listDocuments()).map(doc => doc.name);
+  const result = decodeReaui(bytes, existingNames);
   const document = await storage.saveDocument(result.document, result.assets);
   return { ...result, document };
 }

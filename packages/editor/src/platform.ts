@@ -6,6 +6,7 @@ export const isDesktop = isTauri;
 
 interface OpenedFile { name: string; path?: string | null; bytes: number[] | null; error: string | null }
 export interface PickedImages { files: File[]; errors: string[] }
+export interface PickedDocument { file: File; path: string | null }
 export type SavedDocument = { status: 'saved'; path: string } | { status: 'downloaded' } | { status: 'cancelled' };
 
 /** Subscribe before draining so startup and subsequent Finder requests use one queue. */
@@ -39,6 +40,33 @@ export async function listenForOpenedFiles(onFile: (file: File, path: string | n
   return stop;
 }
 
+/** Flush unsaved state before macOS ⌘Q quits the desktop application. */
+export async function listenForExitRequests(flushBeforeExit: () => Promise<void>, onError: (message: string) => void, signal?: AbortSignal): Promise<() => void> {
+  if (!isDesktop()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  let active = true;
+  let handling = false;
+  const unlisten = await listen('reaui-exit-requested', () => {
+    if (!active || handling) return;
+    handling = true;
+    void (async () => {
+      try {
+        await flushBeforeExit();
+        if (active) await invoke('finish_exit');
+      } catch (error) {
+        await invoke('cancel_exit').catch(() => {});
+        if (active) onError(`退出前保存失败：${error instanceof Error ? error.message : String(error)}。请先导出 .reaui 备份。`);
+      } finally {
+        handling = false;
+      }
+    })();
+  });
+  const stop = () => { active = false; unlisten(); signal?.removeEventListener('abort', stop); };
+  if (signal?.aborted) { stop(); return stop; }
+  signal?.addEventListener('abort', stop, { once: true });
+  return stop;
+}
+
 /** Pick image files. The desktop picker runs in Rust, so no path crosses the invoke boundary. */
 export async function pickImageFiles(): Promise<PickedImages> {
   if (isDesktop()) {
@@ -54,12 +82,27 @@ export async function pickImageFiles(): Promise<PickedImages> {
   return { files: await chooseInBrowser(), errors: [] };
 }
 
-function chooseInBrowser(): Promise<File[]> {
+/** Pick a `.reaui` or `.design.tsx`. Desktop uses a native dialog so opened `.reaui` paths stay writable. */
+export async function pickDocumentFile(): Promise<PickedDocument | null> {
+  if (isDesktop()) {
+    const picked = await invoke<OpenedFile | null>('pick_document');
+    if (!picked) return null;
+    if (picked.error || !picked.bytes) throw new Error(picked.error ?? '没有读取到文件内容。');
+    return {
+      file: new File([new Uint8Array(picked.bytes)], picked.name, { type: 'application/vnd.reaui+zip' }),
+      path: picked.path ?? null,
+    };
+  }
+  const files = await chooseInBrowser('.reaui,.design.tsx', false);
+  return files[0] ? { file: files[0], path: null } : null;
+}
+
+function chooseInBrowser(accept = IMAGE_ACCEPT, multiple = true): Promise<File[]> {
   return new Promise(resolve => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = IMAGE_ACCEPT;
-    input.multiple = true;
+    input.accept = accept;
+    input.multiple = multiple;
     input.hidden = true;
     document.body.append(input);
     const finish = (files: File[]) => { input.remove(); resolve(files); };
@@ -103,6 +146,14 @@ export async function saveDocument(blob: Blob, filename: string, options: { id: 
   }
   download(blob, name);
   return { status: 'downloaded' };
+}
+
+/** Silently overwrite an already-bound `.reaui` file on desktop without opening any dialog. */
+export async function saveBoundDocument(blob: Blob, options: { id: string; path: string }): Promise<'saved' | 'unavailable'> {
+  if (!isDesktop()) return 'unavailable';
+  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+  const saved = await invoke<boolean>('save_document_in_place', { id: options.id, bytes, path: options.path });
+  return saved ? 'saved' : 'unavailable';
 }
 
 /**

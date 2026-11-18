@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { zipSync, strToU8, unzipSync } from 'fflate';
-import { AutoSaver, RevisionConflictError, StorageService, createDefaultV2Document, decodeReaui, exportPageCode, exportReaui, importReaui } from '../src/index';
+import { AutoSaver, RevisionConflictError, StorageService, createDefaultV2Document, decodeReaui, exportPageCode, exportReaui, importReaui, matchesReauiDocument } from '../src/index';
 import type { DocumentRecord } from '../src/index';
 const services: StorageService[] = [];
 const storage = () => { const s = new StorageService(new IDBFactory()); services.push(s); return s; };
@@ -101,6 +101,64 @@ describe('debounced autosave', () => {
     saver.schedule({ ...original.files, 'rea.json': JSON.stringify({ ...original.manifest, name: 'newer' }) });
     complete({ ...original, revision: original.revision + 1 }); await flushing;
     expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toMatchObject({ name: 'newer', revision: original.revision + 1 }); saver.dispose();
+  });
+  it('waits for queued follow-up saves when flush() is called concurrently', async () => {
+    const original = createDefaultV2Document();
+    let finishFirst!: (doc: DocumentRecord) => void, finishSecond!: (doc: DocumentRecord) => void;
+    let secondFinished = false;
+    const save = vi.fn()
+      .mockImplementationOnce(() => new Promise<DocumentRecord>(resolve => { finishFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise<DocumentRecord>(resolve => { finishSecond = doc => { secondFinished = true; resolve(doc); }; }));
+    const saver = new AutoSaver(original, save, () => {});
+    saver.schedule(original.files);
+    const firstFlush = saver.flush();
+    saver.schedule({ ...original.files, 'rea.json': JSON.stringify({ ...original.manifest, name: 'second' }) });
+    const concurrentFlush = saver.flush();
+    finishFirst({ ...original, revision: original.revision + 1 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(secondFinished).toBe(false);
+    let resolved = false;
+    void concurrentFlush.then(() => { resolved = true; });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    finishSecond({ ...original, name: 'second', revision: original.revision + 2 });
+    await Promise.all([firstFlush, concurrentFlush]);
+    expect(secondFinished).toBe(true);
+    expect(resolved).toBe(true);
+    saver.dispose();
+  });
+  it('advances stored revision even when afterSave fails so retries do not conflict', async () => {
+    const original = createDefaultV2Document(), status = vi.fn();
+    let revision = original.revision;
+    const save = vi.fn(async (doc: DocumentRecord) => {
+      if (doc.revision !== revision) throw new RevisionConflictError();
+      revision += 1;
+      return { ...doc, revision };
+    });
+    const afterSave = vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined);
+    const saver = new AutoSaver(original, save, status, 500, afterSave);
+    saver.schedule(original.files);
+    await expect(saver.flush()).rejects.toThrow('disk full');
+    expect(status).toHaveBeenLastCalledWith('error', 'disk full');
+    await saver.flush();
+    expect(status).toHaveBeenLastCalledWith('saved');
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(afterSave).toHaveBeenCalledTimes(2);
+    saver.dispose();
+  });
+});
+
+describe('.reaui path matching and name preservation', () => {
+  it('detects matching documents regardless of document id and preserves name when requested', async () => {
+    const s = storage(), original = await s.saveDocument(createDefaultV2Document());
+    const assets = [{ docId: original.id, path: 'assets/a.png', type: 'image/png', blob: new Blob(['image']) }];
+    const bytes = await exportReaui(original, assets);
+    expect(await matchesReauiDocument(s, original, bytes)).toBe(true);
+    const changed = await exportReaui({ files: { ...original.files, 'rea.json': JSON.stringify({ ...original.manifest, name: 'Modified' }, null, 2) } }, assets);
+    expect(await matchesReauiDocument(s, original, changed)).toBe(false);
+    const preserved = await importReaui(s, bytes, { preserveName: true });
+    expect(preserved.document.name).toBe(original.name);
   });
 });
 

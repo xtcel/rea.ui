@@ -781,6 +781,17 @@ impl AgentService {
                     let mut job = watcher.lock().unwrap();
                     if job.state == "running" {
                         if let Some(status) = status {
+                            if has_workspace {
+                                match workspace_snapshot(&design_root) {
+                                    Ok(snapshot) => {
+                                        job.preview = Some(snapshot);
+                                        job.preview_error = None;
+                                    }
+                                    Err(error) => {
+                                        job.preview_error = Some(error);
+                                    }
+                                }
+                            }
                             let result = (|| -> Result<Value, String> {
                                 if !status.success() {
                                     let details = errors.lock().unwrap().clone();

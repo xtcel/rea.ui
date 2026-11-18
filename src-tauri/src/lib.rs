@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -22,6 +23,12 @@ async fn local_agent_request(
 // Retain OS requests until the webview has subscribed, including cold launches.
 #[derive(Default)]
 struct PendingFiles(Mutex<VecDeque<PathBuf>>);
+
+#[derive(Default)]
+struct ExitGuard {
+    confirmed: AtomicBool,
+    pending: AtomicBool,
+}
 
 #[derive(serde::Serialize)]
 struct OpenedFile {
@@ -134,8 +141,34 @@ fn is_document(path: &std::path::Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("reaui"))
 }
 
-fn read_document(path: PathBuf) -> OpenedFile {
+fn is_legacy_design_tsx(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".design.tsx"))
+}
+
+fn read_bounded_bytes(
+    path: &Path,
+    max_size: u64,
+    not_file_error: &str,
+    too_large_error: &str,
+) -> Result<Vec<u8>, String> {
     use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+        return Err(not_file_error.into());
+    }
+    let mut bytes = Vec::new();
+    file.take(max_size + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max_size {
+        return Err(too_large_error.into());
+    }
+    Ok(bytes)
+}
+
+fn read_document(path: PathBuf) -> OpenedFile {
     let name = path
         .file_name()
         .unwrap_or_default()
@@ -143,26 +176,45 @@ fn read_document(path: PathBuf) -> OpenedFile {
         .into_owned();
     // Report the resolved path so the webview hands back exactly what we authorized.
     let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-    let result = (|| -> Result<Vec<u8>, String> {
-        // Match the ZIP import limit and bound reads even if the file grows.
-        const MAX_SIZE: u64 = 257 * 1024 * 1024;
-        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err("请选择 .reaui 文件。".into());
-        }
-        let mut bytes = Vec::new();
-        file.take(MAX_SIZE + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() as u64 > MAX_SIZE {
-            return Err("文件超过 .reaui 大小限制。".into());
-        }
-        Ok(bytes)
-    })();
-    match result {
+    // Match the ZIP import limit and bound reads even if the file grows.
+    const MAX_SIZE: u64 = 257 * 1024 * 1024;
+    match read_bounded_bytes(
+        &path,
+        MAX_SIZE,
+        "请选择 .reaui 文件。",
+        "文件超过 .reaui 大小限制。",
+    ) {
         Ok(bytes) => OpenedFile {
             name,
             path: Some(resolved.to_string_lossy().into_owned()),
+            bytes: Some(bytes),
+            error: None,
+        },
+        Err(error) => OpenedFile {
+            name,
+            path: None,
+            bytes: None,
+            error: Some(error),
+        },
+    }
+}
+
+fn read_legacy_document(path: PathBuf) -> OpenedFile {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    const MAX_LEGACY_SIZE: u64 = 16 * 1024 * 1024;
+    match read_bounded_bytes(
+        &path,
+        MAX_LEGACY_SIZE,
+        "请选择 .design.tsx 文件。",
+        "旧版设计文件超过大小限制。",
+    ) {
+        Ok(bytes) => OpenedFile {
+            name,
+            path: None,
             bytes: Some(bytes),
             error: None,
         },
@@ -253,6 +305,22 @@ async fn pick_images(app: tauri::AppHandle) -> Result<Vec<OpenedFile>, String> {
         .map_err(|e| e.to_string())
 }
 
+fn record_opened_paths<'a>(
+    app: &tauri::AppHandle,
+    paths: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let store = app.state::<DocumentPathStore>();
+    let mut known = store.0.lock().map_err(|e| e.to_string())?;
+    let mut changed = false;
+    for path in paths {
+        changed |= known.opened.insert(PathBuf::from(path));
+    }
+    if changed {
+        persist_path_state(app, &known);
+    }
+    Ok(())
+}
+
 // No arbitrary path argument: only files explicitly opened through the OS are read.
 #[tauri::command]
 async fn take_pending_open_files(
@@ -271,20 +339,70 @@ async fn take_pending_open_files(
     .await
     .map_err(|e| e.to_string())?;
     // Remember the paths the user opened from the OS; only those may later be overwritten in place.
+    record_opened_paths(&app, files.iter().filter_map(|file| file.path.as_deref()))?;
+    Ok(files)
+}
+
+/// Pick a `.reaui` or legacy `.design.tsx` document via the native dialog so in-app imports
+/// remember their `.reaui` path for auto-save and ⌘S.
+#[tauri::command]
+async fn pick_document(app: tauri::AppHandle) -> Result<Option<OpenedFile>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("导入 REA UI 文档")
+        .add_filter("REA UI 文档", &["reaui", "tsx"])
+        .blocking_pick_file();
+    let Some(file) = picked else {
+        return Ok(None);
+    };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    let opened = tauri::async_runtime::spawn_blocking(move || {
+        if is_document(&path) {
+            read_document(path)
+        } else if is_legacy_design_tsx(&path) {
+            read_legacy_document(path)
+        } else {
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            OpenedFile {
+                name,
+                path: None,
+                bytes: None,
+                error: Some("请选择 .reaui 或 .design.tsx 文件。".into()),
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Some(path) = opened.path.as_deref() {
+        record_opened_paths(&app, [path])?;
+    }
+    Ok(Some(opened))
+}
+
+async fn write_and_bind(
+    app: &tauri::AppHandle,
+    id: String,
+    target: PathBuf,
+    bytes: Vec<u8>,
+) -> Result<PathBuf, String> {
+    let target = with_reaui_extension(target);
+    let stored = tauri::async_runtime::spawn_blocking(move || {
+        write_atomic(&target, &bytes)?;
+        Ok::<PathBuf, String>(std::fs::canonicalize(&target).unwrap_or(target))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let store = app.state::<DocumentPathStore>();
     let mut known = store.0.lock().map_err(|e| e.to_string())?;
-    let mut changed = false;
-    for file in &files {
-        if let Some(path) = &file.path {
-            changed |= known.opened.insert(PathBuf::from(path));
-        }
-    }
-    drop(known);
-    if changed {
-        let state = store.0.lock().map_err(|e| e.to_string())?;
-        persist_path_state(&app, &state);
-    }
-    Ok(files)
+    known.bound.insert(id, stored.clone());
+    known.opened.insert(stored.clone());
+    persist_path_state(app, &known);
+    Ok(stored)
 }
 
 /// Overwrite the document's own `.reaui`, or ask for a path on first save.
@@ -320,22 +438,48 @@ async fn save_document(
             }
         }
     };
-    let target = with_reaui_extension(target);
-    write_atomic(&target, &bytes)?;
-    let stored = std::fs::canonicalize(&target).unwrap_or(target);
-    {
-        let mut known = store.0.lock().map_err(|e| e.to_string())?;
-        known.bound.insert(id, stored.clone());
-        known.opened.insert(stored.clone());
-        persist_path_state(&app, &known);
-    }
+    let stored = write_and_bind(&app, id, target, bytes).await?;
     Ok(Some(stored.to_string_lossy().into_owned()))
+}
+
+/// Write back to an already-authorized `.reaui` file without opening a dialog.
+/// Returns `false` when the target path is missing or unauthorized.
+#[tauri::command]
+async fn save_document_in_place(
+    app: tauri::AppHandle,
+    id: String,
+    bytes: Vec<u8>,
+    path: String,
+) -> Result<bool, String> {
+    let store = app.state::<DocumentPathStore>();
+    let target = {
+        let known = store.0.lock().map_err(|e| e.to_string())?;
+        remembered_target(&known, &id, Some(&path), false)
+    };
+    let Some(target) = target else {
+        return Ok(false);
+    };
+    write_and_bind(&app, id, target, bytes).await?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn finish_exit(app: tauri::AppHandle, state: tauri::State<'_, ExitGuard>) {
+    state.confirmed.store(true, Ordering::SeqCst);
+    state.pending.store(false, Ordering::SeqCst);
+    app.exit(0);
+}
+
+#[tauri::command]
+fn cancel_exit(state: tauri::State<'_, ExitGuard>) {
+    state.pending.store(false, Ordering::SeqCst);
 }
 
 pub fn run() {
     tauri::Builder::default()
         .manage(PendingFiles::default())
         .manage(DocumentPathStore::default())
+        .manage(ExitGuard::default())
         .manage(Arc::new(rea_local_agent::AgentService::default()))
         .setup(|app| {
             let handle = app.handle();
@@ -346,7 +490,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             take_pending_open_files,
+            pick_document,
             save_document,
+            save_document_in_place,
+            finish_exit,
+            cancel_exit,
             pick_images,
             local_agent_request
         ])
@@ -354,9 +502,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .build(tauri::generate_context!())
         .expect("failed to run REA UI desktop")
-        .run(|app, event| {
+        .run(|app, event| match event {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = event {
+            tauri::RunEvent::Opened { urls } => {
                 let state = app.state::<PendingFiles>();
                 let mut pending = state.0.lock().expect("open file queue poisoned");
                 for path in urls
@@ -379,6 +527,25 @@ pub fn run() {
                     }
                 }
             }
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                if code.is_some() {
+                    return;
+                }
+                let guard = app.state::<ExitGuard>();
+                if guard.confirmed.load(Ordering::SeqCst) {
+                    return;
+                }
+                let Some(window) = app.get_webview_window("main") else {
+                    return;
+                };
+                // Pressing ⌘Q a second time lets the user exit if the webview failed to respond.
+                if guard.pending.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                api.prevent_exit();
+                let _ = window.emit("reaui-exit-requested", ());
+            }
+            _ => {}
         });
 }
 
@@ -386,10 +553,13 @@ pub fn run() {
 mod tests {
     use super::*;
     #[test]
-    fn accepts_only_reaui_paths() {
+    fn accepts_only_supported_document_extensions() {
         assert!(is_document(std::path::Path::new("/tmp/中文 设计.REAUI")));
         assert!(!is_document(std::path::Path::new("/tmp/test.reaui.zip")));
         assert!(!is_document(std::path::Path::new("/tmp/test.tsx")));
+        assert!(is_legacy_design_tsx(std::path::Path::new("/tmp/old.design.tsx")));
+        assert!(is_legacy_design_tsx(std::path::Path::new("/tmp/old.DESIGN.TSX")));
+        assert!(!is_legacy_design_tsx(std::path::Path::new("/tmp/other.tsx")));
     }
     #[test]
     fn reports_a_missing_file_without_panicking() {

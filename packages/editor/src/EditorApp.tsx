@@ -37,7 +37,8 @@ import type { ClipboardFragment } from './session/clipboard';
 import { fitWithin, imageLayerFragment, layerName, prepareImage } from './session/images';
 import type { PreparedImage } from './session/images';
 import { describeIssues, isSvgFile, svgLayerFragment } from './session/svgImport';
-import { pickImageFiles, saveFile } from './platform';
+import { pickDocumentFile, pickImageFiles, saveFile } from './platform';
+import { bindSaveShortcut } from './session/saveShortcut';
 import { ComponentAssets } from './components/ComponentAssets';
 import { ExportDialog } from './components/ExportDialog';
 import { ExportPanel } from './inspector/ExportPanel';
@@ -82,7 +83,6 @@ function DocumentEditor({ model, current, onHome, agent, onEditSystem, systemCho
   const internalClipboard = useRef<ClipboardFragment | null>(null);
   const renameSerial = useRef(0);
   const agentTimer = useRef<number | null>(null);
-  const input = useRef<HTMLInputElement>(null);
   const measure = useCallback(() => {}, []);
   const [warnings, setWarnings] = useState('');
   const diagnostics = useCallback((items: StyleDiagnostic[]) => setWarnings(items.map(item => item.message).join('\n')), []);
@@ -494,11 +494,15 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       model.setNotice(`已导出 ${files.length} 个 ${format.toUpperCase()} 文件。`);
     } catch (error) { setExportOpen(false); model.setNotice(String(error)); }
   }
+  const saveHandlers = useRef({ editingId: null as string | null, model });
+  saveHandlers.current = { editingId, model };
+  useEffect(() => bindSaveShortcut(window, {
+    isEditingText: () => Boolean(saveHandlers.current.editingId),
+    onSave: saveAs => run(() => saveAs ? saveHandlers.current.model.saveAs() : saveHandlers.current.model.save()),
+  }), []);
   useEffect(() => {
     const blocked=(target:EventTarget|null)=>showDocuments||shortcuts||editingId||document.querySelector('[role="menu"],dialog[open]')||(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
     function keydown(event:KeyboardEvent) {
-      // 保存要在任何焦点下都能用（输入框、图层改名、属性字段），只有正在编辑文字时由 TextEditor 自己吞掉。
-      if(!event.defaultPrevented&&(event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();run(() => event.shiftKey ? model.saveAs() : model.save());return;}
       if(event.defaultPrevented||blocked(event.target))return;
       const command=event.metaKey||event.ctrlKey,key=event.key.toLowerCase();
       if(command){
@@ -555,7 +559,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     {onHome && <IconButton label="返回首页" onClick={onHome}><Home size={17} /></IconButton>}
     <Menu label="主菜单" items={[
       { label: '新建文档', action: () => run(() => model.create()) }, { label: '打开文档…', action: () => setShowDocuments(true) },
-      { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => input.current?.click() },
+      { label: '重命名文档', action: () => setRenaming(true) }, { label: '导入 .reaui…', action: () => run(async () => { const picked = await pickDocumentFile(); if (picked) await model.importFile(picked.file, picked.path); }) },
       { label: '插入图片或 SVG…', action: chooseImages },
       { label: '保存', shortcut: '⌘/Ctrl+S', action: () => run(() => model.save()) },
       { label: '另存为 .reaui…', shortcut: '⌘/Ctrl+Shift+S', action: () => run(exportDocument) },
@@ -586,7 +590,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
       <IconButton label="插入图片或 SVG…" onClick={chooseImages}><ImagePlus size={17} /></IconButton>
       <IconButton label="抓手工具 (H)" active={tool === 'hand'} onClick={() => chooseTool('hand')}><Hand size={17} /></IconButton>
     </div><span className="rea-divider rea-history" /><div className="rea-history flex"><IconButton label="撤销 (⌘/Ctrl+Z)" disabled={!current.past.length} onClick={model.undo}><Undo2 size={16} /></IconButton><IconButton label="重做 (⌘/Ctrl+Shift+Z)" disabled={!current.future.length} onClick={model.redo}><Redo2 size={16} /></IconButton></div>
-    <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-[var(--rea-muted)]">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-[var(--rea-danger)]!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
+    <div className="rea-document-name" data-renaming={renaming}>{renaming ? <InlineName value={current.manifest.name} label="文档名称" onCommit={name => run(() => model.rename(current.manifest.id, name))} onDone={() => setRenaming(false)} /> : <button type="button" className="truncate text-xs font-medium" title="重命名文档" onClick={() => setRenaming(true)}>{current.manifest.name}</button>}<span className="text-[var(--rea-muted)]">/</span><span className="truncate text-xs text-[var(--rea-muted)]">{page.name}</span><button type="button" role="status" aria-live="polite" title={model.boundPath ? `自动保存并同步到：${model.boundPath}` : '已自动保存到本地文档库；按 ⌘S 保存为 .reaui 文件'} className={`rea-save ${model.saveStatus === 'error' || model.saveStatus === 'conflict' ? 'text-[var(--rea-danger)]!' : ''}`} disabled={model.saveStatus === 'saved' || model.saveStatus === 'saving'} onClick={() => run(model.saveStatus === 'conflict' ? model.reload : exportDocument)}>{saveLabels[model.saveStatus]}</button></div>
     <div className="ml-auto flex shrink-0 items-center"><IconButton label="显示 AI 与图层" className="rea-mobile-only" active={panel === 'layers'} onClick={() => setPanel(panel === 'layers' ? null : 'layers')}><Layers size={16} /></IconButton><IconButton label="显示属性" className="rea-mobile-only" active={panel === 'inspector'} onClick={() => setPanel(panel === 'inspector' ? null : 'inspector')}><PanelRight size={16} /></IconButton>
     <ThemeButton />
     <Menu label="视图" items={[
@@ -603,7 +607,7 @@ function openRulerMenu(zone: RulerZone, x: number, y: number) {
     {editingComponent&&<div className="rea-component-breadcrumb"><Button onClick={()=>changePage(pageId)}>返回页面</Button><span>{current.components.get(editingComponent)?.props.name??'主组件'}</span>{current.components.get(editingComponent)?.props.library&&<span>库组件 · 只读预览</span>}</div>}
     <Canvas page={canvasPage} sourcePage={sourcePage} selection={selection} selectionMode={selectionMode} onSelection={setSelection} tool={tool} viewCommand={viewCommand} onZoom={setZoom} onCreate={create} onToolChange={chooseTool} onCommit={commit} assetUrls={model.assetUrls} system={model.current?.system ?? null} onDiagnostics={diagnostics} onMeasure={measure} onNotice={model.setNotice} apiRef={canvas} editingId={editingId} draft={textDraft ? {parentId:textDraft.parentId,element:createElement(Text,{designId:textDraft.id,className:textDraft.className,children:'文字'})} : null} onEdit={setEditingId} onTextFinish={finishText} touched={agentTouched} agentRefs={agentRefs.filter(ref => ref.pageId === page.id).map(ref => ref.designId)} onAgentRefs={agent ? toggleSelectionRefs : undefined} onContextMenu={setContextMenu} onDropImages={(files, point, parentId) => run(() => insertImages(files, point, parentId))} showRulers={viewPrefs.showRulers} showGuides={viewPrefs.showGuides} guides={guides} onGuidesChange={setGuides} onGuideContextMenu={openGuideMenu} onRevealGuides={() => { if (!viewPrefs.showGuides) viewPrefs.setShowGuides(true); }} onRulerContextMenu={openRulerMenu} />
     {(model.notice || warnings || model.saveStatus === 'error' || model.saveStatus === 'conflict') && <div className="rea-notice" role="alert"><span>{model.notice || warnings || saveLabels[model.saveStatus]}</span>{(model.saveStatus === 'error' || model.saveStatus === 'conflict') && <Button onClick={() => run(exportDocument)}>导出 .reaui</Button>}<IconButton label="关闭提示" onClick={() => { model.setNotice(''); setWarnings(''); }}><X size={14} /></IconButton></div>}
-  </EditorShell><input ref={input} type="file" accept=".reaui,.design.tsx" hidden aria-label="导入文档" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) run(() => model.importFile(file)); }} />
+  </EditorShell>
   {createComponentDialog&&<Dialog title="创建组件" onClose={()=>setCreateComponentDialog(false)}><label className="rea-component-label">组件名称<input className="rea-input" autoFocus value={componentName} onChange={e=>setComponentName(e.target.value)} maxLength={120} onKeyDown={e=>{if(e.key==='Enter')confirmComponent();}}/></label><p className="rea-field-help">选中内容将成为主组件，画布当前位置保留一个关联实例。</p><div className="rea-dialog-actions"><Button onClick={()=>setCreateComponentDialog(false)}>取消</Button><Button disabled={!componentName.trim()} onClick={confirmComponent}>创建组件</Button></div></Dialog>}
   {showDocuments && <DocumentListDialog model={model} onClose={() => setShowDocuments(false)} onExport={exportDocument} />}
   {exportOpen && <ExportDialog count={exportCount} onClose={() => setExportOpen(false)} onExport={exportImages} />}
