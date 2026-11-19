@@ -11,8 +11,8 @@
   "scripts": {
     "dev": "pnpm build:wasm && pnpm --filter @rea/web dev",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
-    "desktop:build:mac": "tauri build --target aarch64-apple-darwin --bundles app,dmg",
+    "desktop:build": "node scripts/clean-dmg-mounts.mjs && tauri build",
+    "desktop:build:mac": "node scripts/clean-dmg-mounts.mjs && tauri build --target aarch64-apple-darwin --bundles app,dmg",
     "design:app": "node scripts/build-app-design.mjs",
     "reaui": "node packages/reaui-cli/bin/reaui.mjs",
     "build:cli": "pnpm --filter @xtcel/reaui-cli build",
